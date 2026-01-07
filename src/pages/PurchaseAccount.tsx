@@ -8,11 +8,10 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 type ChallengeType = "three_step" | "two_step" | "one_step" | "instant";
 
@@ -106,16 +105,16 @@ function RuleItem({ label, value, ruleKey }: { label: string; value: string; rul
     <div className="flex justify-between items-center py-2">
       <div className="flex items-center gap-1.5">
         <span className="text-muted-foreground text-sm">{label}</span>
-        <Tooltip>
-          <TooltipTrigger asChild>
+        <Popover>
+          <PopoverTrigger asChild>
             <button className="text-muted-foreground hover:text-primary transition-colors">
               <HelpCircle className="w-3.5 h-3.5" />
             </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs">
-            <p className="text-sm">{ruleExplanations[ruleKey]}</p>
-          </TooltipContent>
-        </Tooltip>
+          </PopoverTrigger>
+          <PopoverContent side="top" className="max-w-xs text-sm">
+            {ruleExplanations[ruleKey]}
+          </PopoverContent>
+        </Popover>
       </div>
       <span className="font-medium text-foreground text-sm">{value}</span>
     </div>
@@ -188,9 +187,8 @@ export default function PurchaseAccount() {
   };
 
   return (
-    <TooltipProvider>
-      <div className="min-h-screen bg-background">
-        <header className="border-b border-border bg-card/80 backdrop-blur-xl sticky top-0 z-50">
+    <div className="min-h-screen bg-background">
+      <header className="border-b border-border bg-card/80 backdrop-blur-xl sticky top-0 z-50">
           <div className="container mx-auto px-4 py-4">
             <div className="flex items-center justify-between">
               <Link to="/" className="flex items-center gap-2">
@@ -436,8 +434,7 @@ export default function PurchaseAccount() {
               </Card>
             </div>
           )}
-        </main>
-      </div>
-    </TooltipProvider>
+      </main>
+    </div>
   );
 }
