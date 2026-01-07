@@ -14,7 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      accounts: {
+        Row: {
+          account_size: number
+          challenge_type: Database["public"]["Enums"]["challenge_type"]
+          created_at: string
+          current_balance: number | null
+          current_phase: number | null
+          id: string
+          payment_address: string | null
+          payment_tx_hash: string | null
+          price: number
+          profit_loss: number | null
+          status: Database["public"]["Enums"]["account_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          account_size: number
+          challenge_type: Database["public"]["Enums"]["challenge_type"]
+          created_at?: string
+          current_balance?: number | null
+          current_phase?: number | null
+          id?: string
+          payment_address?: string | null
+          payment_tx_hash?: string | null
+          price: number
+          profit_loss?: number | null
+          status?: Database["public"]["Enums"]["account_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          account_size?: number
+          challenge_type?: Database["public"]["Enums"]["challenge_type"]
+          created_at?: string
+          current_balance?: number | null
+          current_phase?: number | null
+          id?: string
+          payment_address?: string | null
+          payment_tx_hash?: string | null
+          price?: number
+          profit_loss?: number | null
+          status?: Database["public"]["Enums"]["account_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +70,13 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      account_status:
+        | "pending_payment"
+        | "active"
+        | "failed"
+        | "passed"
+        | "funded"
+      challenge_type: "three_step" | "two_step" | "one_step" | "instant"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +203,15 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      account_status: [
+        "pending_payment",
+        "active",
+        "failed",
+        "passed",
+        "funded",
+      ],
+      challenge_type: ["three_step", "two_step", "one_step", "instant"],
+    },
   },
 } as const
