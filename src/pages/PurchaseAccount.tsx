@@ -399,7 +399,7 @@ export default function PurchaseAccount() {
                     <div className="space-y-4">
                       <div>
                         <label className="text-sm text-muted-foreground block mb-2">
-                          Wallet Address (ERC-20 / BEP-20)
+                          Wallet Address (BEP-20 - Binance Smart Chain)
                         </label>
                         <div className="flex gap-2">
                           <code className="flex-1 bg-background p-3 rounded-lg text-sm text-foreground break-all border border-border">
@@ -414,11 +414,11 @@ export default function PurchaseAccount() {
                       <div className="text-sm text-muted-foreground space-y-2">
                         <p className="flex items-center gap-2">
                           <Check className="w-4 h-4 text-primary" />
-                          Accepted: USDT, USDC, ETH, BTC
+                          Accepted: USDT, USDC, BNB (BEP-20 tokens only)
                         </p>
                         <p className="flex items-center gap-2">
                           <Check className="w-4 h-4 text-primary" />
-                          Networks: Ethereum, BSC, Polygon, Arbitrum
+                          Network: Binance Smart Chain (BSC)
                         </p>
                         <p className="flex items-center gap-2">
                           <Check className="w-4 h-4 text-primary" />
