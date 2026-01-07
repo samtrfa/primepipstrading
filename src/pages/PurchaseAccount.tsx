@@ -98,7 +98,7 @@ const pricingTiers: PricingTier[] = [
   { size: 100000, label: "$100K", prices: { three_step: 349, two_step: 449, one_step: 549, instant: 1299 } },
 ];
 
-const CRYPTO_WALLET = "0x742d35Cc6634C0532925a3b844Bc9e7595f3217a";
+const CRYPTO_WALLET = "0x66aeC4645A4d204653d2e62FCA26968Ce1B5db1a";
 
 function RuleItem({ label, value, ruleKey }: { label: string; value: string; ruleKey: string }) {
   return (
@@ -382,6 +382,17 @@ export default function PurchaseAccount() {
                       <div className="text-4xl font-bold text-primary mb-2">${price}</div>
                       <div className="text-muted-foreground">
                         {challengeTypes.find(c => c.id === selectedChallenge)?.label} - ${selectedSize.toLocaleString()} Account
+                      </div>
+                    </div>
+
+                    {/* QR Code */}
+                    <div className="flex justify-center mb-6">
+                      <div className="p-4 bg-white rounded-xl shadow-sm">
+                        <img 
+                          src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(CRYPTO_WALLET)}`}
+                          alt="Payment QR Code" 
+                          className="w-44 h-44"
+                        />
                       </div>
                     </div>
 
