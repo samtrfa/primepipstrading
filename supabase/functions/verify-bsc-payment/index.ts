@@ -13,8 +13,8 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 // The wallet address to check for incoming payments
 const WALLET_ADDRESS = "0x66aeC4645A4d204653d2e62FCA26968Ce1B5db1a";
 
-// Payment expiry time in hours (accounts pending for longer will be marked failed)
-const PAYMENT_EXPIRY_HOURS = 24;
+// Payment expiry time in minutes (accounts pending for longer will be marked failed)
+const PAYMENT_EXPIRY_MINUTES = 60;
 
 // Token contract addresses on BSC
 const TOKEN_CONTRACTS: Record<string, { address: string; decimals: number }> = {
@@ -167,11 +167,11 @@ serve(async (req) => {
     let expiredCount = 0;
 
     for (const account of pendingAccounts as Account[]) {
-      const accountAge = (Date.now() - new Date(account.created_at).getTime()) / (1000 * 60 * 60);
+      const accountAgeMinutes = (Date.now() - new Date(account.created_at).getTime()) / (1000 * 60);
       
       // Check if payment has expired
-      if (accountAge > PAYMENT_EXPIRY_HOURS) {
-        console.log(`Account ${account.id} payment expired after ${accountAge.toFixed(1)} hours`);
+      if (accountAgeMinutes > PAYMENT_EXPIRY_MINUTES) {
+        console.log(`Account ${account.id} payment expired after ${accountAgeMinutes.toFixed(0)} minutes`);
         
         const { error: expireError } = await supabase
           .from("accounts")
