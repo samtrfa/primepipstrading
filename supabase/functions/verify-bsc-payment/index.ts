@@ -14,7 +14,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const WALLET_ADDRESS = "0x66aeC4645A4d204653d2e62FCA26968Ce1B5db1a";
 
 // Payment expiry time in minutes (accounts pending for longer will be marked failed)
-const PAYMENT_EXPIRY_MINUTES = 60;
+const PAYMENT_EXPIRY_MINUTES = 10;
 
 // Token contract addresses on BSC
 const TOKEN_CONTRACTS: Record<string, { address: string; decimals: number }> = {
