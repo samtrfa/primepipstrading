@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -122,8 +122,18 @@ function RuleItem({ label, value, ruleKey }: { label: string; value: string; rul
 }
 
 export default function PurchaseAccount() {
-  const [selectedChallenge, setSelectedChallenge] = useState<ChallengeType>("one_step");
-  const [selectedSize, setSelectedSize] = useState<number>(10000);
+  const [searchParams] = useSearchParams();
+  const challengeParam = searchParams.get("challenge") as ChallengeType | null;
+  const sizeParam = searchParams.get("size");
+
+  const [selectedChallenge, setSelectedChallenge] = useState<ChallengeType>(
+    challengeParam && ["three_step", "two_step", "one_step", "instant"].includes(challengeParam) 
+      ? challengeParam 
+      : "one_step"
+  );
+  const [selectedSize, setSelectedSize] = useState<number>(
+    sizeParam ? parseInt(sizeParam) : 10000
+  );
   const [showPayment, setShowPayment] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
