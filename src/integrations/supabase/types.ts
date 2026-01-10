@@ -62,6 +62,165 @@ export type Database = {
         }
         Relationships: []
       }
+      assets: {
+        Row: {
+          asset_type: string
+          base_currency: string | null
+          created_at: string
+          id: string
+          is_active: boolean | null
+          lot_size: number | null
+          name: string
+          pip_value: number | null
+          quote_currency: string | null
+          symbol: string
+        }
+        Insert: {
+          asset_type?: string
+          base_currency?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          lot_size?: number | null
+          name: string
+          pip_value?: number | null
+          quote_currency?: string | null
+          symbol: string
+        }
+        Update: {
+          asset_type?: string
+          base_currency?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          lot_size?: number | null
+          name?: string
+          pip_value?: number | null
+          quote_currency?: string | null
+          symbol?: string
+        }
+        Relationships: []
+      }
+      positions: {
+        Row: {
+          account_id: string
+          asset_id: string
+          closed_at: string | null
+          created_at: string
+          entry_price: number
+          exit_price: number | null
+          id: string
+          lot_size: number
+          opened_at: string
+          position_type: string
+          profit_loss: number | null
+          status: string
+          stop_loss: number | null
+          take_profit: number | null
+        }
+        Insert: {
+          account_id: string
+          asset_id: string
+          closed_at?: string | null
+          created_at?: string
+          entry_price: number
+          exit_price?: number | null
+          id?: string
+          lot_size?: number
+          opened_at?: string
+          position_type: string
+          profit_loss?: number | null
+          status?: string
+          stop_loss?: number | null
+          take_profit?: number | null
+        }
+        Update: {
+          account_id?: string
+          asset_id?: string
+          closed_at?: string | null
+          created_at?: string
+          entry_price?: number
+          exit_price?: number | null
+          id?: string
+          lot_size?: number
+          opened_at?: string
+          position_type?: string
+          profit_loss?: number | null
+          status?: string
+          stop_loss?: number | null
+          take_profit?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "positions_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "positions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      trade_history: {
+        Row: {
+          account_id: string
+          action: string
+          created_at: string
+          id: string
+          lot_size: number
+          notes: string | null
+          position_id: string | null
+          price: number
+          profit_loss: number | null
+          symbol: string
+        }
+        Insert: {
+          account_id: string
+          action: string
+          created_at?: string
+          id?: string
+          lot_size: number
+          notes?: string | null
+          position_id?: string | null
+          price: number
+          profit_loss?: number | null
+          symbol: string
+        }
+        Update: {
+          account_id?: string
+          action?: string
+          created_at?: string
+          id?: string
+          lot_size?: number
+          notes?: string | null
+          position_id?: string | null
+          price?: number
+          profit_loss?: number | null
+          symbol?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "trade_history_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_history_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "positions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
