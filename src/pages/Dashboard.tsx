@@ -24,6 +24,7 @@ import {
   Plus,
   Clock,
   Rocket,
+  Activity,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
@@ -299,7 +300,7 @@ export default function Dashboard() {
                       </div>
                     ))}
                     <p className="text-sm text-muted-foreground">
-                      Your account will be activated within 24 hours after payment confirmation.
+                      Your payment is being verified automatically. Account activates within 10 minutes of confirmed payment.
                     </p>
                   </CardContent>
                 </Card>
@@ -325,26 +326,37 @@ export default function Dashboard() {
                             ${account.account_size.toLocaleString()} {challengeLabels[account.challenge_type]}
                           </h2>
                         </div>
-                        <div className="text-right">
-                          <div className="text-sm text-muted-foreground mb-1">Current Balance</div>
-                          <div className="text-3xl font-bold text-foreground">
-                            ${(account.current_balance || account.account_size).toLocaleString()}
-                          </div>
-                          {account.profit_loss !== null && account.profit_loss !== 0 && (
-                            <div className={cn(
-                              "flex items-center justify-end gap-1",
-                              account.profit_loss > 0 ? "text-success" : "text-destructive"
-                            )}>
-                              {account.profit_loss > 0 ? (
-                                <ArrowUpRight className="w-4 h-4" />
-                              ) : (
-                                <ArrowDownRight className="w-4 h-4" />
-                              )}
-                              <span className="font-medium">
-                                {account.profit_loss > 0 ? "+" : ""}${account.profit_loss.toLocaleString()}
-                              </span>
+                        <div className="flex items-center gap-6">
+                          <div className="text-right">
+                            <div className="text-sm text-muted-foreground mb-1">Current Balance</div>
+                            <div className="text-3xl font-bold text-foreground">
+                              ${(account.current_balance || account.account_size).toLocaleString()}
                             </div>
-                          )}
+                            {account.profit_loss !== null && account.profit_loss !== 0 && (
+                              <div className={cn(
+                                "flex items-center justify-end gap-1",
+                                account.profit_loss > 0 ? "text-success" : "text-destructive"
+                              )}>
+                                {account.profit_loss > 0 ? (
+                                  <ArrowUpRight className="w-4 h-4" />
+                                ) : (
+                                  <ArrowDownRight className="w-4 h-4" />
+                                )}
+                                <span className="font-medium">
+                                  {account.profit_loss > 0 ? "+" : ""}${account.profit_loss.toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <Button
+                            variant="gold"
+                            size="lg"
+                            onClick={() => navigate(`/trade/${account.id}`)}
+                            className="shrink-0"
+                          >
+                            <Activity className="w-4 h-4 mr-2" />
+                            Trade
+                          </Button>
                         </div>
                       </div>
                     </CardContent>
