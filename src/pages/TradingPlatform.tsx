@@ -9,20 +9,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { TradingViewChart } from "@/components/trading/TradingViewChart";
+import { AssetSelector } from "@/components/trading/AssetSelector";
+import { useLivePrices } from "@/hooks/useLivePrices";
 import {
   TrendingUp,
   TrendingDown,
   ArrowLeft,
   RefreshCw,
   DollarSign,
-  BarChart3,
-  Clock,
   Target,
-  AlertTriangle,
-  ChevronUp,
-  ChevronDown,
   X,
   Activity,
+  Wifi,
+  WifiOff,
 } from "lucide-react";
 
 interface Account {
@@ -59,26 +59,6 @@ interface Position {
   assets?: Asset;
 }
 
-// Simulated price data
-const generatePrice = (basePrice: number) => {
-  const change = (Math.random() - 0.5) * 0.002;
-  return basePrice * (1 + change);
-};
-
-const basePrices: Record<string, number> = {
-  EURUSD: 1.0875,
-  GBPUSD: 1.2650,
-  USDJPY: 149.50,
-  AUDUSD: 0.6580,
-  USDCAD: 1.3520,
-  XAUUSD: 2345.50,
-  BTCUSD: 67500,
-  ETHUSD: 3450,
-  US30: 39250,
-  US100: 17850,
-  US500: 5150,
-};
-
 export default function TradingPlatform() {
   const { accountId } = useParams();
   const navigate = useNavigate();
@@ -88,45 +68,22 @@ export default function TradingPlatform() {
   const [assets, setAssets] = useState<Asset[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
-  const [prices, setPrices] = useState<Record<string, { bid: number; ask: number }>>({}); 
   const [lotSize, setLotSize] = useState("0.01");
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
-  // Initialize prices
-  useEffect(() => {
-    const initialPrices: Record<string, { bid: number; ask: number }> = {};
-    Object.entries(basePrices).forEach(([symbol, price]) => {
-      const spread = symbol.includes("JPY") ? 0.02 : symbol === "XAUUSD" ? 0.5 : symbol.includes("BTC") ? 50 : 0.0003;
-      initialPrices[symbol] = { bid: price, ask: price + spread };
-    });
-    setPrices(initialPrices);
-  }, []);
-
-  // Simulate price updates
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setPrices(prev => {
-        const updated = { ...prev };
-        Object.keys(updated).forEach(symbol => {
-          const basePrice = basePrices[symbol] || updated[symbol].bid;
-          const newBid = generatePrice(updated[symbol].bid);
-          const spread = symbol.includes("JPY") ? 0.02 : symbol === "XAUUSD" ? 0.5 : symbol.includes("BTC") ? 50 : 0.0003;
-          updated[symbol] = { bid: newBid, ask: newBid + spread };
-        });
-        return updated;
-      });
-    }, 1500);
-
-    return () => clearInterval(interval);
-  }, []);
+  // Get symbols for live prices
+  const symbols = assets.map((a) => a.symbol);
+  const { prices, isConnected } = useLivePrices(symbols);
 
   // Fetch account and positions
   useEffect(() => {
     const fetchData = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) {
         navigate("/login");
         return;
@@ -147,7 +104,11 @@ export default function TradingPlatform() {
       }
 
       if (accountData.status !== "active" && accountData.status !== "funded") {
-        toast({ title: "Account not active", description: "This account is not available for trading", variant: "destructive" });
+        toast({
+          title: "Account not active",
+          description: "This account is not available for trading",
+          variant: "destructive",
+        });
         navigate("/dashboard");
         return;
       }
@@ -186,26 +147,39 @@ export default function TradingPlatform() {
   // Calculate unrealized P/L for open positions
   const calculateUnrealizedPL = useCallback(() => {
     return positions
-      .filter(p => p.status === "open")
+      .filter((p) => p.status === "open")
       .reduce((total, position) => {
         const asset = position.assets;
         if (!asset) return total;
-        
+
         const currentPrice = prices[asset.symbol];
         if (!currentPrice) return total;
 
-        const priceNow = position.position_type === "buy" ? currentPrice.bid : currentPrice.ask;
-        const priceDiff = position.position_type === "buy" 
-          ? priceNow - position.entry_price 
-          : position.entry_price - priceNow;
-        
+        const priceNow =
+          position.position_type === "buy"
+            ? currentPrice.bid
+            : currentPrice.ask;
+        const priceDiff =
+          position.position_type === "buy"
+            ? priceNow - position.entry_price
+            : position.entry_price - priceNow;
+
         const pipValue = asset.pip_value || 0.0001;
         const pips = priceDiff / pipValue;
-        const pl = pips * position.lot_size * 10; // Simplified P/L calculation
-        
+        const pl = pips * position.lot_size * 10;
+
         return total + pl;
       }, 0);
   }, [positions, prices]);
+
+  const formatPrice = (symbol: string, price: number) => {
+    if (symbol.includes("JPY")) return price.toFixed(3);
+    if (symbol.includes("BTC") || symbol.includes("ETH")) return price.toFixed(2);
+    if (symbol.includes("XAU") || symbol.includes("XAG")) return price.toFixed(2);
+    if (symbol.includes("US30") || symbol.includes("US100") || symbol.includes("US500")) return price.toFixed(2);
+    if (symbol.includes("OIL")) return price.toFixed(2);
+    return price.toFixed(5);
+  };
 
   const handlePlaceOrder = async (type: "buy" | "sell") => {
     if (!selectedAsset || !account) return;
@@ -241,7 +215,11 @@ export default function TradingPlatform() {
       .single();
 
     if (positionError) {
-      toast({ title: "Failed to place order", description: positionError.message, variant: "destructive" });
+      toast({
+        title: "Failed to place order",
+        description: positionError.message,
+        variant: "destructive",
+      });
       setIsPlacingOrder(false);
       return;
     }
@@ -256,10 +234,10 @@ export default function TradingPlatform() {
       price: entryPrice,
     });
 
-    setPositions(prev => [positionData, ...prev]);
+    setPositions((prev) => [positionData, ...prev]);
     toast({
       title: `${type.toUpperCase()} Order Placed`,
-      description: `${selectedAsset.symbol} @ ${entryPrice.toFixed(selectedAsset.symbol.includes("JPY") ? 3 : 5)}`,
+      description: `${selectedAsset.symbol} @ ${formatPrice(selectedAsset.symbol, entryPrice)}`,
     });
 
     setStopLoss("");
@@ -273,11 +251,13 @@ export default function TradingPlatform() {
     const currentPrice = prices[position.assets.symbol];
     if (!currentPrice) return;
 
-    const exitPrice = position.position_type === "buy" ? currentPrice.bid : currentPrice.ask;
-    const priceDiff = position.position_type === "buy" 
-      ? exitPrice - position.entry_price 
-      : position.entry_price - exitPrice;
-    
+    const exitPrice =
+      position.position_type === "buy" ? currentPrice.bid : currentPrice.ask;
+    const priceDiff =
+      position.position_type === "buy"
+        ? exitPrice - position.entry_price
+        : position.entry_price - exitPrice;
+
     const pipValue = position.assets.pip_value || 0.0001;
     const pips = priceDiff / pipValue;
     const profitLoss = pips * position.lot_size * 10;
@@ -299,7 +279,8 @@ export default function TradingPlatform() {
     }
 
     // Update account balance
-    const newBalance = (account.current_balance || account.account_size) + profitLoss;
+    const newBalance =
+      (account.current_balance || account.account_size) + profitLoss;
     const newPL = (account.profit_loss || 0) + profitLoss;
 
     await supabase
@@ -318,12 +299,22 @@ export default function TradingPlatform() {
       profit_loss: profitLoss,
     });
 
-    setAccount(prev => prev ? { ...prev, current_balance: newBalance, profit_loss: newPL } : null);
-    setPositions(prev => prev.map(p => 
-      p.id === position.id 
-        ? { ...p, status: "closed", exit_price: exitPrice, profit_loss: profitLoss, closed_at: new Date().toISOString() }
-        : p
-    ));
+    setAccount((prev) =>
+      prev ? { ...prev, current_balance: newBalance, profit_loss: newPL } : null
+    );
+    setPositions((prev) =>
+      prev.map((p) =>
+        p.id === position.id
+          ? {
+              ...p,
+              status: "closed",
+              exit_price: exitPrice,
+              profit_loss: profitLoss,
+              closed_at: new Date().toISOString(),
+            }
+          : p
+      )
+    );
 
     toast({
       title: "Position Closed",
@@ -333,9 +324,11 @@ export default function TradingPlatform() {
   };
 
   const unrealizedPL = calculateUnrealizedPL();
-  const equity = account ? (account.current_balance || account.account_size) + unrealizedPL : 0;
-  const openPositions = positions.filter(p => p.status === "open");
-  const closedPositions = positions.filter(p => p.status === "closed");
+  const equity = account
+    ? (account.current_balance || account.account_size) + unrealizedPL
+    : 0;
+  const openPositions = positions.filter((p) => p.status === "open");
+  const closedPositions = positions.filter((p) => p.status === "closed");
 
   if (isLoading) {
     return (
@@ -346,37 +339,59 @@ export default function TradingPlatform() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background flex flex-col overflow-x-hidden">
       {/* Header */}
-      <header className="border-b border-border bg-card/80 backdrop-blur-xl sticky top-0 z-50">
-        <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+      <header className="border-b border-border bg-card/80 backdrop-blur-xl sticky top-0 z-50 shrink-0">
+        <div className="px-2 sm:px-4 py-2 sm:py-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2 sm:gap-4">
               <Link to="/dashboard">
-                <Button variant="ghost" size="sm">
-                  <ArrowLeft className="w-4 h-4 mr-2" />
-                  Dashboard
+                <Button variant="ghost" size="sm" className="px-2 sm:px-3">
+                  <ArrowLeft className="w-4 h-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Dashboard</span>
                 </Button>
               </Link>
-              <div className="h-6 w-px bg-border" />
+              <div className="hidden sm:block h-6 w-px bg-border" />
               <div className="flex items-center gap-2">
-                <Activity className="w-5 h-5 text-primary" />
-                <span className="font-semibold">Trading Platform</span>
+                <Activity className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
+                <span className="font-semibold text-sm sm:text-base">Trading</span>
+                {isConnected ? (
+                  <Wifi className="w-3 h-3 text-green-500" />
+                ) : (
+                  <WifiOff className="w-3 h-3 text-red-500" />
+                )}
               </div>
             </div>
-            <div className="flex items-center gap-6 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">Balance:</span>
-                <span className="font-bold">${(account?.current_balance || account?.account_size || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+            <div className="flex items-center gap-3 sm:gap-6 text-xs sm:text-sm overflow-x-auto">
+              <div className="flex items-center gap-1 sm:gap-2 whitespace-nowrap">
+                <span className="text-muted-foreground">Bal:</span>
+                <span className="font-bold">
+                  $
+                  {(
+                    account?.current_balance ||
+                    account?.account_size ||
+                    0
+                  ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">Equity:</span>
-                <span className="font-bold">${equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+              <div className="flex items-center gap-1 sm:gap-2 whitespace-nowrap">
+                <span className="text-muted-foreground">Eq:</span>
+                <span className="font-bold">
+                  ${equity.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 sm:gap-2 whitespace-nowrap">
                 <span className="text-muted-foreground">P/L:</span>
-                <span className={cn("font-bold", (account?.profit_loss || 0) >= 0 ? "text-green-500" : "text-red-500")}>
-                  {(account?.profit_loss || 0) >= 0 ? "+" : ""}${(account?.profit_loss || 0).toFixed(2)}
+                <span
+                  className={cn(
+                    "font-bold",
+                    (account?.profit_loss || 0) >= 0
+                      ? "text-green-500"
+                      : "text-red-500"
+                  )}
+                >
+                  {(account?.profit_loss || 0) >= 0 ? "+" : ""}$
+                  {(account?.profit_loss || 0).toFixed(2)}
                 </span>
               </div>
             </div>
@@ -384,187 +399,136 @@ export default function TradingPlatform() {
         </div>
       </header>
 
-      <div className="container mx-auto p-4">
-        <div className="grid grid-cols-12 gap-4">
-          {/* Market Watch */}
-          <div className="col-span-12 lg:col-span-2">
-            <Card className="h-full">
-              <CardHeader className="py-3">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4" />
-                  Market Watch
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-0">
-                <div className="max-h-[600px] overflow-y-auto">
-                  {assets.map(asset => {
-                    const price = prices[asset.symbol];
-                    const isSelected = selectedAsset?.id === asset.id;
-                    return (
-                      <button
-                        key={asset.id}
-                        onClick={() => setSelectedAsset(asset)}
-                        className={cn(
-                          "w-full px-3 py-2 text-left hover:bg-muted/50 transition-colors border-b border-border/50",
-                          isSelected && "bg-primary/10 border-l-2 border-l-primary"
-                        )}
-                      >
-                        <div className="flex justify-between items-center">
-                          <span className="font-medium text-sm">{asset.symbol}</span>
-                          <Badge variant="outline" className="text-[10px] px-1">
-                            {asset.asset_type}
-                          </Badge>
-                        </div>
-                        {price && (
-                          <div className="flex justify-between text-xs mt-1">
-                            <span className="text-red-500">{price.bid.toFixed(asset.symbol.includes("JPY") ? 3 : asset.symbol.includes("BTC") ? 1 : 5)}</span>
-                            <span className="text-green-500">{price.ask.toFixed(asset.symbol.includes("JPY") ? 3 : asset.symbol.includes("BTC") ? 1 : 5)}</span>
-                          </div>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* Chart Area */}
-          <div className="col-span-12 lg:col-span-7">
-            <Card className="h-full">
-              <CardHeader className="py-3 border-b">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <CardTitle className="text-lg">{selectedAsset?.symbol || "Select Asset"}</CardTitle>
-                    {selectedAsset && prices[selectedAsset.symbol] && (
+      <div className="flex-1 p-2 sm:p-4 overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-4 h-full">
+          {/* Chart Area - Takes most space */}
+          <div className="lg:col-span-9 order-1">
+            <Card className="h-[300px] sm:h-[400px] lg:h-[calc(100vh-280px)]">
+              <CardHeader className="py-2 px-3 border-b">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                  <div className="flex-1 max-w-xs">
+                    <AssetSelector
+                      assets={assets}
+                      selectedAsset={selectedAsset}
+                      onAssetChange={(asset) => setSelectedAsset(asset as Asset)}
+                      prices={prices}
+                    />
+                  </div>
+                  {selectedAsset && prices[selectedAsset.symbol] && (
+                    <div className="flex items-center gap-2 sm:gap-4">
                       <div className="flex items-center gap-2">
-                        <span className="text-2xl font-bold">
-                          {prices[selectedAsset.symbol].bid.toFixed(selectedAsset.symbol.includes("JPY") ? 3 : selectedAsset.symbol.includes("BTC") ? 1 : 5)}
+                        <span className="text-lg sm:text-2xl font-bold">
+                          {formatPrice(
+                            selectedAsset.symbol,
+                            prices[selectedAsset.symbol].bid
+                          )}
                         </span>
-                        <Badge variant="outline" className="text-green-500">
-                          <ChevronUp className="w-3 h-3" />
-                          0.12%
-                        </Badge>
                       </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    {["1M", "5M", "15M", "1H", "4H", "1D"].map(tf => (
-                      <Button key={tf} variant="ghost" size="sm" className="text-xs px-2">
-                        {tf}
-                      </Button>
-                    ))}
-                  </div>
+                      <div className="flex gap-2 text-xs">
+                        <span className="text-red-500">
+                          B: {formatPrice(selectedAsset.symbol, prices[selectedAsset.symbol].bid)}
+                        </span>
+                        <span className="text-green-500">
+                          A: {formatPrice(selectedAsset.symbol, prices[selectedAsset.symbol].ask)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardHeader>
-              <CardContent className="p-4">
-                {/* Simulated Chart */}
-                <div className="h-[400px] bg-gradient-to-b from-card to-muted/20 rounded-lg flex items-center justify-center relative overflow-hidden">
-                  <div className="absolute inset-0 opacity-20">
-                    {Array.from({ length: 50 }).map((_, i) => (
-                      <div
-                        key={i}
-                        className="absolute bg-primary/30"
-                        style={{
-                          left: `${i * 2}%`,
-                          bottom: 0,
-                          width: "1.5%",
-                          height: `${20 + Math.random() * 60}%`,
-                          borderRadius: "2px 2px 0 0",
-                        }}
-                      />
-                    ))}
+              <CardContent className="p-0 h-[calc(100%-60px)]">
+                {selectedAsset ? (
+                  <TradingViewChart symbol={selectedAsset.symbol} />
+                ) : (
+                  <div className="h-full flex items-center justify-center text-muted-foreground">
+                    Select an asset to view chart
                   </div>
-                  <div className="text-center z-10">
-                    <Activity className="w-12 h-12 text-primary mx-auto mb-2" />
-                    <p className="text-muted-foreground text-sm">Live chart visualization</p>
-                    <p className="text-xs text-muted-foreground mt-1">Prices update in real-time</p>
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
           </div>
 
           {/* Order Panel */}
-          <div className="col-span-12 lg:col-span-3">
-            <Card>
-              <CardHeader className="py-3 border-b">
+          <div className="lg:col-span-3 order-2">
+            <Card className="h-auto lg:h-[calc(100vh-280px)] overflow-y-auto">
+              <CardHeader className="py-2 px-3 border-b">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Target className="w-4 h-4" />
                   New Order
                 </CardTitle>
               </CardHeader>
-              <CardContent className="p-4 space-y-4">
-                <div>
-                  <Label className="text-xs text-muted-foreground">Symbol</Label>
-                  <div className="font-bold text-lg">{selectedAsset?.symbol || "-"}</div>
-                </div>
-
+              <CardContent className="p-3 space-y-3">
                 <div className="grid grid-cols-2 gap-2">
                   <div className="text-center p-2 rounded bg-red-500/10 border border-red-500/20">
                     <div className="text-xs text-muted-foreground">Sell</div>
-                    <div className="font-bold text-red-500">
+                    <div className="font-bold text-red-500 text-sm sm:text-base">
                       {selectedAsset && prices[selectedAsset.symbol]
-                        ? prices[selectedAsset.symbol].bid.toFixed(selectedAsset.symbol.includes("JPY") ? 3 : 5)
+                        ? formatPrice(selectedAsset.symbol, prices[selectedAsset.symbol].bid)
                         : "-"}
                     </div>
                   </div>
                   <div className="text-center p-2 rounded bg-green-500/10 border border-green-500/20">
                     <div className="text-xs text-muted-foreground">Buy</div>
-                    <div className="font-bold text-green-500">
+                    <div className="font-bold text-green-500 text-sm sm:text-base">
                       {selectedAsset && prices[selectedAsset.symbol]
-                        ? prices[selectedAsset.symbol].ask.toFixed(selectedAsset.symbol.includes("JPY") ? 3 : 5)
+                        ? formatPrice(selectedAsset.symbol, prices[selectedAsset.symbol].ask)
                         : "-"}
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <div>
-                    <Label htmlFor="lot-size" className="text-xs">Lot Size</Label>
+                    <Label htmlFor="lot-size" className="text-xs">
+                      Lot Size
+                    </Label>
                     <Input
                       id="lot-size"
                       type="number"
                       step="0.01"
                       min="0.01"
                       value={lotSize}
-                      onChange={e => setLotSize(e.target.value)}
-                      className="mt-1"
+                      onChange={(e) => setLotSize(e.target.value)}
+                      className="mt-1 h-9"
                     />
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <Label htmlFor="stop-loss" className="text-xs">Stop Loss</Label>
+                      <Label htmlFor="stop-loss" className="text-xs">
+                        Stop Loss
+                      </Label>
                       <Input
                         id="stop-loss"
                         type="number"
                         step="0.0001"
                         placeholder="Optional"
                         value={stopLoss}
-                        onChange={e => setStopLoss(e.target.value)}
-                        className="mt-1"
+                        onChange={(e) => setStopLoss(e.target.value)}
+                        className="mt-1 h-9"
                       />
                     </div>
                     <div>
-                      <Label htmlFor="take-profit" className="text-xs">Take Profit</Label>
+                      <Label htmlFor="take-profit" className="text-xs">
+                        Take Profit
+                      </Label>
                       <Input
                         id="take-profit"
                         type="number"
                         step="0.0001"
                         placeholder="Optional"
                         value={takeProfit}
-                        onChange={e => setTakeProfit(e.target.value)}
-                        className="mt-1"
+                        onChange={(e) => setTakeProfit(e.target.value)}
+                        className="mt-1 h-9"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-2">
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <Button
                     variant="destructive"
-                    className="w-full"
+                    className="w-full h-10"
                     onClick={() => handlePlaceOrder("sell")}
                     disabled={!selectedAsset || isPlacingOrder}
                   >
@@ -572,7 +536,7 @@ export default function TradingPlatform() {
                     SELL
                   </Button>
                   <Button
-                    className="w-full bg-green-600 hover:bg-green-700"
+                    className="w-full h-10 bg-green-600 hover:bg-green-700"
                     onClick={() => handlePlaceOrder("buy")}
                     disabled={!selectedAsset || isPlacingOrder}
                   >
@@ -580,118 +544,160 @@ export default function TradingPlatform() {
                     BUY
                   </Button>
                 </div>
-              </CardContent>
-            </Card>
 
-            {/* Account Info */}
-            <Card className="mt-4">
-              <CardHeader className="py-3 border-b">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <DollarSign className="w-4 h-4" />
-                  Account Info
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-4 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Account Size</span>
-                  <span className="font-medium">${account?.account_size?.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Balance</span>
-                  <span className="font-medium">${(account?.current_balance || account?.account_size || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Unrealized P/L</span>
-                  <span className={cn("font-medium", unrealizedPL >= 0 ? "text-green-500" : "text-red-500")}>
-                    {unrealizedPL >= 0 ? "+" : ""}${unrealizedPL.toFixed(2)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Equity</span>
-                  <span className="font-bold">${equity.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Open Positions</span>
-                  <span className="font-medium">{openPositions.length}</span>
+                {/* Account Summary */}
+                <div className="pt-2 border-t border-border space-y-1.5 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Account Size</span>
+                    <span className="font-medium">
+                      ${account?.account_size?.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Balance</span>
+                    <span className="font-medium">
+                      $
+                      {(
+                        account?.current_balance ||
+                        account?.account_size ||
+                        0
+                      ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Unrealized P/L</span>
+                    <span
+                      className={cn(
+                        "font-medium",
+                        unrealizedPL >= 0 ? "text-green-500" : "text-red-500"
+                      )}
+                    >
+                      {unrealizedPL >= 0 ? "+" : ""}${unrealizedPL.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Open Positions</span>
+                    <span className="font-medium">{openPositions.length}</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
           </div>
 
           {/* Positions & History */}
-          <div className="col-span-12">
+          <div className="lg:col-span-12 order-3">
             <Card>
               <Tabs defaultValue="positions">
-                <CardHeader className="py-2 border-b">
-                  <TabsList className="grid w-[300px] grid-cols-2">
+                <CardHeader className="py-2 px-3 border-b">
+                  <TabsList className="grid w-full max-w-[300px] grid-cols-2">
                     <TabsTrigger value="positions" className="text-xs">
-                      Open Positions ({openPositions.length})
+                      Positions ({openPositions.length})
                     </TabsTrigger>
                     <TabsTrigger value="history" className="text-xs">
-                      Trade History
+                      History
                     </TabsTrigger>
                   </TabsList>
                 </CardHeader>
                 <CardContent className="p-0">
                   <TabsContent value="positions" className="m-0">
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="w-full text-xs sm:text-sm min-w-[600px]">
                         <thead className="bg-muted/50">
                           <tr>
-                            <th className="px-4 py-2 text-left font-medium">Symbol</th>
-                            <th className="px-4 py-2 text-left font-medium">Type</th>
-                            <th className="px-4 py-2 text-right font-medium">Lots</th>
-                            <th className="px-4 py-2 text-right font-medium">Entry</th>
-                            <th className="px-4 py-2 text-right font-medium">Current</th>
-                            <th className="px-4 py-2 text-right font-medium">SL</th>
-                            <th className="px-4 py-2 text-right font-medium">TP</th>
-                            <th className="px-4 py-2 text-right font-medium">P/L</th>
-                            <th className="px-4 py-2 text-right font-medium">Action</th>
+                            <th className="px-2 sm:px-4 py-2 text-left font-medium">
+                              Symbol
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-left font-medium">
+                              Type
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-right font-medium">
+                              Lots
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-right font-medium">
+                              Entry
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-right font-medium">
+                              Current
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-right font-medium">
+                              P/L
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-right font-medium">
+                              Action
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           {openPositions.length === 0 ? (
                             <tr>
-                              <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
+                              <td
+                                colSpan={7}
+                                className="px-4 py-6 text-center text-muted-foreground"
+                              >
                                 No open positions
                               </td>
                             </tr>
                           ) : (
-                            openPositions.map(position => {
+                            openPositions.map((position) => {
                               const asset = position.assets;
-                              const currentPrice = asset ? prices[asset.symbol] : null;
-                              const priceNow = currentPrice 
-                                ? (position.position_type === "buy" ? currentPrice.bid : currentPrice.ask)
+                              const currentPrice = asset
+                                ? prices[asset.symbol]
+                                : null;
+                              const priceNow = currentPrice
+                                ? position.position_type === "buy"
+                                  ? currentPrice.bid
+                                  : currentPrice.ask
                                 : 0;
-                              const priceDiff = position.position_type === "buy" 
-                                ? priceNow - position.entry_price 
-                                : position.entry_price - priceNow;
+                              const priceDiff =
+                                position.position_type === "buy"
+                                  ? priceNow - position.entry_price
+                                  : position.entry_price - priceNow;
                               const pipValue = asset?.pip_value || 0.0001;
                               const pips = priceDiff / pipValue;
                               const pl = pips * position.lot_size * 10;
-                              const decimals = asset?.symbol.includes("JPY") ? 3 : asset?.symbol.includes("BTC") ? 1 : 5;
 
                               return (
-                                <tr key={position.id} className="border-b border-border/50 hover:bg-muted/30">
-                                  <td className="px-4 py-2 font-medium">{asset?.symbol}</td>
-                                  <td className="px-4 py-2">
-                                    <Badge variant={position.position_type === "buy" ? "default" : "destructive"} className="text-xs">
+                                <tr
+                                  key={position.id}
+                                  className="border-b border-border/50 hover:bg-muted/30"
+                                >
+                                  <td className="px-2 sm:px-4 py-2 font-medium">
+                                    {asset?.symbol}
+                                  </td>
+                                  <td className="px-2 sm:px-4 py-2">
+                                    <Badge
+                                      variant={
+                                        position.position_type === "buy"
+                                          ? "default"
+                                          : "destructive"
+                                      }
+                                      className="text-[10px] px-1.5"
+                                    >
                                       {position.position_type.toUpperCase()}
                                     </Badge>
                                   </td>
-                                  <td className="px-4 py-2 text-right">{position.lot_size}</td>
-                                  <td className="px-4 py-2 text-right">{position.entry_price.toFixed(decimals)}</td>
-                                  <td className="px-4 py-2 text-right">{priceNow.toFixed(decimals)}</td>
-                                  <td className="px-4 py-2 text-right text-muted-foreground">
-                                    {position.stop_loss?.toFixed(decimals) || "-"}
+                                  <td className="px-2 sm:px-4 py-2 text-right">
+                                    {position.lot_size}
                                   </td>
-                                  <td className="px-4 py-2 text-right text-muted-foreground">
-                                    {position.take_profit?.toFixed(decimals) || "-"}
+                                  <td className="px-2 sm:px-4 py-2 text-right">
+                                    {asset
+                                      ? formatPrice(asset.symbol, position.entry_price)
+                                      : position.entry_price}
                                   </td>
-                                  <td className={cn("px-4 py-2 text-right font-medium", pl >= 0 ? "text-green-500" : "text-red-500")}>
+                                  <td className="px-2 sm:px-4 py-2 text-right">
+                                    {asset
+                                      ? formatPrice(asset.symbol, priceNow)
+                                      : priceNow}
+                                  </td>
+                                  <td
+                                    className={cn(
+                                      "px-2 sm:px-4 py-2 text-right font-medium",
+                                      pl >= 0 ? "text-green-500" : "text-red-500"
+                                    )}
+                                  >
                                     {pl >= 0 ? "+" : ""}${pl.toFixed(2)}
                                   </td>
-                                  <td className="px-4 py-2 text-right">
+                                  <td className="px-2 sm:px-4 py-2 text-right">
                                     <Button
                                       variant="ghost"
                                       size="sm"
@@ -712,45 +718,93 @@ export default function TradingPlatform() {
                   </TabsContent>
                   <TabsContent value="history" className="m-0">
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
+                      <table className="w-full text-xs sm:text-sm min-w-[500px]">
                         <thead className="bg-muted/50">
                           <tr>
-                            <th className="px-4 py-2 text-left font-medium">Symbol</th>
-                            <th className="px-4 py-2 text-left font-medium">Type</th>
-                            <th className="px-4 py-2 text-right font-medium">Lots</th>
-                            <th className="px-4 py-2 text-right font-medium">Entry</th>
-                            <th className="px-4 py-2 text-right font-medium">Exit</th>
-                            <th className="px-4 py-2 text-right font-medium">P/L</th>
-                            <th className="px-4 py-2 text-left font-medium">Closed</th>
+                            <th className="px-2 sm:px-4 py-2 text-left font-medium">
+                              Symbol
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-left font-medium">
+                              Type
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-right font-medium">
+                              Lots
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-right font-medium">
+                              Entry
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-right font-medium">
+                              Exit
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-right font-medium">
+                              P/L
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-left font-medium">
+                              Closed
+                            </th>
                           </tr>
                         </thead>
                         <tbody>
                           {closedPositions.length === 0 ? (
                             <tr>
-                              <td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">
+                              <td
+                                colSpan={7}
+                                className="px-4 py-6 text-center text-muted-foreground"
+                              >
                                 No trade history
                               </td>
                             </tr>
                           ) : (
-                            closedPositions.map(position => {
+                            closedPositions.map((position) => {
                               const asset = position.assets;
-                              const decimals = asset?.symbol.includes("JPY") ? 3 : asset?.symbol.includes("BTC") ? 1 : 5;
                               return (
-                                <tr key={position.id} className="border-b border-border/50 hover:bg-muted/30">
-                                  <td className="px-4 py-2 font-medium">{asset?.symbol}</td>
-                                  <td className="px-4 py-2">
-                                    <Badge variant={position.position_type === "buy" ? "default" : "destructive"} className="text-xs">
+                                <tr
+                                  key={position.id}
+                                  className="border-b border-border/50 hover:bg-muted/30"
+                                >
+                                  <td className="px-2 sm:px-4 py-2 font-medium">
+                                    {asset?.symbol}
+                                  </td>
+                                  <td className="px-2 sm:px-4 py-2">
+                                    <Badge
+                                      variant={
+                                        position.position_type === "buy"
+                                          ? "default"
+                                          : "destructive"
+                                      }
+                                      className="text-[10px] px-1.5"
+                                    >
                                       {position.position_type.toUpperCase()}
                                     </Badge>
                                   </td>
-                                  <td className="px-4 py-2 text-right">{position.lot_size}</td>
-                                  <td className="px-4 py-2 text-right">{position.entry_price.toFixed(decimals)}</td>
-                                  <td className="px-4 py-2 text-right">{position.exit_price?.toFixed(decimals) || "-"}</td>
-                                  <td className={cn("px-4 py-2 text-right font-medium", position.profit_loss >= 0 ? "text-green-500" : "text-red-500")}>
-                                    {position.profit_loss >= 0 ? "+" : ""}${position.profit_loss.toFixed(2)}
+                                  <td className="px-2 sm:px-4 py-2 text-right">
+                                    {position.lot_size}
                                   </td>
-                                  <td className="px-4 py-2 text-muted-foreground">
-                                    {position.closed_at ? new Date(position.closed_at).toLocaleString() : "-"}
+                                  <td className="px-2 sm:px-4 py-2 text-right">
+                                    {asset
+                                      ? formatPrice(asset.symbol, position.entry_price)
+                                      : position.entry_price}
+                                  </td>
+                                  <td className="px-2 sm:px-4 py-2 text-right">
+                                    {position.exit_price && asset
+                                      ? formatPrice(asset.symbol, position.exit_price)
+                                      : "-"}
+                                  </td>
+                                  <td
+                                    className={cn(
+                                      "px-2 sm:px-4 py-2 text-right font-medium",
+                                      position.profit_loss >= 0
+                                        ? "text-green-500"
+                                        : "text-red-500"
+                                    )}
+                                  >
+                                    {position.profit_loss >= 0 ? "+" : ""}$
+                                    {position.profit_loss.toFixed(2)}
+                                  </td>
+                                  <td className="px-2 sm:px-4 py-2 text-muted-foreground">
+                                    {position.closed_at
+                                      ? new Date(position.closed_at).toLocaleDateString()
+                                      : "-"}
                                   </td>
                                 </tr>
                               );
