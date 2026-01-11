@@ -438,7 +438,17 @@ export default function TradingPlatform() {
               </CardHeader>
               <CardContent className="p-0 h-[calc(100%-60px)]">
                 {selectedAsset ? (
-                  <TradingViewChart symbol={selectedAsset.symbol} />
+                  <TradingViewChart 
+                    symbol={selectedAsset.symbol} 
+                    positions={openPositions.filter(p => p.assets?.symbol === selectedAsset.symbol).map(p => ({
+                      id: p.id,
+                      position_type: p.position_type,
+                      entry_price: p.entry_price,
+                      stop_loss: p.stop_loss,
+                      take_profit: p.take_profit,
+                      lot_size: p.lot_size,
+                    }))}
+                  />
                 ) : (
                   <div className="h-full flex items-center justify-center text-muted-foreground">
                     Select an asset to view chart
