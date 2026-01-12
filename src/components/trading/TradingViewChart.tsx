@@ -16,9 +16,10 @@ interface TradingViewChartProps {
   symbol: string;
   positions?: Position[];
   onFullscreenChange?: (isFullscreen: boolean) => void;
+  onPriceUpdate?: (price: number) => void;
 }
 
-function TradingViewChartComponent({ symbol, positions = [], onFullscreenChange }: TradingViewChartProps) {
+function TradingViewChartComponent({ symbol, positions = [], onFullscreenChange, onPriceUpdate }: TradingViewChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);

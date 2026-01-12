@@ -17,11 +17,17 @@ interface Asset {
   pip_value?: number;
 }
 
+interface PriceData {
+  bid: number;
+  ask: number;
+  isMarketOpen?: boolean;
+}
+
 interface AssetSelectorProps {
   assets: Asset[];
   selectedAsset: Asset | null;
   onAssetChange: (asset: Asset) => void;
-  prices: Record<string, { bid: number; ask: number }>;
+  prices: Record<string, PriceData>;
 }
 
 export function AssetSelector({
@@ -66,9 +72,16 @@ export function AssetSelector({
             <div className="flex items-center justify-between w-full gap-2">
               <span className="font-semibold">{selectedAsset.symbol}</span>
               {prices[selectedAsset.symbol] && (
-                <span className="text-xs text-muted-foreground">
-                  {formatPrice(selectedAsset.symbol, prices[selectedAsset.symbol].bid)}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {formatPrice(selectedAsset.symbol, prices[selectedAsset.symbol].bid)}
+                  </span>
+                  {prices[selectedAsset.symbol].isMarketOpen === false && (
+                    <Badge variant="outline" className="text-[9px] px-1 py-0 text-yellow-500 border-yellow-500/50">
+                      CLOSED
+                    </Badge>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -94,6 +107,11 @@ export function AssetSelector({
                       <span className="text-xs text-muted-foreground hidden sm:inline">
                         {asset.name}
                       </span>
+                      {price && price.isMarketOpen === false && (
+                        <Badge variant="outline" className="text-[9px] px-1 py-0 text-yellow-500 border-yellow-500/50">
+                          CLOSED
+                        </Badge>
+                      )}
                     </div>
                     {price && (
                       <div className="flex items-center gap-2 text-xs">
