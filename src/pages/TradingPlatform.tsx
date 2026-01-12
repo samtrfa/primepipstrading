@@ -11,7 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { AssetSelector } from "@/components/trading/AssetSelector";
-import { useLivePrices } from "@/hooks/useLivePrices";
+import { useTradingViewPrices } from "@/hooks/useTradingViewPrices";
 import {
   TrendingUp,
   TrendingDown,
@@ -74,9 +74,9 @@ export default function TradingPlatform() {
   const [isLoading, setIsLoading] = useState(true);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
 
-  // Get symbols for live prices
+  // Get symbols for live prices synced with TradingView
   const symbols = assets.map((a) => a.symbol);
-  const { prices, isConnected } = useLivePrices(symbols);
+  const { prices, isConnected, getMarketStatus } = useTradingViewPrices(symbols);
 
   // Fetch account and positions
   useEffect(() => {
@@ -423,6 +423,11 @@ export default function TradingPlatform() {
                             prices[selectedAsset.symbol].bid
                           )}
                         </span>
+                        {prices[selectedAsset.symbol].isMarketOpen === false && (
+                          <Badge variant="outline" className="text-yellow-500 border-yellow-500/50 text-xs">
+                            Market Closed
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex gap-2 text-xs">
                         <span className="text-red-500">
@@ -468,6 +473,13 @@ export default function TradingPlatform() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-3 space-y-3">
+                {/* Market Status Warning */}
+                {selectedAsset && prices[selectedAsset.symbol]?.isMarketOpen === false && (
+                  <div className="p-2 rounded bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-xs text-center">
+                    Market Closed - Price Paused
+                  </div>
+                )}
+                
                 <div className="grid grid-cols-2 gap-2">
                   <div className="text-center p-2 rounded bg-red-500/10 border border-red-500/20">
                     <div className="text-xs text-muted-foreground">Sell</div>
