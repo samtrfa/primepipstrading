@@ -2,3 +2,6 @@ project_id = "aqgflcdsaprvwlkeqdrq"
 
 [functions.verify-bsc-payment]
 verify_jwt = false
+
+[functions.forex-prices]
+verify_jwt = false
