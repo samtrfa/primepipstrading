@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface PriceData {
   bid: number;
@@ -13,22 +14,18 @@ interface MarketStatus {
   reason?: string;
 }
 
-// TradingView uses these exchanges - we'll connect to the same sources
-// BITSTAMP: BTC, ETH (WebSocket available)
-// For other assets, we'll use realistic simulation synced with typical market patterns
-
 // Spread configuration per asset type (realistic broker spreads)
 const getSpread = (symbol: string, price: number): number => {
-  if (symbol === "BTCUSD") return price * 0.0001; // ~$9 spread on BTC
-  if (symbol === "ETHUSD") return price * 0.0002; // ~$0.70 spread on ETH
-  if (symbol.includes("XAU")) return 0.30; // 30 cents on gold
-  if (symbol.includes("XAG")) return 0.02; // 2 cents on silver
-  if (symbol.includes("JPY")) return 0.01; // 1 pip on JPY pairs
-  if (symbol.includes("US30")) return 2.0; // 2 points on Dow
-  if (symbol.includes("US100")) return 1.5; // 1.5 points on Nasdaq
-  if (symbol.includes("US500")) return 0.5; // 0.5 points on S&P
-  if (symbol.includes("OIL")) return 0.03; // 3 cents on oil
-  return 0.00015; // 1.5 pips on forex
+  if (symbol === "BTCUSD") return price * 0.0001;
+  if (symbol === "ETHUSD") return price * 0.0002;
+  if (symbol.includes("XAU")) return 0.30;
+  if (symbol.includes("XAG")) return 0.02;
+  if (symbol.includes("JPY")) return 0.012;
+  if (symbol.includes("US30")) return 2.0;
+  if (symbol.includes("US100")) return 1.5;
+  if (symbol.includes("US500")) return 0.5;
+  if (symbol.includes("OIL")) return 0.03;
+  return price * 0.00015;
 };
 
 // Check if market should be open
@@ -63,6 +60,7 @@ export function useTradingViewPrices(symbols: string[]) {
   
   const wsRef = useRef<WebSocket | null>(null);
   const bitstampPricesRef = useRef<Record<string, { bid: number; ask: number; last: number }>>({});
+  const forexPricesRef = useRef<Record<string, { bid: number; ask: number; price: number }>>({});
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchRef = useRef<Record<string, PriceData>>({});
 
@@ -81,7 +79,7 @@ export function useTradingViewPrices(symbols: string[]) {
     return () => clearInterval(interval);
   }, [symbols.join(",")]);
 
-  // Connect to Bitstamp WebSocket for crypto prices (same source as TradingView)
+  // Connect to Bitstamp WebSocket for crypto prices
   useEffect(() => {
     const hasCrypto = symbols.some(s => s === "BTCUSD" || s === "ETHUSD");
     if (!hasCrypto) return;
@@ -95,7 +93,6 @@ export function useTradingViewPrices(symbols: string[]) {
           console.log("Bitstamp WebSocket connected");
           setIsConnected(true);
 
-          // Subscribe to BTC and ETH live trades
           if (symbols.includes("BTCUSD")) {
             ws.send(JSON.stringify({
               event: "bts:subscribe",
@@ -122,7 +119,6 @@ export function useTradingViewPrices(symbols: string[]) {
           try {
             const data = JSON.parse(event.data);
             
-            // Handle trade events
             if (data.event === "trade") {
               const symbol = data.channel.includes("btc") ? "BTCUSD" : "ETHUSD";
               const price = parseFloat(data.data.price);
@@ -133,7 +129,6 @@ export function useTradingViewPrices(symbols: string[]) {
               bitstampPricesRef.current[symbol].last = price;
             }
             
-            // Handle order book for bid/ask
             if (data.event === "data" && data.channel.includes("order_book")) {
               const symbol = data.channel.includes("btc") ? "BTCUSD" : "ETHUSD";
               const bids = data.data.bids;
@@ -160,7 +155,6 @@ export function useTradingViewPrices(symbols: string[]) {
 
         ws.onclose = () => {
           setIsConnected(false);
-          // Reconnect after 3 seconds
           reconnectTimeoutRef.current = setTimeout(connectWebSocket, 3000);
         };
       } catch (e) {
@@ -206,7 +200,40 @@ export function useTradingViewPrices(symbols: string[]) {
     fetchBitstampPrices();
   }, [symbols.join(",")]);
 
-  // Update prices state
+  // Fetch forex prices from Twelve Data via edge function
+  useEffect(() => {
+    const forexSymbols = symbols.filter(s => s !== "BTCUSD" && s !== "ETHUSD");
+    if (forexSymbols.length === 0) return;
+
+    const fetchForexPrices = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('forex-prices', {
+          body: { symbols: forexSymbols }
+        });
+
+        if (error) {
+          console.error("Forex prices fetch error:", error);
+          return;
+        }
+
+        if (data?.prices) {
+          forexPricesRef.current = { ...forexPricesRef.current, ...data.prices };
+          setIsConnected(true);
+        }
+      } catch (e) {
+        console.error("Failed to fetch forex prices:", e);
+      }
+    };
+
+    // Fetch immediately
+    fetchForexPrices();
+
+    // Fetch every 5 seconds (Twelve Data free tier: 800 calls/day = ~1 call per 100 seconds, but batched)
+    const interval = setInterval(fetchForexPrices, 5000);
+    return () => clearInterval(interval);
+  }, [symbols.join(",")]);
+
+  // Update prices state from all sources
   useEffect(() => {
     if (symbols.length === 0) return;
 
@@ -233,31 +260,38 @@ export function useTradingViewPrices(symbols: string[]) {
           }
         }
 
-        // If market is closed, hold the last price
-        if (!status.isOpen && lastFetchRef.current[symbol]) {
+        // For forex/indices, use Twelve Data prices
+        const forexData = forexPricesRef.current[symbol];
+        if (forexData) {
+          // If market is closed, mark as closed but still show price
+          newPrices[symbol] = {
+            bid: forexData.bid,
+            ask: forexData.ask,
+            lastPrice: forexData.price,
+            timestamp,
+            isMarketOpen: status.isOpen,
+          };
+          lastFetchRef.current[symbol] = newPrices[symbol];
+          continue;
+        }
+
+        // Fallback to last known price
+        if (lastFetchRef.current[symbol]) {
           newPrices[symbol] = {
             ...lastFetchRef.current[symbol],
             timestamp,
-            isMarketOpen: false,
+            isMarketOpen: status.isOpen,
           };
           continue;
         }
 
-        // For other assets, use base prices (these match TradingView's typical values)
-        // In production, you'd connect to a proper forex/CFD data provider
+        // Final fallback: base prices
         const basePrice = getBasePrice(symbol);
-        const lastPrice = lastFetchRef.current[symbol]?.lastPrice || basePrice;
-        
-        // Add minimal price movement when market is open
-        const volatility = getVolatility(symbol);
-        const change = status.isOpen ? (Math.random() - 0.5) * 2 * volatility : 0;
-        const newPrice = lastPrice * (1 + change);
-        const spread = getSpread(symbol, newPrice);
-
+        const spread = getSpread(symbol, basePrice);
         newPrices[symbol] = {
-          bid: newPrice,
-          ask: newPrice + spread,
-          lastPrice: newPrice,
+          bid: basePrice,
+          ask: basePrice + spread,
+          lastPrice: basePrice,
           timestamp,
           isMarketOpen: status.isOpen,
         };
@@ -273,7 +307,7 @@ export function useTradingViewPrices(symbols: string[]) {
     // Initial update
     updatePrices();
 
-    // Update every 500ms to match TradingView's refresh rate
+    // Update display every 500ms
     const interval = setInterval(updatePrices, 500);
     return () => clearInterval(interval);
   }, [symbols.join(",")]);
@@ -295,7 +329,7 @@ export function useTradingViewPrices(symbols: string[]) {
   return { prices, isConnected, getPrice, marketStatus, getMarketStatus };
 }
 
-// Base prices matching TradingView's typical values
+// Base prices (fallback only)
 function getBasePrice(symbol: string): number {
   const basePrices: Record<string, number> = {
     EURUSD: 1.0420,
@@ -317,16 +351,4 @@ function getBasePrice(symbol: string): number {
     USOIL: 77.25,
   };
   return basePrices[symbol] || 1;
-}
-
-// Realistic volatility per tick
-function getVolatility(symbol: string): number {
-  if (symbol === "BTCUSD") return 0.00015;
-  if (symbol === "ETHUSD") return 0.0002;
-  if (symbol.includes("XAU")) return 0.00008;
-  if (symbol.includes("XAG")) return 0.00012;
-  if (symbol.includes("US30") || symbol.includes("US100") || symbol.includes("US500")) return 0.00005;
-  if (symbol.includes("OIL")) return 0.0001;
-  if (symbol.includes("JPY")) return 0.00004;
-  return 0.00002; // Forex pairs - very small movements per tick
 }
