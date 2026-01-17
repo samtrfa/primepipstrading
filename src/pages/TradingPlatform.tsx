@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { AssetSelector } from "@/components/trading/AssetSelector";
 import { DrawdownTracker } from "@/components/trading/DrawdownTracker";
+import { ProfitTargetTracker } from "@/components/trading/ProfitTargetTracker";
 import { useTradingViewPrices } from "@/hooks/useTradingViewPrices";
 import {
   TrendingUp,
@@ -659,9 +660,16 @@ export default function TradingPlatform() {
               </CardContent>
             </Card>
 
-            {/* Drawdown Tracker */}
+            {/* Profit Target & Drawdown Trackers */}
             {account && (
-              <div className="mt-3">
+              <div className="mt-3 space-y-3">
+                <ProfitTargetTracker
+                  accountSize={account.account_size}
+                  currentBalance={account.current_balance || account.account_size}
+                  unrealizedPL={unrealizedPL}
+                  challengeType={account.challenge_type}
+                  currentPhase={account.current_phase}
+                />
                 <DrawdownTracker
                   accountSize={account.account_size}
                   currentBalance={account.current_balance || account.account_size}
