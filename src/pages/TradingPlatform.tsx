@@ -11,6 +11,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { AssetSelector } from "@/components/trading/AssetSelector";
+import { DrawdownTracker } from "@/components/trading/DrawdownTracker";
 import { useTradingViewPrices } from "@/hooks/useTradingViewPrices";
 import {
   TrendingUp,
@@ -33,6 +34,13 @@ interface Account {
   challenge_type: string;
   status: string;
   current_phase: number | null;
+  high_water_mark: number | null;
+  daily_start_balance: number | null;
+  daily_start_date: string | null;
+  max_drawdown_percent: number | null;
+  daily_drawdown_percent: number | null;
+  drawdown_violated: boolean | null;
+  violation_type: string | null;
 }
 
 interface Asset {
@@ -278,14 +286,51 @@ export default function TradingPlatform() {
       return;
     }
 
-    // Update account balance
+    // Update account balance and calculate drawdowns
     const newBalance =
       (account.current_balance || account.account_size) + profitLoss;
     const newPL = (account.profit_loss || 0) + profitLoss;
+    
+    // Calculate drawdowns
+    const effectiveHWM = account.high_water_mark || account.account_size;
+    const effectiveDailyStart = account.daily_start_balance || account.account_size;
+    
+    // Update high water mark if new balance is higher
+    const newHWM = Math.max(effectiveHWM, newBalance);
+    
+    // Calculate drawdown percentages
+    const maxDrawdownPercent = newHWM > 0 ? ((newHWM - newBalance) / newHWM) * 100 : 0;
+    const dailyDrawdownPercent = effectiveDailyStart > 0 
+      ? ((effectiveDailyStart - newBalance) / effectiveDailyStart) * 100 
+      : 0;
+
+    // Check for drawdown violations
+    const DRAWDOWN_LIMITS: Record<string, { daily: number; max: number }> = {
+      three_step: { daily: 5, max: 10 },
+      two_step: { daily: 5, max: 10 },
+      one_step: { daily: 4, max: 6 },
+      instant: { daily: 5, max: 10 },
+    };
+    const limits = DRAWDOWN_LIMITS[account.challenge_type] || DRAWDOWN_LIMITS.three_step;
+    
+    let violationType: string | null = null;
+    if (maxDrawdownPercent >= limits.max) {
+      violationType = 'max_drawdown';
+    } else if (dailyDrawdownPercent >= limits.daily) {
+      violationType = 'daily_drawdown';
+    }
 
     await supabase
       .from("accounts")
-      .update({ current_balance: newBalance, profit_loss: newPL })
+      .update({ 
+        current_balance: newBalance, 
+        profit_loss: newPL,
+        high_water_mark: newHWM,
+        max_drawdown_percent: maxDrawdownPercent,
+        daily_drawdown_percent: dailyDrawdownPercent,
+        drawdown_violated: violationType !== null,
+        violation_type: violationType,
+      })
       .eq("id", account.id);
 
     // Log trade
@@ -300,7 +345,16 @@ export default function TradingPlatform() {
     });
 
     setAccount((prev) =>
-      prev ? { ...prev, current_balance: newBalance, profit_loss: newPL } : null
+      prev ? { 
+        ...prev, 
+        current_balance: newBalance, 
+        profit_loss: newPL,
+        high_water_mark: newHWM,
+        max_drawdown_percent: maxDrawdownPercent,
+        daily_drawdown_percent: dailyDrawdownPercent,
+        drawdown_violated: violationType !== null,
+        violation_type: violationType,
+      } : null
     );
     setPositions((prev) =>
       prev.map((p) =>
@@ -604,6 +658,20 @@ export default function TradingPlatform() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Drawdown Tracker */}
+            {account && (
+              <div className="mt-3">
+                <DrawdownTracker
+                  accountSize={account.account_size}
+                  currentBalance={account.current_balance || account.account_size}
+                  highWaterMark={account.high_water_mark}
+                  dailyStartBalance={account.daily_start_balance}
+                  unrealizedPL={unrealizedPL}
+                  challengeType={account.challenge_type}
+                />
+              </div>
+            )}
           </div>
 
           {/* Positions & History */}
