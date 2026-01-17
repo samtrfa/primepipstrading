@@ -21,7 +21,13 @@ export type Database = {
           created_at: string
           current_balance: number | null
           current_phase: number | null
+          daily_drawdown_percent: number | null
+          daily_start_balance: number | null
+          daily_start_date: string | null
+          drawdown_violated: boolean | null
+          high_water_mark: number | null
           id: string
+          max_drawdown_percent: number | null
           payment_address: string | null
           payment_tx_hash: string | null
           price: number
@@ -29,6 +35,7 @@ export type Database = {
           status: Database["public"]["Enums"]["account_status"]
           updated_at: string
           user_id: string
+          violation_type: string | null
         }
         Insert: {
           account_size: number
@@ -36,7 +43,13 @@ export type Database = {
           created_at?: string
           current_balance?: number | null
           current_phase?: number | null
+          daily_drawdown_percent?: number | null
+          daily_start_balance?: number | null
+          daily_start_date?: string | null
+          drawdown_violated?: boolean | null
+          high_water_mark?: number | null
           id?: string
+          max_drawdown_percent?: number | null
           payment_address?: string | null
           payment_tx_hash?: string | null
           price: number
@@ -44,6 +57,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["account_status"]
           updated_at?: string
           user_id: string
+          violation_type?: string | null
         }
         Update: {
           account_size?: number
@@ -51,7 +65,13 @@ export type Database = {
           created_at?: string
           current_balance?: number | null
           current_phase?: number | null
+          daily_drawdown_percent?: number | null
+          daily_start_balance?: number | null
+          daily_start_date?: string | null
+          drawdown_violated?: boolean | null
+          high_water_mark?: number | null
           id?: string
+          max_drawdown_percent?: number | null
           payment_address?: string | null
           payment_tx_hash?: string | null
           price?: number
@@ -59,6 +79,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["account_status"]
           updated_at?: string
           user_id?: string
+          violation_type?: string | null
         }
         Relationships: []
       }
