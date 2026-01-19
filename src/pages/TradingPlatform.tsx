@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { calculatePositionPL, formatPips } from "@/lib/tradingCalculations";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { AssetSelector } from "@/components/trading/AssetSelector";
 import { DrawdownTracker } from "@/components/trading/DrawdownTracker";
@@ -51,6 +52,8 @@ interface Asset {
   name: string;
   asset_type: string;
   pip_value: number;
+  quote_currency?: string | null;
+  lot_size?: number;
 }
 
 interface Position {
@@ -155,7 +158,7 @@ export default function TradingPlatform() {
     fetchData();
   }, [accountId, navigate, toast]);
 
-  // Calculate unrealized P/L for open positions
+  // Calculate unrealized P/L for open positions using proper pip calculations
   const calculateUnrealizedPL = useCallback(() => {
     return positions
       .filter((p) => p.status === "open")
@@ -170,16 +173,16 @@ export default function TradingPlatform() {
           position.position_type === "buy"
             ? currentPrice.bid
             : currentPrice.ask;
-        const priceDiff =
-          position.position_type === "buy"
-            ? priceNow - position.entry_price
-            : position.entry_price - priceNow;
 
-        const pipValue = asset.pip_value || 0.0001;
-        const pips = priceDiff / pipValue;
-        const pl = pips * position.lot_size * 10;
+        const { profitLoss } = calculatePositionPL(
+          asset,
+          position.position_type as 'buy' | 'sell',
+          position.entry_price,
+          priceNow,
+          position.lot_size
+        );
 
-        return total + pl;
+        return total + profitLoss;
       }, 0);
   }, [positions, prices]);
 
@@ -264,14 +267,17 @@ export default function TradingPlatform() {
 
     const exitPrice =
       position.position_type === "buy" ? currentPrice.bid : currentPrice.ask;
-    const priceDiff =
-      position.position_type === "buy"
-        ? exitPrice - position.entry_price
-        : position.entry_price - exitPrice;
 
-    const pipValue = position.assets.pip_value || 0.0001;
-    const pips = priceDiff / pipValue;
-    const profitLoss = pips * position.lot_size * 10;
+    // Use proper pip calculation
+    const { profitLoss, pips } = calculatePositionPL(
+      position.assets,
+      position.position_type as 'buy' | 'sell',
+      position.entry_price,
+      exitPrice,
+      position.lot_size
+    );
+
+    console.log(`Closing position: ${position.assets.symbol}, Entry: ${position.entry_price}, Exit: ${exitPrice}, Lots: ${position.lot_size}, Pips: ${pips}, P/L: $${profitLoss}`);
 
     // Update position
     const { error: updateError } = await supabase
@@ -878,13 +884,18 @@ export default function TradingPlatform() {
                                   ? currentPrice.bid
                                   : currentPrice.ask
                                 : 0;
-                              const priceDiff =
-                                position.position_type === "buy"
-                                  ? priceNow - position.entry_price
-                                  : position.entry_price - priceNow;
-                              const pipValue = asset?.pip_value || 0.0001;
-                              const pips = priceDiff / pipValue;
-                              const pl = pips * position.lot_size * 10;
+                              
+                              // Use proper pip calculation
+                              const plCalc = asset && priceNow
+                                ? calculatePositionPL(
+                                    asset,
+                                    position.position_type as 'buy' | 'sell',
+                                    position.entry_price,
+                                    priceNow,
+                                    position.lot_size
+                                  )
+                                : { pips: 0, profitLoss: 0 };
+                              const { pips, profitLoss: pl } = plCalc;
 
                               return (
                                 <tr
@@ -925,7 +936,12 @@ export default function TradingPlatform() {
                                       pl >= 0 ? "text-green-500" : "text-red-500"
                                     )}
                                   >
-                                    {pl >= 0 ? "+" : ""}${pl.toFixed(2)}
+                                    <div className="flex flex-col items-end">
+                                      <span>{pl >= 0 ? "+" : ""}${pl.toFixed(2)}</span>
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {asset ? formatPips(pips, asset) : `${pips.toFixed(1)} pips`}
+                                      </span>
+                                    </div>
                                   </td>
                                   <td className="px-2 sm:px-4 py-2 text-right">
                                     <Button
