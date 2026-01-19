@@ -30,6 +30,7 @@ export type Database = {
           max_drawdown_percent: number | null
           payment_address: string | null
           payment_tx_hash: string | null
+          phase_passed: boolean | null
           price: number
           profit_loss: number | null
           status: Database["public"]["Enums"]["account_status"]
@@ -52,6 +53,7 @@ export type Database = {
           max_drawdown_percent?: number | null
           payment_address?: string | null
           payment_tx_hash?: string | null
+          phase_passed?: boolean | null
           price: number
           profit_loss?: number | null
           status?: Database["public"]["Enums"]["account_status"]
@@ -74,6 +76,7 @@ export type Database = {
           max_drawdown_percent?: number | null
           payment_address?: string | null
           payment_tx_hash?: string | null
+          phase_passed?: boolean | null
           price?: number
           profit_loss?: number | null
           status?: Database["public"]["Enums"]["account_status"]

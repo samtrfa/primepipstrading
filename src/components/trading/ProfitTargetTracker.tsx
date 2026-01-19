@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Trophy, Target, CheckCircle2, Star } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Trophy, Target, CheckCircle2, Star, ArrowRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface ProfitTargetTrackerProps {
@@ -10,6 +11,9 @@ interface ProfitTargetTrackerProps {
   unrealizedPL: number;
   challengeType: string;
   currentPhase: number | null;
+  phasePassed?: boolean;
+  onProceedToNextPhase?: () => void;
+  isProceeding?: boolean;
 }
 
 // Prop trading challenge profit targets (percentage of account size)
@@ -38,6 +42,9 @@ export function ProfitTargetTracker({
   unrealizedPL,
   challengeType,
   currentPhase,
+  phasePassed = false,
+  onProceedToNextPhase,
+  isProceeding = false,
 }: ProfitTargetTrackerProps) {
   const config = PROFIT_TARGETS[challengeType] || PROFIT_TARGETS.three_step;
   const phase = currentPhase || 1;
@@ -122,13 +129,51 @@ export function ProfitTargetTracker({
         </CardTitle>
       </CardHeader>
       <CardContent className="p-3 space-y-3">
-        {/* Target Completion Banner */}
-        {isTargetMet && (
+        {/* Phase Passed Banner with Proceed Button */}
+        {phasePassed && (
+          <div className="p-3 rounded bg-green-500/10 border border-green-500/30 space-y-3">
+            <div className="flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-green-500" />
+              <div>
+                <p className="text-sm font-semibold text-green-500">
+                  {phase >= config.phases.length ? "🎉 Challenge Complete!" : `Phase ${phase} Passed!`}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {phase >= config.phases.length 
+                    ? "You've completed all phases. Your account is now funded!" 
+                    : "Click proceed to advance to the next phase with a fresh account."}
+                </p>
+              </div>
+            </div>
+            {phase < config.phases.length && onProceedToNextPhase && (
+              <Button 
+                onClick={onProceedToNextPhase} 
+                disabled={isProceeding}
+                className="w-full"
+              >
+                {isProceeding ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <>
+                    Proceed to Phase {phase + 1}
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Target Completion Banner (when target met but not yet marked as passed) */}
+        {isTargetMet && !phasePassed && (
           <div className="flex items-center gap-2 p-2 rounded bg-green-500/10 border border-green-500/30">
             <Trophy className="w-5 h-5 text-green-500" />
             <div>
               <p className="text-sm font-semibold text-green-500">Target Achieved!</p>
-              <p className="text-xs text-muted-foreground">Ready for phase advancement</p>
+              <p className="text-xs text-muted-foreground">Close all positions to complete this phase</p>
             </div>
           </div>
         )}

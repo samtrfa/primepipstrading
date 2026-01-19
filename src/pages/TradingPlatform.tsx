@@ -42,6 +42,7 @@ interface Account {
   daily_drawdown_percent: number | null;
   drawdown_violated: boolean | null;
   violation_type: string | null;
+  phase_passed: boolean | null;
 }
 
 interface Asset {
@@ -82,6 +83,7 @@ export default function TradingPlatform() {
   const [takeProfit, setTakeProfit] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [isProceeding, setIsProceeding] = useState(false);
 
   // Get symbols for live prices synced with TradingView
   const symbols = assets.map((a) => a.symbol);
@@ -321,7 +323,7 @@ export default function TradingPlatform() {
       violationType = 'daily_drawdown';
     }
 
-    // Check for phase advancement (profit target met)
+    // Check for phase completion (profit target met)
     const PROFIT_TARGETS: Record<string, { phases: number[]; totalPhases: number }> = {
       three_step: { phases: [8, 5, 5], totalPhases: 3 },
       two_step: { phases: [8, 5], totalPhases: 2 },
@@ -335,61 +337,29 @@ export default function TradingPlatform() {
     const profitTarget = targetConfig.phases[phaseIndex] || 0;
     const profitPercent = ((newBalance - account.account_size) / account.account_size) * 100;
     
-    let phaseAdvanced = false;
-    let newPhase = currentPhase;
-    let newStatus = account.status;
-    let resetBalance = newBalance;
-    let resetHWM = newHWM;
-    let resetDailyStart = effectiveDailyStart;
-    let resetPL = newPL;
-
-    // Check if profit target is met and no drawdown violation
-    if (profitTarget > 0 && profitPercent >= profitTarget && !violationType) {
-      phaseAdvanced = true;
+    // Check if profit target is met and no drawdown violation - mark phase as passed
+    let phasePassed = account.phase_passed || false;
+    if (profitTarget > 0 && profitPercent >= profitTarget && !violationType && !phasePassed) {
+      phasePassed = true;
       
-      if (currentPhase >= targetConfig.totalPhases) {
-        // Final phase completed - account is now funded/passed
-        newStatus = 'funded';
-        newPhase = currentPhase;
-        
-        toast({
-          title: "🎉 Congratulations! Challenge Passed!",
-          description: `You've successfully completed all phases! Your account is now funded.`,
-          duration: 10000,
-        });
-      } else {
-        // Advance to next phase - reset balance to account size
-        newPhase = currentPhase + 1;
-        resetBalance = account.account_size;
-        resetHWM = account.account_size;
-        resetDailyStart = account.account_size;
-        resetPL = 0;
-        
-        toast({
-          title: `🚀 Phase ${currentPhase} Complete!`,
-          description: `Advancing to Phase ${newPhase}. Balance reset to $${account.account_size.toLocaleString()}.`,
-          duration: 8000,
-        });
-      }
+      toast({
+        title: `🎯 Phase ${currentPhase} Target Achieved!`,
+        description: `Close all positions and click "Proceed" to advance to the next phase.`,
+        duration: 8000,
+      });
     }
 
     // Prepare update object
     const accountUpdate: Record<string, unknown> = {
-      current_balance: phaseAdvanced ? resetBalance : newBalance,
-      profit_loss: phaseAdvanced ? resetPL : newPL,
-      high_water_mark: phaseAdvanced ? resetHWM : newHWM,
-      max_drawdown_percent: phaseAdvanced ? 0 : maxDrawdownPercent,
-      daily_drawdown_percent: phaseAdvanced ? 0 : dailyDrawdownPercent,
+      current_balance: newBalance,
+      profit_loss: newPL,
+      high_water_mark: newHWM,
+      max_drawdown_percent: maxDrawdownPercent,
+      daily_drawdown_percent: dailyDrawdownPercent,
       drawdown_violated: violationType !== null,
       violation_type: violationType,
-      current_phase: newPhase,
-      status: newStatus,
+      phase_passed: phasePassed,
     };
-
-    if (phaseAdvanced) {
-      accountUpdate.daily_start_balance = resetDailyStart;
-      accountUpdate.daily_start_date = new Date().toISOString().split('T')[0];
-    }
 
     await supabase
       .from("accounts")
@@ -405,24 +375,20 @@ export default function TradingPlatform() {
       lot_size: position.lot_size,
       price: exitPrice,
       profit_loss: profitLoss,
-      notes: phaseAdvanced 
-        ? (newStatus === 'funded' ? 'Challenge completed - Account funded!' : `Phase ${currentPhase} completed - Advanced to Phase ${newPhase}`)
-        : null,
+      notes: phasePassed && !account.phase_passed ? `Phase ${currentPhase} target achieved` : null,
     });
 
     setAccount((prev) =>
       prev ? { 
         ...prev, 
-        current_balance: phaseAdvanced ? resetBalance : newBalance,
-        profit_loss: phaseAdvanced ? resetPL : newPL,
-        high_water_mark: phaseAdvanced ? resetHWM : newHWM,
-        max_drawdown_percent: phaseAdvanced ? 0 : maxDrawdownPercent,
-        daily_drawdown_percent: phaseAdvanced ? 0 : dailyDrawdownPercent,
+        current_balance: newBalance,
+        profit_loss: newPL,
+        high_water_mark: newHWM,
+        max_drawdown_percent: maxDrawdownPercent,
+        daily_drawdown_percent: dailyDrawdownPercent,
         drawdown_violated: violationType !== null,
         violation_type: violationType,
-        current_phase: newPhase,
-        status: newStatus,
-        daily_start_balance: phaseAdvanced ? resetDailyStart : prev.daily_start_balance,
+        phase_passed: phasePassed,
       } : null
     );
     setPositions((prev) =>
@@ -439,13 +405,106 @@ export default function TradingPlatform() {
       )
     );
 
-    if (!phaseAdvanced) {
+    if (!phasePassed || account.phase_passed) {
       toast({
         title: "Position Closed",
         description: `${position.assets.symbol} P/L: ${profitLoss >= 0 ? "+" : ""}$${profitLoss.toFixed(2)}`,
         variant: profitLoss >= 0 ? "default" : "destructive",
       });
     }
+  };
+
+  // Handle proceeding to next phase
+  const handleProceedToNextPhase = async () => {
+    if (!account) return;
+
+    setIsProceeding(true);
+
+    const PROFIT_TARGETS: Record<string, { phases: number[]; totalPhases: number }> = {
+      three_step: { phases: [8, 5, 5], totalPhases: 3 },
+      two_step: { phases: [8, 5], totalPhases: 2 },
+      one_step: { phases: [10], totalPhases: 1 },
+      instant: { phases: [], totalPhases: 0 },
+    };
+
+    const targetConfig = PROFIT_TARGETS[account.challenge_type] || PROFIT_TARGETS.three_step;
+    const currentPhase = account.current_phase || 1;
+
+    let newPhase = currentPhase;
+    let newStatus = account.status;
+    let resetBalance = account.account_size;
+
+    if (currentPhase >= targetConfig.totalPhases) {
+      // Final phase completed - account is now funded
+      newStatus = 'funded';
+      
+      toast({
+        title: "🎉 Congratulations! Challenge Passed!",
+        description: `You've successfully completed all phases! Your account is now funded.`,
+        duration: 10000,
+      });
+    } else {
+      // Advance to next phase
+      newPhase = currentPhase + 1;
+      
+      toast({
+        title: `🚀 Advancing to Phase ${newPhase}!`,
+        description: `Your balance has been reset to $${account.account_size.toLocaleString()}.`,
+        duration: 8000,
+      });
+    }
+
+    // Update account with reset values
+    const accountUpdate: Record<string, unknown> = {
+      current_phase: newPhase,
+      status: newStatus,
+      current_balance: resetBalance,
+      profit_loss: 0,
+      high_water_mark: resetBalance,
+      daily_start_balance: resetBalance,
+      daily_start_date: new Date().toISOString().split('T')[0],
+      max_drawdown_percent: 0,
+      daily_drawdown_percent: 0,
+      phase_passed: false, // Reset for next phase
+      drawdown_violated: false,
+      violation_type: null,
+    };
+
+    const { error } = await supabase
+      .from("accounts")
+      .update(accountUpdate)
+      .eq("id", account.id);
+
+    if (error) {
+      toast({
+        title: "Failed to proceed",
+        description: error.message,
+        variant: "destructive",
+      });
+      setIsProceeding(false);
+      return;
+    }
+
+    // Log phase advancement
+    await supabase.from("trade_history").insert({
+      account_id: account.id,
+      action: "phase_advance",
+      symbol: "-",
+      lot_size: 0,
+      price: 0,
+      notes: newStatus === 'funded' 
+        ? 'Challenge completed - Account funded!' 
+        : `Advanced from Phase ${currentPhase} to Phase ${newPhase}`,
+    });
+
+    setAccount((prev) =>
+      prev ? { 
+        ...prev, 
+        ...accountUpdate,
+      } : null
+    );
+
+    setIsProceeding(false);
   };
 
   const unrealizedPL = calculateUnrealizedPL();
@@ -739,6 +798,9 @@ export default function TradingPlatform() {
                   unrealizedPL={unrealizedPL}
                   challengeType={account.challenge_type}
                   currentPhase={account.current_phase}
+                  phasePassed={account.phase_passed || false}
+                  onProceedToNextPhase={handleProceedToNextPhase}
+                  isProceeding={isProceeding}
                 />
                 <DrawdownTracker
                   accountSize={account.account_size}
