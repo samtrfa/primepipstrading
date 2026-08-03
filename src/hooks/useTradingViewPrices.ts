@@ -61,7 +61,7 @@ export function useTradingViewPrices(symbols: string[]) {
   const wsRef = useRef<WebSocket | null>(null);
   const bitstampPricesRef = useRef<Record<string, { bid: number; ask: number; last: number }>>({});
   const forexPricesRef = useRef<Record<string, { bid: number; ask: number; price: number }>>({});
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFetchRef = useRef<Record<string, PriceData>>({});
 
   // Initialize market status
