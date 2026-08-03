@@ -437,7 +437,8 @@ export default function TradingPlatform() {
     const currentPhase = account.current_phase || 1;
 
     let newPhase = currentPhase;
-    let newStatus: "active" | "failed" | "funded" | "passed" | "pending_payment" = account.status;
+    let newStatus: "active" | "failed" | "funded" | "passed" | "pending_payment" =
+      account.status as "active" | "failed" | "funded" | "passed" | "pending_payment";
     let resetBalance = account.account_size;
 
     if (currentPhase >= targetConfig.totalPhases) {
