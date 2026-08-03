@@ -91,11 +91,12 @@ const challengeTypes: { id: ChallengeType; label: string; icon: React.ElementTyp
 ];
 
 const pricingTiers: PricingTier[] = [
-  { size: 5000, label: "$5K", prices: { three_step: 35, two_step: 49, one_step: 69, instant: 149 } },
-  { size: 10000, label: "$10K", prices: { three_step: 59, two_step: 79, one_step: 99, instant: 249 } },
-  { size: 25000, label: "$25K", prices: { three_step: 119, two_step: 149, one_step: 179, instant: 449 } },
-  { size: 50000, label: "$50K", prices: { three_step: 199, two_step: 249, one_step: 299, instant: 749 } },
-  { size: 100000, label: "$100K", prices: { three_step: 349, two_step: 449, one_step: 549, instant: 1299 } },
+  { size: 5000, label: "$5K", prices: { three_step: 16, two_step: 20, one_step: 18, instant: 18 } },
+  { size: 10000, label: "$10K", prices: { three_step: 28, two_step: 40, one_step: 34, instant: 34 } },
+  { size: 25000, label: "$25K", prices: { three_step: 56, two_step: 80, one_step: 62, instant: 62 } },
+  { size: 50000, label: "$50K", prices: { three_step: 144, two_step: 198, one_step: 153, instant: 153 } },
+  { size: 100000, label: "$100K", prices: { three_step: 320, two_step: 396, one_step: 342, instant: 342 } },
+  { size: 200000, label: "$200K", prices: { three_step: 490, two_step: 560, one_step: 520, instant: 520 } },
 ];
 
 const CRYPTO_WALLET = "0x66aeC4645A4d204653d2e62FCA26968Ce1B5db1a";

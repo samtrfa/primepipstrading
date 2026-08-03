@@ -356,7 +356,7 @@ export default function TradingPlatform() {
     }
 
     // Prepare update object
-    const accountUpdate: Record<string, unknown> = {
+    const accountUpdate = {
       current_balance: newBalance,
       profit_loss: newPL,
       high_water_mark: newHWM,
@@ -437,7 +437,7 @@ export default function TradingPlatform() {
     const currentPhase = account.current_phase || 1;
 
     let newPhase = currentPhase;
-    let newStatus = account.status;
+    let newStatus: "active" | "failed" | "funded" | "passed" | "pending_payment" = account.status;
     let resetBalance = account.account_size;
 
     if (currentPhase >= targetConfig.totalPhases) {
@@ -461,7 +461,7 @@ export default function TradingPlatform() {
     }
 
     // Update account with reset values
-    const accountUpdate: Record<string, unknown> = {
+    const accountUpdate = {
       current_phase: newPhase,
       status: newStatus,
       current_balance: resetBalance,
