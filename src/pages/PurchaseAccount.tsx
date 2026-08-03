@@ -165,6 +165,10 @@ export default function PurchaseAccount() {
   );
   const [showPayment, setShowPayment] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("korapay");
+  const [currency, setCurrency] = useState<string>(detectLocalCurrency);
+  const [rate, setRate] = useState<number | null>(null);
+  const [rateLoading, setRateLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -182,6 +186,70 @@ export default function PurchaseAccount() {
   const selectedTier = pricingTiers.find(t => t.size === selectedSize);
   const price = selectedTier?.prices[selectedChallenge] || 0;
   const rules = challengeRules[selectedChallenge];
+  const currencyMeta = KORAPAY_CURRENCIES.find((c) => c.code === currency) ?? KORAPAY_CURRENCIES[4];
+  const localAmount =
+    currency === "USD" ? price : rate ? Math.ceil(price * rate) : null;
+
+  useEffect(() => {
+    if (currency === "USD") {
+      setRate(1);
+      return;
+    }
+    let cancelled = false;
+    setRateLoading(true);
+    fetch("https://open.er-api.com/v6/latest/USD")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setRate(data?.rates?.[currency] ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setRate(null);
+      })
+      .finally(() => {
+        if (!cancelled) setRateLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currency]);
+
+  const handleKorapayCheckout = async () => {
+    setIsProcessing(true);
+
+    const { data, error } = await supabase.functions.invoke("korapay-checkout", {
+      body: {
+        challengeType: selectedChallenge,
+        accountSize: selectedSize,
+        currency,
+        redirectUrl: `${window.location.origin}/dashboard`,
+      },
+    });
+
+    if (error) {
+      const details =
+        error instanceof FunctionsHttpError ? await error.context.text() : error.message;
+      console.error("korapay-checkout failed:", details);
+      setIsProcessing(false);
+      toast({
+        title: "Checkout failed",
+        description: "We couldn't start your payment. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!data?.checkoutUrl) {
+      setIsProcessing(false);
+      toast({
+        title: "Checkout failed",
+        description: "No checkout link was returned. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    window.location.href = data.checkoutUrl;
+  };
 
   const copyAddress = () => {
     navigator.clipboard.writeText(CRYPTO_WALLET);
