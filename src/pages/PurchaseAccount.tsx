@@ -478,12 +478,131 @@ export default function PurchaseAccount() {
 
               <Card variant="gold">
                 <CardHeader className="text-center">
-                  <CardTitle className="text-2xl">Crypto Payment</CardTitle>
+                  <CardTitle className="text-2xl">Complete Your Payment</CardTitle>
                   <CardDescription>
-                    Send exactly ${price} in USDT/USDC/ETH/BTC to complete your purchase
+                    {challengeTypes.find((c) => c.id === selectedChallenge)?.label} — $
+                    {selectedSize.toLocaleString()} account · ${price}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                  {/* Payment method selector */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod("korapay")}
+                      className={cn(
+                        "flex flex-col items-center gap-1 rounded-xl border-2 p-4 transition-all",
+                        paymentMethod === "korapay"
+                          ? "border-primary bg-primary/10"
+                          : "border-border hover:border-primary/50"
+                      )}
+                    >
+                      <CreditCard
+                        className={cn(
+                          "w-6 h-6",
+                          paymentMethod === "korapay" ? "text-primary" : "text-muted-foreground"
+                        )}
+                      />
+                      <span className="text-sm font-medium text-foreground">Card / Bank</span>
+                      <span className="text-[11px] text-muted-foreground">Recommended</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentMethod("crypto")}
+                      className={cn(
+                        "flex flex-col items-center gap-1 rounded-xl border-2 p-4 transition-all",
+                        paymentMethod === "crypto"
+                          ? "border-primary bg-primary/10"
+                          : "border-border hover:border-primary/50"
+                      )}
+                    >
+                      <Bitcoin
+                        className={cn(
+                          "w-6 h-6",
+                          paymentMethod === "crypto" ? "text-primary" : "text-muted-foreground"
+                        )}
+                      />
+                      <span className="text-sm font-medium text-foreground">Crypto</span>
+                      <span className="text-[11px] text-muted-foreground">USDT / USDC (BSC)</span>
+                    </button>
+                  </div>
+
+                  {paymentMethod === "korapay" ? (
+                    <div className="space-y-6">
+                      <div className="bg-secondary/50 rounded-lg p-6 space-y-5">
+                        <div>
+                          <label className="text-sm text-muted-foreground block mb-2">
+                            Pay in your local currency
+                          </label>
+                          <Select value={currency} onValueChange={setCurrency}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {KORAPAY_CURRENCIES.map((c) => (
+                                <SelectItem key={c.code} value={c.code}>
+                                  {c.code} — {c.label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="text-center">
+                          <div className="text-4xl font-bold text-primary mb-1">
+                            {rateLoading || localAmount === null ? (
+                              <span className="text-2xl text-muted-foreground">Converting…</span>
+                            ) : (
+                              `${currencyMeta.symbol}${localAmount.toLocaleString()}`
+                            )}
+                          </div>
+                          {currency !== "USD" && (
+                            <div className="text-sm text-muted-foreground">
+                              ≈ ${price} USD at today's rate
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="text-sm text-muted-foreground space-y-2">
+                          <p className="flex items-center gap-2">
+                            <CreditCard className="w-4 h-4 text-primary" />
+                            Debit / credit card
+                          </p>
+                          <p className="flex items-center gap-2">
+                            <Landmark className="w-4 h-4 text-primary" />
+                            Bank transfer & pay with bank
+                          </p>
+                          <p className="flex items-center gap-2">
+                            <Check className="w-4 h-4 text-primary" />
+                            Account activated automatically after payment
+                          </p>
+                        </div>
+                      </div>
+
+                      <Button
+                        variant="gold"
+                        size="lg"
+                        className="w-full"
+                        onClick={handleKorapayCheckout}
+                        disabled={isProcessing || localAmount === null}
+                      >
+                        {isProcessing ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Redirecting…
+                          </>
+                        ) : (
+                          "Pay Securely"
+                        )}
+                      </Button>
+
+                      <p className="text-center text-sm text-muted-foreground">
+                        You'll be taken to a secure checkout to finish paying, then returned to your
+                        dashboard.
+                      </p>
+                    </div>
+                  ) : (
+                  <div className="space-y-6">
                   <div className="bg-secondary/50 rounded-lg p-6">
                     <div className="text-center mb-4">
                       <div className="text-4xl font-bold text-primary mb-2">${price}</div>
@@ -548,6 +667,8 @@ export default function PurchaseAccount() {
                   <p className="text-center text-sm text-muted-foreground">
                     After sending payment, click the button above. Your account will be activated once we confirm the transaction.
                   </p>
+                  </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
