@@ -3,10 +3,18 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, Check, Zap, Target, Clock, Rocket, Copy, ArrowLeft, HelpCircle } from "lucide-react";
+import { TrendingUp, Check, Zap, Target, Clock, Rocket, Copy, ArrowLeft, HelpCircle, CreditCard, Landmark, Bitcoin, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { FunctionsHttpError } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Popover,
   PopoverContent,
@@ -100,6 +108,26 @@ const pricingTiers: PricingTier[] = [
 ];
 
 const CRYPTO_WALLET = "0x66aeC4645A4d204653d2e62FCA26968Ce1B5db1a";
+
+type PaymentMethod = "korapay" | "crypto";
+
+const KORAPAY_CURRENCIES: { code: string; label: string; symbol: string; regions: string[] }[] = [
+  { code: "NGN", label: "Nigerian Naira", symbol: "₦", regions: ["NG"] },
+  { code: "KES", label: "Kenyan Shilling", symbol: "KSh", regions: ["KE"] },
+  { code: "GHS", label: "Ghanaian Cedi", symbol: "GH₵", regions: ["GH"] },
+  { code: "ZAR", label: "South African Rand", symbol: "R", regions: ["ZA"] },
+  { code: "USD", label: "US Dollar", symbol: "$", regions: [] },
+];
+
+function detectLocalCurrency(): string {
+  try {
+    const region = new Intl.Locale(navigator.language).region;
+    const match = KORAPAY_CURRENCIES.find((c) => region && c.regions.includes(region));
+    return match?.code ?? "USD";
+  } catch {
+    return "USD";
+  }
+}
 
 function RuleItem({ label, value, ruleKey }: { label: string; value: string; ruleKey: string }) {
   return (
