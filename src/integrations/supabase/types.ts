@@ -29,6 +29,10 @@ export type Database = {
           id: string
           max_drawdown_percent: number | null
           payment_address: string | null
+          payment_amount_local: number | null
+          payment_currency: string | null
+          payment_provider: string | null
+          payment_reference: string | null
           payment_tx_hash: string | null
           phase_passed: boolean | null
           price: number
@@ -52,6 +56,10 @@ export type Database = {
           id?: string
           max_drawdown_percent?: number | null
           payment_address?: string | null
+          payment_amount_local?: number | null
+          payment_currency?: string | null
+          payment_provider?: string | null
+          payment_reference?: string | null
           payment_tx_hash?: string | null
           phase_passed?: boolean | null
           price: number
@@ -75,6 +83,10 @@ export type Database = {
           id?: string
           max_drawdown_percent?: number | null
           payment_address?: string | null
+          payment_amount_local?: number | null
+          payment_currency?: string | null
+          payment_provider?: string | null
+          payment_reference?: string | null
           payment_tx_hash?: string | null
           phase_passed?: boolean | null
           price?: number
