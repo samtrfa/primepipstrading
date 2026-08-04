@@ -3,18 +3,11 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, Check, Zap, Target, Clock, Rocket, Copy, ArrowLeft, HelpCircle, CreditCard, Landmark, Bitcoin, Loader2 } from "lucide-react";
+import { TrendingUp, Check, Zap, Target, Clock, Rocket, Copy, ArrowLeft, HelpCircle, Landmark, Bitcoin, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Popover,
   PopoverContent,
@@ -111,24 +104,6 @@ const CRYPTO_WALLET = "0x66aeC4645A4d204653d2e62FCA26968Ce1B5db1a";
 
 type PaymentMethod = "korapay" | "crypto";
 
-const KORAPAY_CURRENCIES: { code: string; label: string; symbol: string; regions: string[] }[] = [
-  { code: "NGN", label: "Nigerian Naira", symbol: "₦", regions: ["NG"] },
-  { code: "KES", label: "Kenyan Shilling", symbol: "KSh", regions: ["KE"] },
-  { code: "GHS", label: "Ghanaian Cedi", symbol: "GH₵", regions: ["GH"] },
-  { code: "ZAR", label: "South African Rand", symbol: "R", regions: ["ZA"] },
-  { code: "USD", label: "US Dollar", symbol: "$", regions: [] },
-];
-
-function detectLocalCurrency(): string {
-  try {
-    const region = new Intl.Locale(navigator.language).region;
-    const match = KORAPAY_CURRENCIES.find((c) => region && c.regions.includes(region));
-    return match?.code ?? "USD";
-  } catch {
-    return "USD";
-  }
-}
-
 function RuleItem({ label, value, ruleKey }: { label: string; value: string; ruleKey: string }) {
   return (
     <div className="flex justify-between items-center py-2">
@@ -166,7 +141,6 @@ export default function PurchaseAccount() {
   const [showPayment, setShowPayment] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("korapay");
-  const [currency, setCurrency] = useState<string>(detectLocalCurrency);
   const [rate, setRate] = useState<number | null>(null);
   const [rateLoading, setRateLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
@@ -186,21 +160,15 @@ export default function PurchaseAccount() {
   const selectedTier = pricingTiers.find(t => t.size === selectedSize);
   const price = selectedTier?.prices[selectedChallenge] || 0;
   const rules = challengeRules[selectedChallenge];
-  const currencyMeta = KORAPAY_CURRENCIES.find((c) => c.code === currency) ?? KORAPAY_CURRENCIES[4];
-  const localAmount =
-    currency === "USD" ? price : rate ? Math.ceil(price * rate) : null;
+  const localAmount = rate ? Math.ceil(price * rate) : null;
 
   useEffect(() => {
-    if (currency === "USD") {
-      setRate(1);
-      return;
-    }
     let cancelled = false;
     setRateLoading(true);
     fetch("https://open.er-api.com/v6/latest/USD")
       .then((res) => res.json())
       .then((data) => {
-        if (!cancelled) setRate(data?.rates?.[currency] ?? null);
+        if (!cancelled) setRate(data?.rates?.NGN ?? null);
       })
       .catch(() => {
         if (!cancelled) setRate(null);
@@ -211,7 +179,7 @@ export default function PurchaseAccount() {
     return () => {
       cancelled = true;
     };
-  }, [currency]);
+  }, []);
 
   const handleKorapayCheckout = async () => {
     setIsProcessing(true);
@@ -220,7 +188,6 @@ export default function PurchaseAccount() {
       body: {
         challengeType: selectedChallenge,
         accountSize: selectedSize,
-        currency,
         redirectUrl: `${window.location.origin}/dashboard`,
       },
     });
@@ -497,13 +464,13 @@ export default function PurchaseAccount() {
                           : "border-border hover:border-primary/50"
                       )}
                     >
-                      <CreditCard
+                      <Landmark
                         className={cn(
                           "w-6 h-6",
                           paymentMethod === "korapay" ? "text-primary" : "text-muted-foreground"
                         )}
                       />
-                      <span className="text-sm font-medium text-foreground">Card / Bank</span>
+                      <span className="text-sm font-medium text-foreground">Bank Payment</span>
                       <span className="text-[11px] text-muted-foreground">Recommended</span>
                     </button>
                     <button
@@ -530,44 +497,20 @@ export default function PurchaseAccount() {
                   {paymentMethod === "korapay" ? (
                     <div className="space-y-6">
                       <div className="bg-secondary/50 rounded-lg p-6 space-y-5">
-                        <div>
-                          <label className="text-sm text-muted-foreground block mb-2">
-                            Pay in your local currency
-                          </label>
-                          <Select value={currency} onValueChange={setCurrency}>
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {KORAPAY_CURRENCIES.map((c) => (
-                                <SelectItem key={c.code} value={c.code}>
-                                  {c.code} — {c.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-
                         <div className="text-center">
                           <div className="text-4xl font-bold text-primary mb-1">
                             {rateLoading || localAmount === null ? (
                               <span className="text-2xl text-muted-foreground">Converting…</span>
                             ) : (
-                              `${currencyMeta.symbol}${localAmount.toLocaleString()}`
+                              `₦${localAmount.toLocaleString()}`
                             )}
                           </div>
-                          {currency !== "USD" && (
-                            <div className="text-sm text-muted-foreground">
-                              ≈ ${price} USD at today's rate
-                            </div>
-                          )}
+                          <div className="text-sm text-muted-foreground">
+                            Automatically converted from ${price} USD at today's rate
+                          </div>
                         </div>
 
                         <div className="text-sm text-muted-foreground space-y-2">
-                          <p className="flex items-center gap-2">
-                            <CreditCard className="w-4 h-4 text-primary" />
-                            Debit / credit card
-                          </p>
                           <p className="flex items-center gap-2">
                             <Landmark className="w-4 h-4 text-primary" />
                             Bank transfer & pay with bank
