@@ -19,17 +19,13 @@ const PRICES: Record<number, Record<ChallengeType, number>> = {
 };
 
 const CHALLENGE_TYPES: ChallengeType[] = ["three_step", "two_step", "one_step", "instant"];
-// Currencies Korapay can collect in
-const SUPPORTED_CURRENCIES = ["NGN", "KES", "GHS", "ZAR", "USD"];
-
-async function getUsdRate(currency: string): Promise<number> {
-  if (currency === "USD") return 1;
+async function getNairaRate(): Promise<number> {
   const res = await fetch("https://open.er-api.com/v6/latest/USD");
   if (!res.ok) throw new Error(`Exchange rate lookup failed [${res.status}]`);
   const body = await res.json();
-  const rate = body?.rates?.[currency];
+  const rate = body?.rates?.NGN;
   if (!rate || typeof rate !== "number") {
-    throw new Error(`No exchange rate available for ${currency}`);
+    throw new Error("No exchange rate available for NGN");
   }
   return rate;
 }
@@ -69,7 +65,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => null);
     const challengeType = body?.challengeType;
     const accountSize = Number(body?.accountSize);
-    const currency = String(body?.currency || "USD").toUpperCase();
+    const currency = "NGN";
     const redirectUrl = typeof body?.redirectUrl === "string" ? body.redirectUrl : null;
     const customerName = typeof body?.customerName === "string" && body.customerName.trim()
       ? body.customerName.trim().slice(0, 100)
@@ -78,18 +74,14 @@ Deno.serve(async (req) => {
     const errors: Record<string, string> = {};
     if (!CHALLENGE_TYPES.includes(challengeType)) errors.challengeType = "Invalid challenge type";
     if (!PRICES[accountSize]) errors.accountSize = "Invalid account size";
-    if (!SUPPORTED_CURRENCIES.includes(currency)) errors.currency = "Unsupported currency";
     if (!redirectUrl || !/^https?:\/\//.test(redirectUrl)) errors.redirectUrl = "Invalid redirect URL";
     if (Object.keys(errors).length > 0) {
       return json({ error: errors }, 400);
     }
 
     const priceUsd = PRICES[accountSize][challengeType as ChallengeType];
-    const rate = await getUsdRate(currency);
-    // Korapay expects minor-unit-free decimals; round sensibly per currency
-    const localAmount = currency === "USD"
-      ? Number(priceUsd.toFixed(2))
-      : Math.ceil(priceUsd * rate);
+    const rate = await getNairaRate();
+    const localAmount = Math.ceil(priceUsd * rate);
 
     const reference = `pp_${crypto.randomUUID().replace(/-/g, "")}`;
 
@@ -134,8 +126,7 @@ Deno.serve(async (req) => {
         narration: `PrimePips ${challengeType.replace(/_/g, " ")} ${accountSize} USD account`
           .replace(/[^a-zA-Z0-9 ]/g, "")
           .slice(0, 100),
-        // Let the buyer pick on the Korapay checkout page (no forced default channel)
-        channels: ["card", "bank_transfer", "pay_with_bank"],
+        channels: ["bank_transfer", "pay_with_bank"],
         customer: { name: customerName, email },
         metadata: {
           account_id: account.id,
