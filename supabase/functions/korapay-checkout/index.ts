@@ -134,8 +134,8 @@ Deno.serve(async (req) => {
         narration: `PrimePips ${challengeType.replace(/_/g, " ")} ${accountSize} USD account`
           .replace(/[^a-zA-Z0-9 ]/g, "")
           .slice(0, 100),
+        // Let the buyer pick on the Korapay checkout page (no forced default channel)
         channels: ["card", "bank_transfer", "pay_with_bank"],
-        default_channel: "card",
         customer: { name: customerName, email },
         metadata: {
           account_id: account.id,
