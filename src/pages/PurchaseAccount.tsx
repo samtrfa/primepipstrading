@@ -141,8 +141,6 @@ export default function PurchaseAccount() {
   const [showPayment, setShowPayment] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("korapay");
-  const [rate, setRate] = useState<number | null>(null);
-  const [rateLoading, setRateLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
