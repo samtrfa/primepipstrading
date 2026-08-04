@@ -131,7 +131,9 @@ Deno.serve(async (req) => {
         currency,
         redirect_url: redirectUrl,
         notification_url: notificationUrl,
-        narration: `PrimePips ${challengeType.replace("_", "-")} $${accountSize.toLocaleString()} account`,
+        narration: `PrimePips ${challengeType.replace(/_/g, " ")} ${accountSize} USD account`
+          .replace(/[^a-zA-Z0-9 ]/g, "")
+          .slice(0, 100),
         channels: ["card", "bank_transfer", "pay_with_bank"],
         default_channel: "card",
         customer: { name: customerName, email },
