@@ -141,8 +141,6 @@ export default function PurchaseAccount() {
   const [showPayment, setShowPayment] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("korapay");
-  const [rate, setRate] = useState<number | null>(null);
-  const [rateLoading, setRateLoading] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -160,26 +158,6 @@ export default function PurchaseAccount() {
   const selectedTier = pricingTiers.find(t => t.size === selectedSize);
   const price = selectedTier?.prices[selectedChallenge] || 0;
   const rules = challengeRules[selectedChallenge];
-  const localAmount = rate ? Math.ceil(price * rate) : null;
-
-  useEffect(() => {
-    let cancelled = false;
-    setRateLoading(true);
-    fetch("https://open.er-api.com/v6/latest/USD")
-      .then((res) => res.json())
-      .then((data) => {
-        if (!cancelled) setRate(data?.rates?.NGN ?? null);
-      })
-      .catch(() => {
-        if (!cancelled) setRate(null);
-      })
-      .finally(() => {
-        if (!cancelled) setRateLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const handleKorapayCheckout = async () => {
     setIsProcessing(true);
@@ -499,14 +477,10 @@ export default function PurchaseAccount() {
                       <div className="bg-secondary/50 rounded-lg p-6 space-y-5">
                         <div className="text-center">
                           <div className="text-4xl font-bold text-primary mb-1">
-                            {rateLoading || localAmount === null ? (
-                              <span className="text-2xl text-muted-foreground">Converting…</span>
-                            ) : (
-                              `₦${localAmount.toLocaleString()}`
-                            )}
+                            ${price}
                           </div>
                           <div className="text-sm text-muted-foreground">
-                            Automatically converted from ${price} USD at today's rate
+                            Converted to naira automatically on the secure checkout page
                           </div>
                         </div>
 
@@ -527,7 +501,7 @@ export default function PurchaseAccount() {
                         size="lg"
                         className="w-full"
                         onClick={handleKorapayCheckout}
-                        disabled={isProcessing || localAmount === null}
+                        disabled={isProcessing}
                       >
                         {isProcessing ? (
                           <>
