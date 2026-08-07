@@ -118,6 +118,7 @@ Deno.serve(async (req) => {
       discountPercent = Number(coupon.discount_percent);
       appliedCoupon = coupon.code;
       couponId = coupon.id;
+      couponUses = coupon.times_used ?? 0;
     }
 
     const priceUsd = Math.round(basePriceUsd * (100 - discountPercent)) / 100;
