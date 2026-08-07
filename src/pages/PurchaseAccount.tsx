@@ -3,7 +3,8 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, Check, Zap, Target, Clock, Rocket, Copy, ArrowLeft, HelpCircle, Landmark, Bitcoin, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { TrendingUp, Check, Zap, Target, Clock, Rocket, Copy, ArrowLeft, HelpCircle, Landmark, Bitcoin, Loader2, Tag, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
@@ -142,6 +143,14 @@ export default function PurchaseAccount() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("korapay");
   const [userId, setUserId] = useState<string | null>(null);
+  const [couponInput, setCouponInput] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountPercent: number;
+    challengeTypes: ChallengeType[] | null;
+  } | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -156,8 +165,73 @@ export default function PurchaseAccount() {
   }, [navigate]);
 
   const selectedTier = pricingTiers.find(t => t.size === selectedSize);
-  const price = selectedTier?.prices[selectedChallenge] || 0;
+  const basePrice = selectedTier?.prices[selectedChallenge] || 0;
   const rules = challengeRules[selectedChallenge];
+
+  const couponApplies =
+    !!appliedCoupon &&
+    (!appliedCoupon.challengeTypes || appliedCoupon.challengeTypes.includes(selectedChallenge));
+  const discountPercent = couponApplies ? appliedCoupon!.discountPercent : 0;
+  const discountAmount = Math.round(basePrice * discountPercent) / 100;
+  const price = Math.round((basePrice - discountAmount) * 100) / 100;
+
+  const applyCoupon = async () => {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) return;
+    setCouponLoading(true);
+    setCouponError(null);
+
+    const { data, error } = await supabase
+      .from("coupons")
+      .select("code, discount_percent, challenge_types, expires_at, max_uses, times_used")
+      .eq("code", code)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    setCouponLoading(false);
+
+    if (error || !data) {
+      setAppliedCoupon(null);
+      setCouponError("This coupon code isn't valid.");
+      return;
+    }
+    if (data.expires_at && new Date(data.expires_at) < new Date()) {
+      setAppliedCoupon(null);
+      setCouponError("This coupon has expired.");
+      return;
+    }
+    if (data.max_uses !== null && (data.times_used ?? 0) >= data.max_uses) {
+      setAppliedCoupon(null);
+      setCouponError("This coupon has reached its usage limit.");
+      return;
+    }
+
+    const challengeTypes = (data.challenge_types as ChallengeType[] | null) ?? null;
+    setAppliedCoupon({
+      code: data.code,
+      discountPercent: Number(data.discount_percent),
+      challengeTypes,
+    });
+
+    if (challengeTypes && !challengeTypes.includes(selectedChallenge)) {
+      setCouponError(
+        `${data.code} only applies to ${challengeTypes
+          .map((t) => challengeTypes && challengeTypes.length ? (challengeTypes.includes(t) ? t.replace(/_/g, "-") : t) : t)
+          .join(", ")} accounts.`
+      );
+    } else {
+      toast({
+        title: "Coupon applied",
+        description: `${data.code} — ${Number(data.discount_percent)}% off.`,
+      });
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponError(null);
+  };
 
   const handleKorapayCheckout = async () => {
     setIsProcessing(true);
@@ -166,6 +240,7 @@ export default function PurchaseAccount() {
       body: {
         challengeType: selectedChallenge,
         accountSize: selectedSize,
+        couponCode: couponApplies ? appliedCoupon!.code : undefined,
         redirectUrl: `${window.location.origin}/dashboard`,
       },
     });
