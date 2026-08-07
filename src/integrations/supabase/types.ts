@@ -18,12 +18,14 @@ export type Database = {
         Row: {
           account_size: number
           challenge_type: Database["public"]["Enums"]["challenge_type"]
+          coupon_code: string | null
           created_at: string
           current_balance: number | null
           current_phase: number | null
           daily_drawdown_percent: number | null
           daily_start_balance: number | null
           daily_start_date: string | null
+          discount_percent: number
           drawdown_violated: boolean | null
           high_water_mark: number | null
           id: string
@@ -45,12 +47,14 @@ export type Database = {
         Insert: {
           account_size: number
           challenge_type: Database["public"]["Enums"]["challenge_type"]
+          coupon_code?: string | null
           created_at?: string
           current_balance?: number | null
           current_phase?: number | null
           daily_drawdown_percent?: number | null
           daily_start_balance?: number | null
           daily_start_date?: string | null
+          discount_percent?: number
           drawdown_violated?: boolean | null
           high_water_mark?: number | null
           id?: string
@@ -72,12 +76,14 @@ export type Database = {
         Update: {
           account_size?: number
           challenge_type?: Database["public"]["Enums"]["challenge_type"]
+          coupon_code?: string | null
           created_at?: string
           current_balance?: number | null
           current_phase?: number | null
           daily_drawdown_percent?: number | null
           daily_start_balance?: number | null
           daily_start_date?: string | null
+          discount_percent?: number
           drawdown_violated?: boolean | null
           high_water_mark?: number | null
           id?: string
@@ -134,6 +140,51 @@ export type Database = {
           pip_value?: number | null
           quote_currency?: string | null
           symbol?: string
+        }
+        Relationships: []
+      }
+      coupons: {
+        Row: {
+          challenge_types:
+            | Database["public"]["Enums"]["challenge_type"][]
+            | null
+          code: string
+          created_at: string
+          discount_percent: number
+          expires_at: string | null
+          id: string
+          is_active: boolean
+          max_uses: number | null
+          times_used: number
+          updated_at: string
+        }
+        Insert: {
+          challenge_types?:
+            | Database["public"]["Enums"]["challenge_type"][]
+            | null
+          code: string
+          created_at?: string
+          discount_percent: number
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          max_uses?: number | null
+          times_used?: number
+          updated_at?: string
+        }
+        Update: {
+          challenge_types?:
+            | Database["public"]["Enums"]["challenge_type"][]
+            | null
+          code?: string
+          created_at?: string
+          discount_percent?: number
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          max_uses?: number | null
+          times_used?: number
+          updated_at?: string
         }
         Relationships: []
       }

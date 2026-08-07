@@ -3,7 +3,8 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, Check, Zap, Target, Clock, Rocket, Copy, ArrowLeft, HelpCircle, Landmark, Bitcoin, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { TrendingUp, Check, Zap, Target, Clock, Rocket, Copy, ArrowLeft, HelpCircle, Landmark, Bitcoin, Loader2, Tag, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
@@ -102,6 +103,9 @@ const pricingTiers: PricingTier[] = [
 
 const CRYPTO_WALLET = "0x66aeC4645A4d204653d2e62FCA26968Ce1B5db1a";
 
+const challengeLabel = (type: ChallengeType) =>
+  challengeTypes.find((c) => c.id === type)?.label ?? type.replace(/_/g, "-");
+
 type PaymentMethod = "korapay" | "crypto";
 
 function RuleItem({ label, value, ruleKey }: { label: string; value: string; ruleKey: string }) {
@@ -142,6 +146,14 @@ export default function PurchaseAccount() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("korapay");
   const [userId, setUserId] = useState<string | null>(null);
+  const [couponInput, setCouponInput] = useState("");
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountPercent: number;
+    challengeTypes: ChallengeType[] | null;
+  } | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -156,8 +168,73 @@ export default function PurchaseAccount() {
   }, [navigate]);
 
   const selectedTier = pricingTiers.find(t => t.size === selectedSize);
-  const price = selectedTier?.prices[selectedChallenge] || 0;
+  const basePrice = selectedTier?.prices[selectedChallenge] || 0;
   const rules = challengeRules[selectedChallenge];
+
+  const couponApplies =
+    !!appliedCoupon &&
+    (!appliedCoupon.challengeTypes || appliedCoupon.challengeTypes.includes(selectedChallenge));
+  const discountPercent = couponApplies ? appliedCoupon!.discountPercent : 0;
+  const discountAmount = Math.round(basePrice * discountPercent) / 100;
+  const price = Math.round((basePrice - discountAmount) * 100) / 100;
+
+  const applyCoupon = async () => {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) return;
+    setCouponLoading(true);
+    setCouponError(null);
+
+    const { data, error } = await supabase
+      .from("coupons")
+      .select("code, discount_percent, challenge_types, expires_at, max_uses, times_used")
+      .eq("code", code)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    setCouponLoading(false);
+
+    if (error || !data) {
+      setAppliedCoupon(null);
+      setCouponError("This coupon code isn't valid.");
+      return;
+    }
+    if (data.expires_at && new Date(data.expires_at) < new Date()) {
+      setAppliedCoupon(null);
+      setCouponError("This coupon has expired.");
+      return;
+    }
+    if (data.max_uses !== null && (data.times_used ?? 0) >= data.max_uses) {
+      setAppliedCoupon(null);
+      setCouponError("This coupon has reached its usage limit.");
+      return;
+    }
+
+    const challengeTypes = (data.challenge_types as ChallengeType[] | null) ?? null;
+    setAppliedCoupon({
+      code: data.code,
+      discountPercent: Number(data.discount_percent),
+      challengeTypes,
+    });
+
+    if (challengeTypes && !challengeTypes.includes(selectedChallenge)) {
+      setCouponError(
+        `${data.code} only applies to ${challengeTypes
+          .map((t) => challengeLabel(t))
+          .join(", ")} accounts.`,
+      );
+    } else {
+      toast({
+        title: "Coupon applied",
+        description: `${data.code} — ${Number(data.discount_percent)}% off.`,
+      });
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponError(null);
+  };
 
   const handleKorapayCheckout = async () => {
     setIsProcessing(true);
@@ -166,6 +243,7 @@ export default function PurchaseAccount() {
       body: {
         challengeType: selectedChallenge,
         accountSize: selectedSize,
+        couponCode: couponApplies ? appliedCoupon!.code : undefined,
         redirectUrl: `${window.location.origin}/dashboard`,
       },
     });
@@ -217,6 +295,8 @@ export default function PurchaseAccount() {
       status: "pending_payment",
       current_balance: selectedSize,
       payment_address: CRYPTO_WALLET,
+      coupon_code: couponApplies ? appliedCoupon!.code : null,
+      discount_percent: discountPercent,
     });
 
     setIsProcessing(false);
@@ -379,6 +459,60 @@ export default function PurchaseAccount() {
                     <span className="text-muted-foreground">Profit Split</span>
                     <span className="font-medium text-foreground">Up to 90%</span>
                   </div>
+
+                  {/* Coupon code */}
+                  <div className="py-2 border-b border-border space-y-2">
+                    <span className="text-muted-foreground text-sm flex items-center gap-2">
+                      <Tag className="w-4 h-4 text-primary" />
+                      Coupon code
+                    </span>
+                    {couponApplies ? (
+                      <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/50 bg-primary/10 px-3 py-2">
+                        <span className="text-sm font-semibold text-foreground">
+                          {appliedCoupon!.code} · {discountPercent}% off
+                        </span>
+                        <Button variant="ghost" size="sm" onClick={removeCoupon}>
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <form
+                        className="flex gap-2"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          applyCoupon();
+                        }}
+                      >
+                        <Input
+                          value={couponInput}
+                          onChange={(e) => setCouponInput(e.target.value.toUpperCase().slice(0, 32))}
+                          placeholder="Enter code"
+                          className="uppercase"
+                          maxLength={32}
+                        />
+                        <Button type="submit" variant="outline" disabled={couponLoading || !couponInput.trim()}>
+                          {couponLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}
+                        </Button>
+                      </form>
+                    )}
+                    {couponError && <p className="text-sm text-destructive">{couponError}</p>}
+                  </div>
+
+                  {discountPercent > 0 && (
+                    <>
+                      <div className="flex justify-between items-center py-2 border-b border-border">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span className="font-medium text-foreground line-through">${basePrice}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-border">
+                        <span className="text-muted-foreground">
+                          Discount ({discountPercent}%)
+                        </span>
+                        <span className="font-medium text-primary">-${discountAmount}</span>
+                      </div>
+                    </>
+                  )}
+
                   <div className="flex justify-between items-center py-4">
                     <span className="text-lg font-semibold text-foreground">Total</span>
                     <span className="text-3xl font-bold text-primary">${price}</span>
