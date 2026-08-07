@@ -295,6 +295,8 @@ export default function PurchaseAccount() {
       status: "pending_payment",
       current_balance: selectedSize,
       payment_address: CRYPTO_WALLET,
+      coupon_code: couponApplies ? appliedCoupon!.code : null,
+      discount_percent: discountPercent,
     });
 
     setIsProcessing(false);
@@ -457,6 +459,60 @@ export default function PurchaseAccount() {
                     <span className="text-muted-foreground">Profit Split</span>
                     <span className="font-medium text-foreground">Up to 90%</span>
                   </div>
+
+                  {/* Coupon code */}
+                  <div className="py-2 border-b border-border space-y-2">
+                    <span className="text-muted-foreground text-sm flex items-center gap-2">
+                      <Tag className="w-4 h-4 text-primary" />
+                      Coupon code
+                    </span>
+                    {couponApplies ? (
+                      <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/50 bg-primary/10 px-3 py-2">
+                        <span className="text-sm font-semibold text-foreground">
+                          {appliedCoupon!.code} · {discountPercent}% off
+                        </span>
+                        <Button variant="ghost" size="sm" onClick={removeCoupon}>
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    ) : (
+                      <form
+                        className="flex gap-2"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          applyCoupon();
+                        }}
+                      >
+                        <Input
+                          value={couponInput}
+                          onChange={(e) => setCouponInput(e.target.value.toUpperCase().slice(0, 32))}
+                          placeholder="Enter code"
+                          className="uppercase"
+                          maxLength={32}
+                        />
+                        <Button type="submit" variant="outline" disabled={couponLoading || !couponInput.trim()}>
+                          {couponLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Apply"}
+                        </Button>
+                      </form>
+                    )}
+                    {couponError && <p className="text-sm text-destructive">{couponError}</p>}
+                  </div>
+
+                  {discountPercent > 0 && (
+                    <>
+                      <div className="flex justify-between items-center py-2 border-b border-border">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span className="font-medium text-foreground line-through">${basePrice}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-border">
+                        <span className="text-muted-foreground">
+                          Discount ({discountPercent}%)
+                        </span>
+                        <span className="font-medium text-primary">-${discountAmount}</span>
+                      </div>
+                    </>
+                  )}
+
                   <div className="flex justify-between items-center py-4">
                     <span className="text-lg font-semibold text-foreground">Total</span>
                     <span className="text-3xl font-bold text-primary">${price}</span>
