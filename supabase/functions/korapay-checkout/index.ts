@@ -97,28 +97,34 @@ Deno.serve(async (req) => {
     let couponUses = 0;
 
     if (couponCode) {
-      const { data: coupon } = await admin
+      const couponQuery = await admin
         .from("coupons")
-        .select("id, code, discount_percent, challenge_types, is_active, expires_at, max_uses, times_used")
+        .select("id, code, discount_percent, challenge_types, expires_at, max_uses, times_used")
         .eq("code", couponCode)
         .eq("is_active", true)
         .maybeSingle();
 
-      const expired = coupon?.expires_at && new Date(coupon.expires_at) < new Date();
-      const exhausted =
-        coupon?.max_uses !== null && coupon?.max_uses !== undefined &&
-        (coupon?.times_used ?? 0) >= coupon.max_uses;
-      const applies =
-        !coupon?.challenge_types || coupon.challenge_types.includes(challengeType);
+      const row = couponQuery.data;
+      const invalidCoupon = json(
+        { error: { couponCode: "This coupon code is not valid for this purchase." } },
+        400,
+      );
 
-      if (!coupon || expired || exhausted || !applies) {
-        return json({ error: { couponCode: "This coupon code is not valid for this purchase." } }, 400);
+      if (!row) return invalidCoupon;
+      if (row.expires_at && new Date(row.expires_at).getTime() < Date.now()) return invalidCoupon;
+
+      const uses = Number(row.times_used || 0);
+      if (row.max_uses != null && uses >= Number(row.max_uses)) return invalidCoupon;
+
+      const types = row.challenge_types;
+      if (Array.isArray(types) && types.length > 0 && !types.includes(challengeType)) {
+        return invalidCoupon;
       }
 
-      discountPercent = Number(coupon.discount_percent);
-      appliedCoupon = coupon.code;
-      couponId = coupon.id;
-      couponUses = coupon.times_used ?? 0;
+      discountPercent = Number(row.discount_percent);
+      appliedCoupon = row.code;
+      couponId = row.id;
+      couponUses = uses;
     }
 
     const priceUsd = Math.round(basePriceUsd * (100 - discountPercent)) / 100;
