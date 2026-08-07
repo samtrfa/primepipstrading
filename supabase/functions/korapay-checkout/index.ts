@@ -1,3 +1,7 @@
+      discountPercent = Number(coupon.discount_percent);
+      appliedCoupon = coupon.code;
+      couponId = coupon.id;
+      couponUses = coupon.times_used ?? 0;
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
@@ -90,6 +94,7 @@ Deno.serve(async (req) => {
     let discountPercent = 0;
     let appliedCoupon: string | null = null;
     let couponId: string | null = null;
+    let couponUses = 0;
 
     if (couponCode) {
       const { data: coupon } = await admin
@@ -190,7 +195,7 @@ Deno.serve(async (req) => {
     }
 
     if (couponId) {
-      await admin.rpc("increment_coupon_use", { _coupon_id: couponId }).then(() => {}, () => {});
+      await admin.from("coupons").update({ times_used: couponUses + 1 }).eq("id", couponId);
     }
 
     return json({
