@@ -103,6 +103,9 @@ const pricingTiers: PricingTier[] = [
 
 const CRYPTO_WALLET = "0x66aeC4645A4d204653d2e62FCA26968Ce1B5db1a";
 
+const challengeLabel = (type: ChallengeType) =>
+  challengeTypes.find((c) => c.id === type)?.label ?? type.replace(/_/g, "-");
+
 type PaymentMethod = "korapay" | "crypto";
 
 function RuleItem({ label, value, ruleKey }: { label: string; value: string; ruleKey: string }) {
@@ -216,7 +219,7 @@ export default function PurchaseAccount() {
     if (challengeTypes && !challengeTypes.includes(selectedChallenge)) {
       setCouponError(
         `${data.code} only applies to ${challengeTypes
-          .map((t) => challengeTypes_label(t))
+          .map((t) => challengeLabel(t))
           .join(", ")} accounts.`,
       );
     } else {
