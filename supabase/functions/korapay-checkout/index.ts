@@ -65,6 +65,9 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => null);
     const challengeType = body?.challengeType;
     const accountSize = Number(body?.accountSize);
+    const couponCode = typeof body?.couponCode === "string"
+      ? body.couponCode.trim().toUpperCase().slice(0, 32)
+      : null;
     const currency = "NGN";
     const redirectUrl = typeof body?.redirectUrl === "string" ? body.redirectUrl : null;
     const customerName = typeof body?.customerName === "string" && body.customerName.trim()
@@ -79,13 +82,44 @@ Deno.serve(async (req) => {
       return json({ error: errors }, 400);
     }
 
-    const priceUsd = PRICES[accountSize][challengeType as ChallengeType];
+    const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    const basePriceUsd = PRICES[accountSize][challengeType as ChallengeType];
+
+    // Validate the coupon server-side; never trust a client-supplied discount.
+    let discountPercent = 0;
+    let appliedCoupon: string | null = null;
+    let couponId: string | null = null;
+
+    if (couponCode) {
+      const { data: coupon } = await admin
+        .from("coupons")
+        .select("id, code, discount_percent, challenge_types, is_active, expires_at, max_uses, times_used")
+        .eq("code", couponCode)
+        .eq("is_active", true)
+        .maybeSingle();
+
+      const expired = coupon?.expires_at && new Date(coupon.expires_at) < new Date();
+      const exhausted =
+        coupon?.max_uses !== null && coupon?.max_uses !== undefined &&
+        (coupon?.times_used ?? 0) >= coupon.max_uses;
+      const applies =
+        !coupon?.challenge_types || coupon.challenge_types.includes(challengeType);
+
+      if (!coupon || expired || exhausted || !applies) {
+        return json({ error: { couponCode: "This coupon code is not valid for this purchase." } }, 400);
+      }
+
+      discountPercent = Number(coupon.discount_percent);
+      appliedCoupon = coupon.code;
+      couponId = coupon.id;
+    }
+
+    const priceUsd = Math.round(basePriceUsd * (100 - discountPercent)) / 100;
     const rate = await getNairaRate();
     const localAmount = Math.ceil(priceUsd * rate);
 
     const reference = `pp_${crypto.randomUUID().replace(/-/g, "")}`;
-
-    const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const { data: account, error: insertError } = await admin
       .from("accounts")
@@ -100,6 +134,8 @@ Deno.serve(async (req) => {
         payment_reference: reference,
         payment_currency: currency,
         payment_amount_local: localAmount,
+        coupon_code: appliedCoupon,
+        discount_percent: discountPercent,
       })
       .select("id")
       .single();
@@ -151,6 +187,10 @@ Deno.serve(async (req) => {
       console.error("Korapay returned an unsuccessful payload:", koraBody);
       await admin.from("accounts").update({ status: "failed" }).eq("id", account.id);
       return json({ error: parsed?.message || "Payment provider error", details: koraBody }, 502);
+    }
+
+    if (couponId) {
+      await admin.rpc("increment_coupon_use", { _coupon_id: couponId }).then(() => {}, () => {});
     }
 
     return json({
