@@ -1,7 +1,3 @@
-      discountPercent = Number(coupon.discount_percent);
-      appliedCoupon = coupon.code;
-      couponId = coupon.id;
-      couponUses = coupon.times_used ?? 0;
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
