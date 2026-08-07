@@ -216,8 +216,8 @@ export default function PurchaseAccount() {
     if (challengeTypes && !challengeTypes.includes(selectedChallenge)) {
       setCouponError(
         `${data.code} only applies to ${challengeTypes
-          .map((t) => challengeTypes && challengeTypes.length ? (challengeTypes.includes(t) ? t.replace(/_/g, "-") : t) : t)
-          .join(", ")} accounts.`
+          .map((t) => challengeTypes_label(t))
+          .join(", ")} accounts.`,
       );
     } else {
       toast({
