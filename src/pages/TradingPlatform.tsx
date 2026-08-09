@@ -56,6 +56,19 @@ interface Asset {
   lot_size?: number;
 }
 
+// Approximate market-cap ordering for the supported crypto pairs
+const MARKET_CAP_ORDER = [
+  "BTC", "ETH", "XRP", "BNB", "SOL", "DOGE", "ADA", "LINK", "AVAX", "BCH",
+  "XLM", "LTC", "DOT", "UNI", "NEAR", "AAVE", "ETC", "ATOM", "ALGO", "XTZ",
+  "SAND",
+];
+
+const marketCapRank = (symbol: string) => {
+  const base = symbol.replace(/(USDT|USDC|USD|\/|-)/g, "").toUpperCase();
+  const idx = MARKET_CAP_ORDER.indexOf(base);
+  return idx === -1 ? 999 : idx;
+};
+
 interface Position {
   id: string;
   asset_id: string;
