@@ -30,28 +30,8 @@ function TradingViewChartComponent({ symbol, positions = [], onFullscreenChange,
     // Clear previous widget
     containerRef.current.innerHTML = "";
 
-    // Map internal symbols to TradingView symbols
-    const symbolMap: Record<string, string> = {
-      EURUSD: "FX:EURUSD",
-      GBPUSD: "FX:GBPUSD",
-      USDJPY: "FX:USDJPY",
-      AUDUSD: "FX:AUDUSD",
-      USDCAD: "FX:USDCAD",
-      XAUUSD: "TVC:GOLD",
-      BTCUSD: "BITSTAMP:BTCUSD",
-      ETHUSD: "BITSTAMP:ETHUSD",
-      US30: "TVC:DJI",
-      US100: "NASDAQ:NDX",
-      US500: "FOREXCOM:SPXUSD",
-      USDCHF: "FX:USDCHF",
-      NZDUSD: "FX:NZDUSD",
-      EURJPY: "FX:EURJPY",
-      GBPJPY: "FX:GBPJPY",
-      XAGUSD: "TVC:SILVER",
-      USOIL: "TVC:USOIL",
-    };
-
-    const tvSymbol = symbolMap[symbol] || `FX:${symbol}`;
+    // Crypto-only platform: charts come from Bitstamp, matching the live price feed
+    const tvSymbol = `BITSTAMP:${symbol}`;
 
     const script = document.createElement("script");
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
