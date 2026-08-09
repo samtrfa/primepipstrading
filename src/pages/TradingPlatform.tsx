@@ -186,13 +186,11 @@ export default function TradingPlatform() {
       }, 0);
   }, [positions, prices]);
 
-  const formatPrice = (symbol: string, price: number) => {
-    if (symbol.includes("JPY")) return price.toFixed(3);
-    if (symbol.includes("BTC") || symbol.includes("ETH")) return price.toFixed(2);
-    if (symbol.includes("XAU") || symbol.includes("XAG")) return price.toFixed(2);
-    if (symbol.includes("US30") || symbol.includes("US100") || symbol.includes("US500")) return price.toFixed(2);
-    if (symbol.includes("OIL")) return price.toFixed(2);
-    return price.toFixed(5);
+  const formatPrice = (_symbol: string, price: number) => {
+    if (price >= 100) return price.toFixed(2);
+    if (price >= 1) return price.toFixed(3);
+    if (price >= 0.01) return price.toFixed(4);
+    return price.toFixed(6);
   };
 
   const handlePlaceOrder = async (type: "buy" | "sell") => {
