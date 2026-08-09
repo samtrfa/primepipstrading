@@ -56,6 +56,19 @@ interface Asset {
   lot_size?: number;
 }
 
+// Approximate market-cap ordering for the supported crypto pairs
+const MARKET_CAP_ORDER = [
+  "BTC", "ETH", "XRP", "BNB", "SOL", "DOGE", "ADA", "LINK", "AVAX", "BCH",
+  "XLM", "LTC", "DOT", "UNI", "NEAR", "AAVE", "ETC", "ATOM", "ALGO", "XTZ",
+  "SAND",
+];
+
+const marketCapRank = (symbol: string) => {
+  const base = symbol.replace(/(USDT|USDC|USD|\/|-)/g, "").toUpperCase();
+  const idx = MARKET_CAP_ORDER.indexOf(base);
+  return idx === -1 ? 999 : idx;
+};
+
 interface Position {
   id: string;
   asset_id: string;
@@ -133,12 +146,14 @@ export default function TradingPlatform() {
       const { data: assetsData } = await supabase
         .from("assets")
         .select("*")
-        .eq("is_active", true)
-        .order("symbol");
+        .eq("is_active", true);
 
       if (assetsData) {
-        setAssets(assetsData);
-        setSelectedAsset(assetsData[0] || null);
+        const sorted = [...assetsData].sort(
+          (a, b) => marketCapRank(a.symbol) - marketCapRank(b.symbol)
+        );
+        setAssets(sorted);
+        setSelectedAsset(sorted[0] || null);
       }
 
       // Fetch positions
