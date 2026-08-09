@@ -133,12 +133,14 @@ export default function TradingPlatform() {
       const { data: assetsData } = await supabase
         .from("assets")
         .select("*")
-        .eq("is_active", true)
-        .order("symbol");
+        .eq("is_active", true);
 
       if (assetsData) {
-        setAssets(assetsData);
-        setSelectedAsset(assetsData[0] || null);
+        const sorted = [...assetsData].sort(
+          (a, b) => marketCapRank(a.symbol) - marketCapRank(b.symbol)
+        );
+        setAssets(sorted);
+        setSelectedAsset(sorted[0] || null);
       }
 
       // Fetch positions
