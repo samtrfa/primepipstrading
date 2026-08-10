@@ -100,6 +100,7 @@ export default function TradingPlatform() {
   const [isLoading, setIsLoading] = useState(true);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [isProceeding, setIsProceeding] = useState(false);
+  const [view, setView] = useState<"trade" | "chart">("trade");
 
   // Get symbols for live prices synced with TradingView
   const symbols = assets.map((a) => a.symbol);
@@ -603,53 +604,58 @@ export default function TradingPlatform() {
         </div>
       </header>
 
-      <div className="flex-1 p-2 sm:p-4 overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-4 h-full">
-          {/* Chart Area - Takes most space */}
-          <div className="lg:col-span-9 order-1">
-            <Card className="h-[300px] sm:h-[400px] lg:h-[calc(100vh-280px)]">
-              <CardHeader className="py-2 px-3 border-b">
-                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
-                  <div className="flex-1 max-w-xs">
-                    <AssetSelector
-                      assets={assets}
-                      selectedAsset={selectedAsset}
-                      onAssetChange={(asset) => setSelectedAsset(asset as Asset)}
-                      prices={prices}
-                    />
-                  </div>
-                  {selectedAsset && prices[selectedAsset.symbol] && (
-                    <div className="flex items-center gap-2 sm:gap-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-lg sm:text-2xl font-bold">
-                          {formatPrice(
-                            selectedAsset.symbol,
-                            prices[selectedAsset.symbol].bid
-                          )}
-                        </span>
-                        {prices[selectedAsset.symbol].isMarketOpen === false && (
-                          <Badge variant="outline" className="text-yellow-500 border-yellow-500/50 text-xs">
-                            Market Closed
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex gap-2 text-xs">
-                        <span className="text-red-500">
-                          B: {formatPrice(selectedAsset.symbol, prices[selectedAsset.symbol].bid)}
-                        </span>
-                        <span className="text-green-500">
-                          A: {formatPrice(selectedAsset.symbol, prices[selectedAsset.symbol].ask)}
-                        </span>
-                      </div>
-                    </div>
+      <div className="flex-1 p-2 sm:p-4 space-y-3">
+        {/* Asset bar */}
+        <Card className="p-2 sm:p-3">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+            <div className="flex-1 max-w-xs">
+              <AssetSelector
+                assets={assets}
+                selectedAsset={selectedAsset}
+                onAssetChange={(asset) => setSelectedAsset(asset as Asset)}
+                prices={prices}
+              />
+            </div>
+            {selectedAsset && prices[selectedAsset.symbol] && (
+              <div className="flex items-center gap-2 sm:gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg sm:text-2xl font-bold">
+                    {formatPrice(selectedAsset.symbol, prices[selectedAsset.symbol].bid)}
+                  </span>
+                  {prices[selectedAsset.symbol].isMarketOpen === false && (
+                    <Badge variant="outline" className="text-yellow-500 border-yellow-500/50 text-xs">
+                      Market Closed
+                    </Badge>
                   )}
                 </div>
-              </CardHeader>
-              <CardContent className="p-0 h-[calc(100%-60px)]">
-                {selectedAsset ? (
-                  <TradingViewChart 
-                    symbol={selectedAsset.symbol} 
-                    positions={openPositions.filter(p => p.assets?.symbol === selectedAsset.symbol).map(p => ({
+                <div className="flex gap-2 text-xs">
+                  <span className="text-red-500">
+                    B: {formatPrice(selectedAsset.symbol, prices[selectedAsset.symbol].bid)}
+                  </span>
+                  <span className="text-green-500">
+                    A: {formatPrice(selectedAsset.symbol, prices[selectedAsset.symbol].ask)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        </Card>
+
+        <Tabs value={view} onValueChange={(v) => setView(v as "trade" | "chart")}>
+          <TabsList className="grid w-full max-w-[280px] grid-cols-2">
+            <TabsTrigger value="trade">Trade</TabsTrigger>
+            <TabsTrigger value="chart">Chart</TabsTrigger>
+          </TabsList>
+
+          {/* Chart View - enlarged */}
+          <TabsContent value="chart" className="mt-3">
+            <Card className="h-[70vh] min-h-[420px] lg:h-[calc(100vh-230px)] overflow-hidden">
+              {selectedAsset ? (
+                <TradingViewChart
+                  symbol={selectedAsset.symbol}
+                  positions={openPositions
+                    .filter((p) => p.assets?.symbol === selectedAsset.symbol)
+                    .map((p) => ({
                       id: p.id,
                       position_type: p.position_type,
                       entry_price: p.entry_price,
@@ -657,19 +663,21 @@ export default function TradingPlatform() {
                       take_profit: p.take_profit,
                       lot_size: p.lot_size,
                     }))}
-                  />
-                ) : (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    Select an asset to view chart
-                  </div>
-                )}
-              </CardContent>
+                />
+              ) : (
+                <div className="h-full flex items-center justify-center text-muted-foreground">
+                  Select an asset to view chart
+                </div>
+              )}
             </Card>
-          </div>
+          </TabsContent>
 
+          {/* Trade View */}
+          <TabsContent value="trade" className="mt-3">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 sm:gap-4">
           {/* Order Panel */}
-          <div className="lg:col-span-3 order-2">
-            <Card className="h-auto lg:h-[calc(100vh-280px)] overflow-y-auto">
+          <div className="lg:col-span-4 order-1">
+            <Card className="h-auto overflow-y-auto">
               <CardHeader className="py-2 px-3 border-b">
                 <CardTitle className="text-sm flex items-center gap-2">
                   <Target className="w-4 h-4" />
@@ -835,7 +843,7 @@ export default function TradingPlatform() {
           </div>
 
           {/* Positions & History */}
-          <div className="lg:col-span-12 order-3">
+          <div className="lg:col-span-8 order-2">
             <Card>
               <Tabs defaultValue="positions">
                 <CardHeader className="py-2 px-3 border-b">
@@ -1078,7 +1086,9 @@ export default function TradingPlatform() {
               </Tabs>
             </Card>
           </div>
-        </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
