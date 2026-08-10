@@ -100,6 +100,7 @@ export default function TradingPlatform() {
   const [isLoading, setIsLoading] = useState(true);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [isProceeding, setIsProceeding] = useState(false);
+  const [view, setView] = useState<"trade" | "chart">("trade");
 
   // Get symbols for live prices synced with TradingView
   const symbols = assets.map((a) => a.symbol);
