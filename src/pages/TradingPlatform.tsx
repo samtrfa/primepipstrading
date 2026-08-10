@@ -843,7 +843,7 @@ export default function TradingPlatform() {
           </div>
 
           {/* Positions & History */}
-          <div className="lg:col-span-12 order-3">
+          <div className="lg:col-span-8 order-2">
             <Card>
               <Tabs defaultValue="positions">
                 <CardHeader className="py-2 px-3 border-b">
@@ -1086,7 +1086,9 @@ export default function TradingPlatform() {
               </Tabs>
             </Card>
           </div>
-        </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
