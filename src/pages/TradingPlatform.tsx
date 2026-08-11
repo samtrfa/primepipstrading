@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { calculatePositionPL, formatPips } from "@/lib/tradingCalculations";
+import { getPhaseRules, getTotalPhases } from "@/lib/challengeRules";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { AssetSelector } from "@/components/trading/AssetSelector";
 import { DrawdownTracker } from "@/components/trading/DrawdownTracker";
@@ -327,34 +328,20 @@ export default function TradingPlatform() {
       ? ((effectiveDailyStart - newBalance) / effectiveDailyStart) * 100 
       : 0;
 
-    // Check for drawdown violations
-    const DRAWDOWN_LIMITS: Record<string, { daily: number; max: number }> = {
-      three_step: { daily: 5, max: 10 },
-      two_step: { daily: 5, max: 10 },
-      one_step: { daily: 4, max: 6 },
-      instant: { daily: 5, max: 10 },
-    };
-    const limits = DRAWDOWN_LIMITS[account.challenge_type] || DRAWDOWN_LIMITS.three_step;
-    
+    // Check for drawdown violations using the rules of the CURRENT phase
+    const activePhase = account.current_phase || 1;
+    const phaseRules = getPhaseRules(account.challenge_type, activePhase);
+
     let violationType: string | null = null;
-    if (maxDrawdownPercent >= limits.max) {
+    if (maxDrawdownPercent >= phaseRules.maxDrawdown) {
       violationType = 'max_drawdown';
-    } else if (dailyDrawdownPercent >= limits.daily) {
+    } else if (dailyDrawdownPercent >= phaseRules.dailyDrawdown) {
       violationType = 'daily_drawdown';
     }
 
-    // Check for phase completion (profit target met)
-    const PROFIT_TARGETS: Record<string, { phases: number[]; totalPhases: number }> = {
-      three_step: { phases: [8, 5, 5], totalPhases: 3 },
-      two_step: { phases: [8, 5], totalPhases: 2 },
-      one_step: { phases: [10], totalPhases: 1 },
-      instant: { phases: [], totalPhases: 0 },
-    };
-    
-    const targetConfig = PROFIT_TARGETS[account.challenge_type] || PROFIT_TARGETS.three_step;
-    const currentPhase = account.current_phase || 1;
-    const phaseIndex = Math.min(currentPhase - 1, targetConfig.phases.length - 1);
-    const profitTarget = targetConfig.phases[phaseIndex] || 0;
+    // Check for phase completion (profit target of the current phase met)
+    const currentPhase = activePhase;
+    const profitTarget = phaseRules.profitTarget;
     const profitPercent = ((newBalance - account.account_size) / account.account_size) * 100;
     
     // Check if profit target is met and no drawdown violation - mark phase as passed
@@ -440,22 +427,27 @@ export default function TradingPlatform() {
 
     setIsProceeding(true);
 
-    const PROFIT_TARGETS: Record<string, { phases: number[]; totalPhases: number }> = {
-      three_step: { phases: [8, 5, 5], totalPhases: 3 },
-      two_step: { phases: [8, 5], totalPhases: 2 },
-      one_step: { phases: [10], totalPhases: 1 },
-      instant: { phases: [], totalPhases: 0 },
-    };
-
-    const targetConfig = PROFIT_TARGETS[account.challenge_type] || PROFIT_TARGETS.three_step;
+    const totalPhases = getTotalPhases(account.challenge_type);
     const currentPhase = account.current_phase || 1;
+
+    // A phase must be finished flat — no open positions may carry into the next phase
+    const stillOpen = positions.filter((p) => p.status === "open");
+    if (stillOpen.length > 0) {
+      toast({
+        title: "Close your open positions first",
+        description: `You still have ${stillOpen.length} open position(s). Close them all before advancing.`,
+        variant: "destructive",
+      });
+      setIsProceeding(false);
+      return;
+    }
 
     let newPhase = currentPhase;
     let newStatus: "active" | "failed" | "funded" | "passed" | "pending_payment" =
       account.status as "active" | "failed" | "funded" | "passed" | "pending_payment";
-    let resetBalance = account.account_size;
+    const resetBalance = account.account_size;
 
-    if (currentPhase >= targetConfig.totalPhases) {
+    if (currentPhase >= totalPhases) {
       // Final phase completed - account is now funded
       newStatus = 'funded';
       
@@ -467,10 +459,11 @@ export default function TradingPlatform() {
     } else {
       // Advance to next phase
       newPhase = currentPhase + 1;
-      
+      const nextRules = getPhaseRules(account.challenge_type, newPhase);
+
       toast({
         title: `🚀 Advancing to Phase ${newPhase}!`,
-        description: `Your balance has been reset to $${account.account_size.toLocaleString()}.`,
+        description: `Balance reset to $${resetBalance.toLocaleString()}. New rules: ${nextRules.profitTarget}% target, ${nextRules.dailyDrawdown}% daily / ${nextRules.maxDrawdown}% max drawdown.`,
         duration: 8000,
       });
     }
@@ -524,6 +517,9 @@ export default function TradingPlatform() {
         ...accountUpdate,
       } : null
     );
+
+    // Start the new phase with a clean slate in the positions panel
+    setPositions([]);
 
     setIsProceeding(false);
   };
@@ -837,6 +833,7 @@ export default function TradingPlatform() {
                   dailyStartBalance={account.daily_start_balance}
                   unrealizedPL={unrealizedPL}
                   challengeType={account.challenge_type}
+                  currentPhase={account.current_phase}
                 />
               </div>
             )}

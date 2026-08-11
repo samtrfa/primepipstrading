@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { AlertTriangle, ShieldAlert, TrendingDown, Activity } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getPhaseRules } from "@/lib/challengeRules";
 
 interface DrawdownTrackerProps {
   accountSize: number;
@@ -12,15 +13,8 @@ interface DrawdownTrackerProps {
   dailyStartBalance: number | null;
   unrealizedPL: number;
   challengeType: string;
+  currentPhase?: number | null;
 }
-
-// Prop trading challenge drawdown limits
-const DRAWDOWN_LIMITS: Record<string, { daily: number; max: number }> = {
-  three_step: { daily: 5, max: 10 },
-  two_step: { daily: 5, max: 10 },
-  one_step: { daily: 4, max: 6 },
-  instant: { daily: 5, max: 10 },
-};
 
 export function DrawdownTracker({
   accountSize,
@@ -29,10 +23,12 @@ export function DrawdownTracker({
   dailyStartBalance,
   unrealizedPL,
   challengeType,
+  currentPhase = 1,
 }: DrawdownTrackerProps) {
   const [violations, setViolations] = useState<string[]>([]);
 
-  const limits = DRAWDOWN_LIMITS[challengeType] || DRAWDOWN_LIMITS.three_step;
+  const rules = getPhaseRules(challengeType, currentPhase);
+  const limits = { daily: rules.dailyDrawdown, max: rules.maxDrawdown };
   
   // Calculate equity (balance + unrealized P/L)
   const equity = currentBalance + unrealizedPL;
@@ -210,6 +206,7 @@ export function DrawdownTracker({
           <div className="pt-2 border-t border-border">
             <p className="text-[10px] text-muted-foreground text-center">
               Challenge: <span className="font-medium capitalize">{challengeType.replace("_", " ")}</span> | 
+              <span className="font-medium"> {rules.name}</span> | 
               Daily Limit: <span className="font-medium">{limits.daily}%</span> | 
               Max Limit: <span className="font-medium">{limits.max}%</span>
             </p>
