@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { calculatePositionPL, formatPips } from "@/lib/tradingCalculations";
+import { calculatePositionPL, formatPips, getRequiredMargin } from "@/lib/tradingCalculations";
 import { getPhaseRules, getTotalPhases } from "@/lib/challengeRules";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { AssetSelector } from "@/components/trading/AssetSelector";
@@ -27,6 +27,8 @@ import {
   Activity,
   Wifi,
   WifiOff,
+  Lock,
+  ShieldAlert,
 } from "lucide-react";
 
 interface Account {
@@ -132,7 +134,11 @@ export default function TradingPlatform() {
         return;
       }
 
-      if (accountData.status !== "active" && accountData.status !== "funded") {
+      if (
+        accountData.status !== "active" &&
+        accountData.status !== "funded" &&
+        accountData.status !== "failed"
+      ) {
         toast({
           title: "Account not active",
           description: "This account is not available for trading",
@@ -210,8 +216,172 @@ export default function TradingPlatform() {
     return price.toFixed(6);
   };
 
+  const isBlocked =
+    !!account && (account.status === "failed" || account.drawdown_violated === true);
+
+  // ---- Margin (account balance is the total available margin) ----
+  const usedMargin = positions
+    .filter((p) => p.status === "open")
+    .reduce((total, p) => {
+      if (!p.assets) return total;
+      return total + getRequiredMargin(p.assets, p.lot_size, p.entry_price);
+    }, 0);
+
+  const balanceForMargin = account?.current_balance ?? account?.account_size ?? 0;
+  const freeMargin = Math.max(0, balanceForMargin - usedMargin);
+
+  const pendingLots = parseFloat(lotSize);
+  const pendingPrice = selectedAsset ? prices[selectedAsset.symbol]?.ask : undefined;
+  const pendingMargin =
+    selectedAsset && pendingPrice && Number.isFinite(pendingLots) && pendingLots > 0
+      ? getRequiredMargin(selectedAsset, pendingLots, pendingPrice)
+      : 0;
+  const insufficientMargin = pendingMargin > freeMargin;
+
+  // ---- Rule breach enforcement: close everything and lock the account ----
+  const breachHandledRef = useRef(false);
+
+  const enforceRuleBreach = useCallback(
+    async (violation: "max_drawdown" | "daily_drawdown") => {
+      if (!account || breachHandledRef.current) return;
+      breachHandledRef.current = true;
+
+      const openNow = positions.filter((p) => p.status === "open");
+      const nowIso = new Date().toISOString();
+      let realized = 0;
+      const closedIds: Record<string, { exit: number; pl: number }> = {};
+
+      for (const position of openNow) {
+        const asset = position.assets;
+        const priceFeed = asset ? prices[asset.symbol] : null;
+        if (!asset || !priceFeed) continue;
+
+        const exitPrice =
+          position.position_type === "buy" ? priceFeed.bid : priceFeed.ask;
+        const { profitLoss } = calculatePositionPL(
+          asset,
+          position.position_type as "buy" | "sell",
+          position.entry_price,
+          exitPrice,
+          position.lot_size
+        );
+        realized += profitLoss;
+        closedIds[position.id] = { exit: exitPrice, pl: profitLoss };
+
+        await supabase
+          .from("positions")
+          .update({
+            status: "closed",
+            exit_price: exitPrice,
+            profit_loss: profitLoss,
+            closed_at: nowIso,
+          })
+          .eq("id", position.id);
+
+        await supabase.from("trade_history").insert({
+          account_id: account.id,
+          position_id: position.id,
+          action: "close",
+          symbol: asset.symbol,
+          lot_size: position.lot_size,
+          price: exitPrice,
+          profit_loss: profitLoss,
+          notes: `Force-closed: ${violation.replace("_", " ")} breach`,
+        });
+      }
+
+      const newBalance = (account.current_balance || account.account_size) + realized;
+      const newPL = (account.profit_loss || 0) + realized;
+      const effectiveHWM = account.high_water_mark || account.account_size;
+      const effectiveDailyStart = account.daily_start_balance || account.account_size;
+      const maxDrawdownPercent =
+        effectiveHWM > 0 ? ((effectiveHWM - newBalance) / effectiveHWM) * 100 : 0;
+      const dailyDrawdownPercent =
+        effectiveDailyStart > 0
+          ? ((effectiveDailyStart - newBalance) / effectiveDailyStart) * 100
+          : 0;
+
+      const accountUpdate = {
+        current_balance: newBalance,
+        profit_loss: newPL,
+        max_drawdown_percent: maxDrawdownPercent,
+        daily_drawdown_percent: dailyDrawdownPercent,
+        drawdown_violated: true,
+        violation_type: violation,
+        phase_passed: false,
+        status: "failed" as const,
+      };
+
+      await supabase.from("accounts").update(accountUpdate).eq("id", account.id);
+
+      await supabase.from("trade_history").insert({
+        account_id: account.id,
+        action: "account_failed",
+        symbol: "-",
+        lot_size: 0,
+        price: 0,
+        notes: `Account failed - ${violation.replace("_", " ")} limit breached. All positions force-closed.`,
+      });
+
+      setAccount((prev) => (prev ? { ...prev, ...accountUpdate } : null));
+      setPositions((prev) =>
+        prev.map((p) =>
+          closedIds[p.id]
+            ? {
+                ...p,
+                status: "closed",
+                exit_price: closedIds[p.id].exit,
+                profit_loss: closedIds[p.id].pl,
+                closed_at: nowIso,
+              }
+            : p
+        )
+      );
+
+      toast({
+        title: "Account Failed - Trading Disabled",
+        description:
+          violation === "max_drawdown"
+            ? "Max drawdown limit breached. All open trades were closed and this account is now blocked from trading."
+            : "Daily drawdown limit breached. All open trades were closed and this account is now blocked from trading.",
+        variant: "destructive",
+        duration: 12000,
+      });
+    },
+    [account, positions, prices, toast]
+  );
+
+  // Live (equity-based) breach monitoring — reacts instantly to price moves
+  useEffect(() => {
+    if (!account || isBlocked || breachHandledRef.current) return;
+
+    const unrealized = calculateUnrealizedPL();
+    const liveEquity = (account.current_balance || account.account_size) + unrealized;
+    const hwm = account.high_water_mark || account.account_size;
+    const dailyStart = account.daily_start_balance || account.account_size;
+    const rules = getPhaseRules(account.challenge_type, account.current_phase || 1);
+
+    const maxDD = hwm > 0 ? ((hwm - liveEquity) / hwm) * 100 : 0;
+    const dailyDD = dailyStart > 0 ? ((dailyStart - liveEquity) / dailyStart) * 100 : 0;
+
+    if (maxDD >= rules.maxDrawdown) {
+      enforceRuleBreach("max_drawdown");
+    } else if (dailyDD >= rules.dailyDrawdown) {
+      enforceRuleBreach("daily_drawdown");
+    }
+  }, [account, isBlocked, calculateUnrealizedPL, enforceRuleBreach]);
+
   const handlePlaceOrder = async (type: "buy" | "sell") => {
     if (!selectedAsset || !account) return;
+
+    if (isBlocked) {
+      toast({
+        title: "Trading disabled",
+        description: "This account has failed a challenge rule and is blocked from trading.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const currentPrice = prices[selectedAsset.symbol];
     if (!currentPrice) return;
@@ -223,6 +393,18 @@ export default function TradingPlatform() {
 
     if (isNaN(lots) || lots <= 0) {
       toast({ title: "Invalid lot size", variant: "destructive" });
+      setIsPlacingOrder(false);
+      return;
+    }
+
+    // Balance is the total margin available — reject orders it can't cover
+    const requiredMargin = getRequiredMargin(selectedAsset, lots, entryPrice);
+    if (requiredMargin > freeMargin) {
+      toast({
+        title: "Insufficient margin",
+        description: `${lots} lot(s) of ${selectedAsset.symbol} needs $${requiredMargin.toFixed(2)} margin but only $${freeMargin.toFixed(2)} is free.`,
+        variant: "destructive",
+      });
       setIsPlacingOrder(false);
       return;
     }
@@ -276,6 +458,7 @@ export default function TradingPlatform() {
 
   const handleClosePosition = async (position: Position) => {
     if (!account || !position.assets) return;
+    if (isBlocked) return;
 
     const currentPrice = prices[position.assets.symbol];
     if (!currentPrice) return;
@@ -601,6 +784,30 @@ export default function TradingPlatform() {
       </header>
 
       <div className="flex-1 p-2 sm:p-4 space-y-3">
+        {/* Account failed / trading blocked */}
+        {isBlocked && (
+          <Card className="border-red-500/50 bg-red-500/10">
+            <CardContent className="p-3 flex items-start gap-3">
+              <ShieldAlert className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold text-red-500">
+                  Account Failed — Trading Disabled
+                </p>
+                <p className="text-sm text-red-400">
+                  {account?.violation_type === "daily_drawdown"
+                    ? "Daily drawdown limit breached."
+                    : "Max drawdown limit breached."}{" "}
+                  All open trades were closed automatically.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  You can still review this account's details and trade history, but no
+                  further trading actions are allowed.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Asset bar */}
         <Card className="p-2 sm:p-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
@@ -682,6 +889,12 @@ export default function TradingPlatform() {
               </CardHeader>
               <CardContent className="p-3 space-y-3">
                 {/* Market Status Warning */}
+                {isBlocked && (
+                  <div className="p-2 rounded bg-red-500/10 border border-red-500/30 text-red-500 text-xs text-center flex items-center justify-center gap-1">
+                    <Lock className="w-3 h-3" />
+                    Trading disabled — account failed
+                  </div>
+                )}
                 {selectedAsset && prices[selectedAsset.symbol]?.isMarketOpen === false && (
                   <div className="p-2 rounded bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-xs text-center">
                     Market Closed - Price Paused
@@ -719,8 +932,26 @@ export default function TradingPlatform() {
                       min="0.01"
                       value={lotSize}
                       onChange={(e) => setLotSize(e.target.value)}
+                      disabled={isBlocked}
                       className="mt-1 h-9"
                     />
+                    <div className="mt-1 flex justify-between text-[10px]">
+                      <span className="text-muted-foreground">
+                        Margin required: ${pendingMargin.toFixed(2)}
+                      </span>
+                      <span
+                        className={cn(
+                          insufficientMargin ? "text-red-500" : "text-muted-foreground"
+                        )}
+                      >
+                        Free margin: ${freeMargin.toFixed(2)}
+                      </span>
+                    </div>
+                    {insufficientMargin && !isBlocked && (
+                      <p className="mt-1 text-[10px] text-red-500">
+                        Not enough margin for this lot size.
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -735,6 +966,7 @@ export default function TradingPlatform() {
                         placeholder="Optional"
                         value={stopLoss}
                         onChange={(e) => setStopLoss(e.target.value)}
+                        disabled={isBlocked}
                         className="mt-1 h-9"
                       />
                     </div>
@@ -749,6 +981,7 @@ export default function TradingPlatform() {
                         placeholder="Optional"
                         value={takeProfit}
                         onChange={(e) => setTakeProfit(e.target.value)}
+                        disabled={isBlocked}
                         className="mt-1 h-9"
                       />
                     </div>
@@ -760,7 +993,7 @@ export default function TradingPlatform() {
                     variant="destructive"
                     className="w-full h-10"
                     onClick={() => handlePlaceOrder("sell")}
-                    disabled={!selectedAsset || isPlacingOrder}
+                    disabled={!selectedAsset || isPlacingOrder || isBlocked || insufficientMargin}
                   >
                     <TrendingDown className="w-4 h-4 mr-1" />
                     SELL
@@ -768,7 +1001,7 @@ export default function TradingPlatform() {
                   <Button
                     className="w-full h-10 bg-green-600 hover:bg-green-700"
                     onClick={() => handlePlaceOrder("buy")}
-                    disabled={!selectedAsset || isPlacingOrder}
+                    disabled={!selectedAsset || isPlacingOrder || isBlocked || insufficientMargin}
                   >
                     <TrendingUp className="w-4 h-4 mr-1" />
                     BUY
@@ -809,6 +1042,14 @@ export default function TradingPlatform() {
                     <span className="text-muted-foreground">Open Positions</span>
                     <span className="font-medium">{openPositions.length}</span>
                   </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Used Margin</span>
+                    <span className="font-medium">${usedMargin.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Free Margin</span>
+                    <span className="font-medium">${freeMargin.toFixed(2)}</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -822,7 +1063,7 @@ export default function TradingPlatform() {
                   unrealizedPL={unrealizedPL}
                   challengeType={account.challenge_type}
                   currentPhase={account.current_phase}
-                  phasePassed={account.phase_passed || false}
+                  phasePassed={!isBlocked && (account.phase_passed || false)}
                   onProceedToNextPhase={handleProceedToNextPhase}
                   isProceeding={isProceeding}
                 />
@@ -967,6 +1208,7 @@ export default function TradingPlatform() {
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => handleClosePosition(position)}
+                                      disabled={isBlocked}
                                       className="h-7 px-2 text-xs"
                                     >
                                       <X className="w-3 h-3 mr-1" />
