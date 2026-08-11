@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { calculatePositionPL, formatPips } from "@/lib/tradingCalculations";
+import { getPhaseRules, getTotalPhases } from "@/lib/challengeRules";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { AssetSelector } from "@/components/trading/AssetSelector";
 import { DrawdownTracker } from "@/components/trading/DrawdownTracker";
