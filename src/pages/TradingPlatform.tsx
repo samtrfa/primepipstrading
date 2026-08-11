@@ -784,6 +784,30 @@ export default function TradingPlatform() {
       </header>
 
       <div className="flex-1 p-2 sm:p-4 space-y-3">
+        {/* Account failed / trading blocked */}
+        {isBlocked && (
+          <Card className="border-red-500/50 bg-red-500/10">
+            <CardContent className="p-3 flex items-start gap-3">
+              <ShieldAlert className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold text-red-500">
+                  Account Failed — Trading Disabled
+                </p>
+                <p className="text-sm text-red-400">
+                  {account?.violation_type === "daily_drawdown"
+                    ? "Daily drawdown limit breached."
+                    : "Max drawdown limit breached."}{" "}
+                  All open trades were closed automatically.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  You can still review this account's details and trade history, but no
+                  further trading actions are allowed.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Asset bar */}
         <Card className="p-2 sm:p-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
