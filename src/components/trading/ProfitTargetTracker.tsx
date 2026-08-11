@@ -4,6 +4,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Trophy, Target, CheckCircle2, Star, ArrowRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getPhases } from "@/lib/challengeRules";
 
 interface ProfitTargetTrackerProps {
   accountSize: number;
@@ -16,26 +17,6 @@ interface ProfitTargetTrackerProps {
   isProceeding?: boolean;
 }
 
-// Prop trading challenge profit targets (percentage of account size)
-const PROFIT_TARGETS: Record<string, { phases: number[]; phaseNames: string[] }> = {
-  three_step: { 
-    phases: [8, 5, 5], 
-    phaseNames: ["Phase 1", "Phase 2", "Phase 3"] 
-  },
-  two_step: { 
-    phases: [8, 5], 
-    phaseNames: ["Phase 1", "Phase 2"] 
-  },
-  one_step: { 
-    phases: [10], 
-    phaseNames: ["Evaluation"] 
-  },
-  instant: { 
-    phases: [], 
-    phaseNames: [] 
-  },
-};
-
 export function ProfitTargetTracker({
   accountSize,
   currentBalance,
@@ -46,7 +27,11 @@ export function ProfitTargetTracker({
   onProceedToNextPhase,
   isProceeding = false,
 }: ProfitTargetTrackerProps) {
-  const config = PROFIT_TARGETS[challengeType] || PROFIT_TARGETS.three_step;
+  const phaseRules = challengeType === "instant" ? [] : getPhases(challengeType);
+  const config = {
+    phases: phaseRules.map((p) => p.profitTarget),
+    phaseNames: phaseRules.map((p) => p.name),
+  };
   const phase = currentPhase || 1;
   
   // Instant funding has no profit target
