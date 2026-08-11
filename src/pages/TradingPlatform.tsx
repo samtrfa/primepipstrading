@@ -327,34 +327,20 @@ export default function TradingPlatform() {
       ? ((effectiveDailyStart - newBalance) / effectiveDailyStart) * 100 
       : 0;
 
-    // Check for drawdown violations
-    const DRAWDOWN_LIMITS: Record<string, { daily: number; max: number }> = {
-      three_step: { daily: 5, max: 10 },
-      two_step: { daily: 5, max: 10 },
-      one_step: { daily: 4, max: 6 },
-      instant: { daily: 5, max: 10 },
-    };
-    const limits = DRAWDOWN_LIMITS[account.challenge_type] || DRAWDOWN_LIMITS.three_step;
-    
+    // Check for drawdown violations using the rules of the CURRENT phase
+    const activePhase = account.current_phase || 1;
+    const phaseRules = getPhaseRules(account.challenge_type, activePhase);
+
     let violationType: string | null = null;
-    if (maxDrawdownPercent >= limits.max) {
+    if (maxDrawdownPercent >= phaseRules.maxDrawdown) {
       violationType = 'max_drawdown';
-    } else if (dailyDrawdownPercent >= limits.daily) {
+    } else if (dailyDrawdownPercent >= phaseRules.dailyDrawdown) {
       violationType = 'daily_drawdown';
     }
 
-    // Check for phase completion (profit target met)
-    const PROFIT_TARGETS: Record<string, { phases: number[]; totalPhases: number }> = {
-      three_step: { phases: [8, 5, 5], totalPhases: 3 },
-      two_step: { phases: [8, 5], totalPhases: 2 },
-      one_step: { phases: [10], totalPhases: 1 },
-      instant: { phases: [], totalPhases: 0 },
-    };
-    
-    const targetConfig = PROFIT_TARGETS[account.challenge_type] || PROFIT_TARGETS.three_step;
-    const currentPhase = account.current_phase || 1;
-    const phaseIndex = Math.min(currentPhase - 1, targetConfig.phases.length - 1);
-    const profitTarget = targetConfig.phases[phaseIndex] || 0;
+    // Check for phase completion (profit target of the current phase met)
+    const currentPhase = activePhase;
+    const profitTarget = phaseRules.profitTarget;
     const profitPercent = ((newBalance - account.account_size) / account.account_size) * 100;
     
     // Check if profit target is met and no drawdown violation - mark phase as passed
