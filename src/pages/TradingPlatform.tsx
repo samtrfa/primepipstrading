@@ -216,8 +216,172 @@ export default function TradingPlatform() {
     return price.toFixed(6);
   };
 
+  const isBlocked =
+    !!account && (account.status === "failed" || account.drawdown_violated === true);
+
+  // ---- Margin (account balance is the total available margin) ----
+  const usedMargin = positions
+    .filter((p) => p.status === "open")
+    .reduce((total, p) => {
+      if (!p.assets) return total;
+      return total + getRequiredMargin(p.assets, p.lot_size, p.entry_price);
+    }, 0);
+
+  const balanceForMargin = account?.current_balance ?? account?.account_size ?? 0;
+  const freeMargin = Math.max(0, balanceForMargin - usedMargin);
+
+  const pendingLots = parseFloat(lotSize);
+  const pendingPrice = selectedAsset ? prices[selectedAsset.symbol]?.ask : undefined;
+  const pendingMargin =
+    selectedAsset && pendingPrice && Number.isFinite(pendingLots) && pendingLots > 0
+      ? getRequiredMargin(selectedAsset, pendingLots, pendingPrice)
+      : 0;
+  const insufficientMargin = pendingMargin > freeMargin;
+
+  // ---- Rule breach enforcement: close everything and lock the account ----
+  const breachHandledRef = useRef(false);
+
+  const enforceRuleBreach = useCallback(
+    async (violation: "max_drawdown" | "daily_drawdown") => {
+      if (!account || breachHandledRef.current) return;
+      breachHandledRef.current = true;
+
+      const openNow = positions.filter((p) => p.status === "open");
+      const nowIso = new Date().toISOString();
+      let realized = 0;
+      const closedIds: Record<string, { exit: number; pl: number }> = {};
+
+      for (const position of openNow) {
+        const asset = position.assets;
+        const priceFeed = asset ? prices[asset.symbol] : null;
+        if (!asset || !priceFeed) continue;
+
+        const exitPrice =
+          position.position_type === "buy" ? priceFeed.bid : priceFeed.ask;
+        const { profitLoss } = calculatePositionPL(
+          asset,
+          position.position_type as "buy" | "sell",
+          position.entry_price,
+          exitPrice,
+          position.lot_size
+        );
+        realized += profitLoss;
+        closedIds[position.id] = { exit: exitPrice, pl: profitLoss };
+
+        await supabase
+          .from("positions")
+          .update({
+            status: "closed",
+            exit_price: exitPrice,
+            profit_loss: profitLoss,
+            closed_at: nowIso,
+          })
+          .eq("id", position.id);
+
+        await supabase.from("trade_history").insert({
+          account_id: account.id,
+          position_id: position.id,
+          action: "close",
+          symbol: asset.symbol,
+          lot_size: position.lot_size,
+          price: exitPrice,
+          profit_loss: profitLoss,
+          notes: `Force-closed: ${violation.replace("_", " ")} breach`,
+        });
+      }
+
+      const newBalance = (account.current_balance || account.account_size) + realized;
+      const newPL = (account.profit_loss || 0) + realized;
+      const effectiveHWM = account.high_water_mark || account.account_size;
+      const effectiveDailyStart = account.daily_start_balance || account.account_size;
+      const maxDrawdownPercent =
+        effectiveHWM > 0 ? ((effectiveHWM - newBalance) / effectiveHWM) * 100 : 0;
+      const dailyDrawdownPercent =
+        effectiveDailyStart > 0
+          ? ((effectiveDailyStart - newBalance) / effectiveDailyStart) * 100
+          : 0;
+
+      const accountUpdate = {
+        current_balance: newBalance,
+        profit_loss: newPL,
+        max_drawdown_percent: maxDrawdownPercent,
+        daily_drawdown_percent: dailyDrawdownPercent,
+        drawdown_violated: true,
+        violation_type: violation,
+        phase_passed: false,
+        status: "failed" as const,
+      };
+
+      await supabase.from("accounts").update(accountUpdate).eq("id", account.id);
+
+      await supabase.from("trade_history").insert({
+        account_id: account.id,
+        action: "account_failed",
+        symbol: "-",
+        lot_size: 0,
+        price: 0,
+        notes: `Account failed - ${violation.replace("_", " ")} limit breached. All positions force-closed.`,
+      });
+
+      setAccount((prev) => (prev ? { ...prev, ...accountUpdate } : null));
+      setPositions((prev) =>
+        prev.map((p) =>
+          closedIds[p.id]
+            ? {
+                ...p,
+                status: "closed",
+                exit_price: closedIds[p.id].exit,
+                profit_loss: closedIds[p.id].pl,
+                closed_at: nowIso,
+              }
+            : p
+        )
+      );
+
+      toast({
+        title: "Account Failed - Trading Disabled",
+        description:
+          violation === "max_drawdown"
+            ? "Max drawdown limit breached. All open trades were closed and this account is now blocked from trading."
+            : "Daily drawdown limit breached. All open trades were closed and this account is now blocked from trading.",
+        variant: "destructive",
+        duration: 12000,
+      });
+    },
+    [account, positions, prices, toast]
+  );
+
+  // Live (equity-based) breach monitoring — reacts instantly to price moves
+  useEffect(() => {
+    if (!account || isBlocked || breachHandledRef.current) return;
+
+    const unrealized = calculateUnrealizedPL();
+    const liveEquity = (account.current_balance || account.account_size) + unrealized;
+    const hwm = account.high_water_mark || account.account_size;
+    const dailyStart = account.daily_start_balance || account.account_size;
+    const rules = getPhaseRules(account.challenge_type, account.current_phase || 1);
+
+    const maxDD = hwm > 0 ? ((hwm - liveEquity) / hwm) * 100 : 0;
+    const dailyDD = dailyStart > 0 ? ((dailyStart - liveEquity) / dailyStart) * 100 : 0;
+
+    if (maxDD >= rules.maxDrawdown) {
+      enforceRuleBreach("max_drawdown");
+    } else if (dailyDD >= rules.dailyDrawdown) {
+      enforceRuleBreach("daily_drawdown");
+    }
+  }, [account, isBlocked, calculateUnrealizedPL, enforceRuleBreach]);
+
   const handlePlaceOrder = async (type: "buy" | "sell") => {
     if (!selectedAsset || !account) return;
+
+    if (isBlocked) {
+      toast({
+        title: "Trading disabled",
+        description: "This account has failed a challenge rule and is blocked from trading.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const currentPrice = prices[selectedAsset.symbol];
     if (!currentPrice) return;
@@ -229,6 +393,18 @@ export default function TradingPlatform() {
 
     if (isNaN(lots) || lots <= 0) {
       toast({ title: "Invalid lot size", variant: "destructive" });
+      setIsPlacingOrder(false);
+      return;
+    }
+
+    // Balance is the total margin available — reject orders it can't cover
+    const requiredMargin = getRequiredMargin(selectedAsset, lots, entryPrice);
+    if (requiredMargin > freeMargin) {
+      toast({
+        title: "Insufficient margin",
+        description: `${lots} lot(s) of ${selectedAsset.symbol} needs $${requiredMargin.toFixed(2)} margin but only $${freeMargin.toFixed(2)} is free.`,
+        variant: "destructive",
+      });
       setIsPlacingOrder(false);
       return;
     }
