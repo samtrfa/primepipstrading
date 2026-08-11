@@ -1063,7 +1063,7 @@ export default function TradingPlatform() {
                   unrealizedPL={unrealizedPL}
                   challengeType={account.challenge_type}
                   currentPhase={account.current_phase}
-                  phasePassed={account.phase_passed || false}
+                  phasePassed={!isBlocked && (account.phase_passed || false)}
                   onProceedToNextPhase={handleProceedToNextPhase}
                   isProceeding={isProceeding}
                 />
