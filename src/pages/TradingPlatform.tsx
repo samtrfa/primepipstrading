@@ -426,22 +426,27 @@ export default function TradingPlatform() {
 
     setIsProceeding(true);
 
-    const PROFIT_TARGETS: Record<string, { phases: number[]; totalPhases: number }> = {
-      three_step: { phases: [8, 5, 5], totalPhases: 3 },
-      two_step: { phases: [8, 5], totalPhases: 2 },
-      one_step: { phases: [10], totalPhases: 1 },
-      instant: { phases: [], totalPhases: 0 },
-    };
-
-    const targetConfig = PROFIT_TARGETS[account.challenge_type] || PROFIT_TARGETS.three_step;
+    const totalPhases = getTotalPhases(account.challenge_type);
     const currentPhase = account.current_phase || 1;
+
+    // A phase must be finished flat — no open positions may carry into the next phase
+    const stillOpen = positions.filter((p) => p.status === "open");
+    if (stillOpen.length > 0) {
+      toast({
+        title: "Close your open positions first",
+        description: `You still have ${stillOpen.length} open position(s). Close them all before advancing.`,
+        variant: "destructive",
+      });
+      setIsProceeding(false);
+      return;
+    }
 
     let newPhase = currentPhase;
     let newStatus: "active" | "failed" | "funded" | "passed" | "pending_payment" =
       account.status as "active" | "failed" | "funded" | "passed" | "pending_payment";
-    let resetBalance = account.account_size;
+    const resetBalance = account.account_size;
 
-    if (currentPhase >= targetConfig.totalPhases) {
+    if (currentPhase >= totalPhases) {
       // Final phase completed - account is now funded
       newStatus = 'funded';
       
@@ -453,10 +458,11 @@ export default function TradingPlatform() {
     } else {
       // Advance to next phase
       newPhase = currentPhase + 1;
-      
+      const nextRules = getPhaseRules(account.challenge_type, newPhase);
+
       toast({
         title: `🚀 Advancing to Phase ${newPhase}!`,
-        description: `Your balance has been reset to $${account.account_size.toLocaleString()}.`,
+        description: `Balance reset to $${resetBalance.toLocaleString()}. New rules: ${nextRules.profitTarget}% target, ${nextRules.dailyDrawdown}% daily / ${nextRules.maxDrawdown}% max drawdown.`,
         duration: 8000,
       });
     }
@@ -510,6 +516,9 @@ export default function TradingPlatform() {
         ...accountUpdate,
       } : null
     );
+
+    // Start the new phase with a clean slate in the positions panel
+    setPositions([]);
 
     setIsProceeding(false);
   };
