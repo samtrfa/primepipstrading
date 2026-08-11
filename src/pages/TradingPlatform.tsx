@@ -889,6 +889,12 @@ export default function TradingPlatform() {
               </CardHeader>
               <CardContent className="p-3 space-y-3">
                 {/* Market Status Warning */}
+                {isBlocked && (
+                  <div className="p-2 rounded bg-red-500/10 border border-red-500/30 text-red-500 text-xs text-center flex items-center justify-center gap-1">
+                    <Lock className="w-3 h-3" />
+                    Trading disabled — account failed
+                  </div>
+                )}
                 {selectedAsset && prices[selectedAsset.symbol]?.isMarketOpen === false && (
                   <div className="p-2 rounded bg-yellow-500/10 border border-yellow-500/30 text-yellow-500 text-xs text-center">
                     Market Closed - Price Paused
@@ -926,8 +932,26 @@ export default function TradingPlatform() {
                       min="0.01"
                       value={lotSize}
                       onChange={(e) => setLotSize(e.target.value)}
+                      disabled={isBlocked}
                       className="mt-1 h-9"
                     />
+                    <div className="mt-1 flex justify-between text-[10px]">
+                      <span className="text-muted-foreground">
+                        Margin required: ${pendingMargin.toFixed(2)}
+                      </span>
+                      <span
+                        className={cn(
+                          insufficientMargin ? "text-red-500" : "text-muted-foreground"
+                        )}
+                      >
+                        Free margin: ${freeMargin.toFixed(2)}
+                      </span>
+                    </div>
+                    {insufficientMargin && !isBlocked && (
+                      <p className="mt-1 text-[10px] text-red-500">
+                        Not enough margin for this lot size.
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
@@ -942,6 +966,7 @@ export default function TradingPlatform() {
                         placeholder="Optional"
                         value={stopLoss}
                         onChange={(e) => setStopLoss(e.target.value)}
+                        disabled={isBlocked}
                         className="mt-1 h-9"
                       />
                     </div>
@@ -956,6 +981,7 @@ export default function TradingPlatform() {
                         placeholder="Optional"
                         value={takeProfit}
                         onChange={(e) => setTakeProfit(e.target.value)}
+                        disabled={isBlocked}
                         className="mt-1 h-9"
                       />
                     </div>
@@ -967,7 +993,7 @@ export default function TradingPlatform() {
                     variant="destructive"
                     className="w-full h-10"
                     onClick={() => handlePlaceOrder("sell")}
-                    disabled={!selectedAsset || isPlacingOrder}
+                    disabled={!selectedAsset || isPlacingOrder || isBlocked || insufficientMargin}
                   >
                     <TrendingDown className="w-4 h-4 mr-1" />
                     SELL
@@ -975,7 +1001,7 @@ export default function TradingPlatform() {
                   <Button
                     className="w-full h-10 bg-green-600 hover:bg-green-700"
                     onClick={() => handlePlaceOrder("buy")}
-                    disabled={!selectedAsset || isPlacingOrder}
+                    disabled={!selectedAsset || isPlacingOrder || isBlocked || insufficientMargin}
                   >
                     <TrendingUp className="w-4 h-4 mr-1" />
                     BUY
@@ -1015,6 +1041,14 @@ export default function TradingPlatform() {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Open Positions</span>
                     <span className="font-medium">{openPositions.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Used Margin</span>
+                    <span className="font-medium">${usedMargin.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Free Margin</span>
+                    <span className="font-medium">${freeMargin.toFixed(2)}</span>
                   </div>
                 </div>
               </CardContent>
@@ -1174,6 +1208,7 @@ export default function TradingPlatform() {
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => handleClosePosition(position)}
+                                      disabled={isBlocked}
                                       className="h-7 px-2 text-xs"
                                     >
                                       <X className="w-3 h-3 mr-1" />
