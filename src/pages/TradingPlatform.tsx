@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { calculatePositionPL, formatPips } from "@/lib/tradingCalculations";
+import { calculatePositionPL, formatPips, getRequiredMargin } from "@/lib/tradingCalculations";
 import { getPhaseRules, getTotalPhases } from "@/lib/challengeRules";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { AssetSelector } from "@/components/trading/AssetSelector";
@@ -27,6 +27,8 @@ import {
   Activity,
   Wifi,
   WifiOff,
+  Lock,
+  ShieldAlert,
 } from "lucide-react";
 
 interface Account {
