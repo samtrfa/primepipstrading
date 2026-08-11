@@ -833,6 +833,7 @@ export default function TradingPlatform() {
                   dailyStartBalance={account.daily_start_balance}
                   unrealizedPL={unrealizedPL}
                   challengeType={account.challenge_type}
+                  currentPhase={account.current_phase}
                 />
               </div>
             )}
