@@ -458,6 +458,7 @@ export default function TradingPlatform() {
 
   const handleClosePosition = async (position: Position) => {
     if (!account || !position.assets) return;
+    if (isBlocked) return;
 
     const currentPrice = prices[position.assets.symbol];
     if (!currentPrice) return;
