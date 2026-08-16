@@ -120,6 +120,7 @@ export default function Dashboard() {
 
   const activeAccounts = accounts.filter(a => a.status === "active" || a.status === "funded");
   const pendingAccounts = accounts.filter(a => a.status === "pending_payment");
+  const failedAccounts = accounts.filter(a => a.status === "failed");
 
   // No accounts - show purchase prompt
   if (!loading && accounts.length === 0) {
@@ -426,6 +427,55 @@ export default function Dashboard() {
                     </CardContent>
                   </Card>
                 </div>
+              )}
+
+              {/* Failed Accounts */}
+              {failedAccounts.length > 0 && (
+                <Card variant="elevated" className="border-destructive/30 bg-destructive/5">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-destructive">
+                      <AlertTriangle className="w-5 h-5" />
+                      Failed Accounts
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {failedAccounts.map((account) => (
+                      <div
+                        key={account.id}
+                        className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 hover:bg-secondary/70 transition-colors"
+                      >
+                        <div className="flex-1">
+                          <div className="font-medium text-foreground">
+                            ${account.account_size.toLocaleString()} {challengeLabels[account.challenge_type]}
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            Created {new Date(account.created_at).toLocaleDateString()}
+                            {account.profit_loss !== null && (
+                              <span className="ml-2">
+                                • Final Balance: ${(account.current_balance || account.account_size).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Badge className={statusColors[account.status]}>
+                            {account.status.charAt(0).toUpperCase() + account.status.slice(1)}
+                          </Badge>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => navigate(`/trade/${account.id}`)}
+                          >
+                            View Details
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                    <p className="text-sm text-muted-foreground">
+                      These accounts did not meet the challenge requirements. Review your trading history and try a new challenge.
+                    </p>
+                  </CardContent>
+                </Card>
               )}
             </>
           )}
