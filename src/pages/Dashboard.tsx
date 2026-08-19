@@ -48,6 +48,8 @@ const statusColors: Record<string, string> = {
   funded: "bg-success/20 text-success",
 };
 
+const PAYMENT_EXPIRY_MS = 10 * 60 * 1000;
+
 export default function Dashboard() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,7 +72,34 @@ export default function Dashboard() {
       if (error) {
         console.error("Error fetching accounts:", error);
       } else {
-        setAccounts(data || []);
+        let accountsData = data || [];
+
+        const stalePendingIds = accountsData
+          .filter((account) => {
+            if (account.status !== "pending_payment") return false;
+            const ageMs = Date.now() - new Date(account.created_at).getTime();
+            return ageMs > PAYMENT_EXPIRY_MS;
+          })
+          .map((account) => account.id);
+
+        if (stalePendingIds.length > 0) {
+          const { error: stalePendingError } = await supabase
+            .from("accounts")
+            .update({ status: "failed" })
+            .in("id", stalePendingIds);
+
+          if (stalePendingError) {
+            console.error("Error expiring stale pending accounts:", stalePendingError);
+          } else {
+            accountsData = accountsData.map((account) =>
+              stalePendingIds.includes(account.id)
+                ? { ...account, status: "failed" }
+                : account
+            );
+          }
+        }
+
+        setAccounts(accountsData);
       }
       
       setLoading(false);
@@ -112,7 +141,7 @@ export default function Dashboard() {
                 {pendingAccounts.map((account) => (
                   <div
                     key={account.id}
-                    className="flex items-center justify-between p-4 rounded-lg bg-secondary/50"
+                    className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg bg-secondary/50"
                   >
                     <div>
                       <div className="font-medium text-foreground">
@@ -154,7 +183,7 @@ export default function Dashboard() {
                         ${account.account_size.toLocaleString()} {challengeLabels[account.challenge_type]}
                       </h2>
                     </div>
-                    <div className="flex items-center gap-6">
+                    <div className="flex min-w-0 flex-wrap items-center gap-6">
                       <div className="text-right">
                         <div className="text-sm text-muted-foreground mb-1">Current Balance</div>
                         <div className="text-3xl font-bold text-foreground">
@@ -269,7 +298,7 @@ export default function Dashboard() {
                 {failedAccounts.map((account) => (
                   <div
                     key={account.id}
-                    className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 hover:bg-secondary/70 transition-colors"
+                    className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg bg-secondary/50 hover:bg-secondary/70 transition-colors"
                   >
                     <div className="flex-1">
                       <div className="font-medium text-foreground">
@@ -284,7 +313,7 @@ export default function Dashboard() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                       <Badge className={statusColors[account.status]}>
                         {account.status.charAt(0).toUpperCase() + account.status.slice(1)}
                       </Badge>

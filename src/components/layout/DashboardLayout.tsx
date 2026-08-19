@@ -155,38 +155,38 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         {/* Top Bar */}
         <header className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 lg:px-8 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-4">
               <button
                 onClick={() => setSidebarOpen(true)}
                 className="lg:hidden p-2 text-foreground"
               >
                 <Menu className="w-6 h-6" />
               </button>
-              <div>
-                <h1 className="text-xl font-serif font-bold text-foreground">{title}</h1>
+              <div className="min-w-0">
+                <h1 className="truncate text-xl font-serif font-bold text-foreground">{title}</h1>
                 {subtitle && (
                   <p className="text-sm text-muted-foreground">{subtitle}</p>
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-4">
               <Button variant="ghost" size="icon">
                 <Bell className="w-5 h-5" />
               </Button>
               <Button variant="gold" size="sm" onClick={() => navigate("/purchase")}>
-                <Plus className="w-4 h-4 mr-2" />
-                New Account
+                <Plus className="h-4 w-4 sm:mr-2" />
+                <span className="hidden sm:inline">New Account</span>
               </Button>
             </div>
           </div>
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 p-4 lg:p-8">
+        <main className="min-w-0 flex-1 p-4 lg:p-8">
           {children}
         </main>
       </div>

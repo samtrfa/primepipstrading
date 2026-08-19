@@ -21,31 +21,33 @@ import NotFound from "./pages/NotFound";
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/dashboard/payouts" element={<Payouts />} />
-          <Route path="/dashboard/kyc" element={<KYC />} />
-          <Route path="/dashboard/referrals" element={<Referrals />} />
-          <Route path="/dashboard/billing" element={<Billing />} />
-          <Route path="/purchase" element={<PurchaseAccount />} />
-          <Route path="/trade/:accountId" element={<TradingPlatform />} />
-          <Route path="/pricing" element={<Pricing />} />
-          <Route path="/how-it-works" element={<HowItWorks />} />
-          <Route path="/faq" element={<FAQ />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <div className="w-full min-h-screen overflow-x-hidden">
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/register" element={<Register />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/dashboard/payouts" element={<Payouts />} />
+            <Route path="/dashboard/kyc" element={<KYC />} />
+            <Route path="/dashboard/referrals" element={<Referrals />} />
+            <Route path="/dashboard/billing" element={<Billing />} />
+            <Route path="/purchase" element={<PurchaseAccount />} />
+            <Route path="/trade/:accountId" element={<TradingPlatform />} />
+            <Route path="/pricing" element={<Pricing />} />
+            <Route path="/how-it-works" element={<HowItWorks />} />
+            <Route path="/faq" element={<FAQ />} />
+            {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </div>
 );
 
 export default App;

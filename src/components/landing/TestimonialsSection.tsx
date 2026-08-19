@@ -38,57 +38,57 @@ const testimonials = [
 
 export function TestimonialsSection() {
   return (
-    <section className="py-24 relative">
+    <section className="py-16 sm:py-24 relative">
       <div className="absolute inset-0 bg-gradient-hero opacity-50" />
       
       <div className="container mx-auto px-4 relative z-10">
         {/* Section Header */}
-        <div className="text-center max-w-2xl mx-auto mb-16">
-          <span className="text-primary text-sm font-semibold uppercase tracking-wider">
+        <div className="text-center max-w-2xl mx-auto mb-12 sm:mb-16">
+          <span className="text-primary text-xs sm:text-sm font-semibold uppercase tracking-wider">
             Testimonials
           </span>
-          <h2 className="text-3xl md:text-5xl font-serif font-bold text-foreground mt-4 mb-6">
+          <h2 className="text-2xl sm:text-3xl md:text-5xl font-serif font-bold text-foreground mt-4 mb-4 sm:mb-6">
             Trusted by <span className="gold-text">15,000+ Traders</span>
           </h2>
-          <p className="text-muted-foreground text-lg">
+          <p className="text-muted-foreground text-base sm:text-lg">
             Join thousands of successful traders who are already trading with our capital.
           </p>
         </div>
 
         {/* Testimonials Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-5xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6 max-w-5xl mx-auto">
           {testimonials.map((testimonial, index) => (
-            <Card key={index} variant="glass" className="group">
-              <CardContent className="p-6">
-                <div className="flex items-start gap-4">
-                  <Quote className="w-8 h-8 text-primary/30 shrink-0" />
-                  <div>
-                    <p className="text-foreground mb-6">
+            <Card key={index} variant="glass" className="group h-full">
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex items-start gap-3 sm:gap-4">
+                  <Quote className="w-6 sm:w-8 h-6 sm:h-8 text-primary/30 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-foreground mb-4 sm:mb-6 text-sm sm:text-base">
                       "{testimonial.content}"
                     </p>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+                      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                         <img
                           src={testimonial.image}
                           alt={testimonial.name}
-                          className="w-12 h-12 rounded-full bg-secondary"
+                          className="w-10 sm:w-12 h-10 sm:h-12 rounded-full bg-secondary shrink-0"
                         />
-                        <div>
-                          <div className="font-semibold text-foreground">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-foreground text-sm sm:text-base truncate">
                             {testimonial.name}
                           </div>
-                          <div className="text-sm text-muted-foreground">
+                          <div className="text-xs sm:text-sm text-muted-foreground truncate">
                             {testimonial.role} • {testimonial.country}
                           </div>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <div className="flex items-center gap-0.5 mb-1">
+                      <div className="text-right sm:text-right">
+                        <div className="flex items-center gap-0.5 mb-1 justify-end sm:justify-end">
                           {[...Array(5)].map((_, i) => (
                             <Star key={i} className="w-3 h-3 fill-primary text-primary" />
                           ))}
                         </div>
-                        <div className="text-sm font-semibold text-primary">
+                        <div className="text-xs sm:text-sm font-semibold text-primary whitespace-nowrap">
                           {testimonial.payout} earned
                         </div>
                       </div>

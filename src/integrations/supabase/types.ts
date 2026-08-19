@@ -254,6 +254,98 @@ export type Database = {
           },
         ]
       }
+      kyc_verifications: {
+        Row: {
+          address_document_path: string | null
+          address_document_type: string | null
+          address_submitted_at: string | null
+          created_at: string
+          id: string
+          identity_document_path: string | null
+          identity_document_type: string | null
+          identity_submitted_at: string | null
+          rejection_reason: string | null
+          reviewed_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          address_document_path?: string | null
+          address_document_type?: string | null
+          address_submitted_at?: string | null
+          created_at?: string
+          id?: string
+          identity_document_path?: string | null
+          identity_document_type?: string | null
+          identity_submitted_at?: string | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          address_document_path?: string | null
+          address_document_type?: string | null
+          address_submitted_at?: string | null
+          created_at?: string
+          id?: string
+          identity_document_path?: string | null
+          identity_document_type?: string | null
+          identity_submitted_at?: string | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      payout_requests: {
+        Row: {
+          amount: number
+          account_id: string
+          created_at: string
+          destination: string
+          id: string
+          method: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          amount: number
+          account_id: string
+          created_at?: string
+          destination: string
+          id?: string
+          method: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          amount?: number
+          account_id?: string
+          created_at?: string
+          destination?: string
+          id?: string
+          method?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payout_requests_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trade_history: {
         Row: {
           account_id: string

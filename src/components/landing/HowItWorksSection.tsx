@@ -30,23 +30,23 @@ const steps = [
 
 export function HowItWorksSection() {
   return (
-    <section className="py-24 relative bg-card">
+    <section className="py-16 sm:py-24 relative bg-card">
       <div className="container mx-auto px-4">
         {/* Section Header */}
-        <div className="text-center max-w-2xl mx-auto mb-16">
-          <span className="text-primary text-sm font-semibold uppercase tracking-wider">
+        <div className="text-center max-w-2xl mx-auto mb-12 sm:mb-16">
+          <span className="text-primary text-xs sm:text-sm font-semibold uppercase tracking-wider">
             How It Works
           </span>
-          <h2 className="text-3xl md:text-5xl font-serif font-bold text-foreground mt-4 mb-6">
+          <h2 className="text-2xl sm:text-3xl md:text-5xl font-serif font-bold text-foreground mt-4 mb-4 sm:mb-6">
             Your Path to <span className="gold-text">Funded Trading</span>
           </h2>
-          <p className="text-muted-foreground text-lg">
+          <p className="text-muted-foreground text-base sm:text-lg">
             A simple 4-step process to trade with our capital and keep your profits.
           </p>
         </div>
 
         {/* Steps */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-8">
           {steps.map((item, index) => (
             <div key={index} className="relative">
               {/* Connector Line */}
@@ -55,17 +55,17 @@ export function HowItWorksSection() {
               )}
               
               <Card variant="outline" className="relative z-10 h-full hover:border-primary/30 transition-colors">
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="w-12 h-12 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center">
-                      <item.icon className="w-5 h-5 text-primary" />
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
+                    <div className="w-10 sm:w-12 h-10 sm:h-12 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center shrink-0">
+                      <item.icon className="w-5 sm:w-5 h-5 sm:h-5 text-primary" />
                     </div>
-                    <span className="text-4xl font-bold text-primary/20">{item.step}</span>
+                    <span className="text-3 sm:text-4xl font-bold text-primary/20">{item.step}</span>
                   </div>
-                  <h3 className="text-xl font-semibold text-foreground mb-3">
+                  <h3 className="text-base sm:text-xl font-semibold text-foreground mb-2 sm:mb-3">
                     {item.title}
                   </h3>
-                  <p className="text-muted-foreground">
+                  <p className="text-muted-foreground text-xs sm:text-sm">
                     {item.description}
                   </p>
                 </CardContent>

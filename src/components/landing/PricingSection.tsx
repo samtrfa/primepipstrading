@@ -149,29 +149,29 @@ export function PricingSection() {
   const rules = challengeRules[selectedChallenge];
 
   return (
-    <section className="py-24 relative" id="pricing">
+    <section className="py-16 sm:py-24 relative" id="pricing">
       <div className="container mx-auto px-4">
         {/* Section Header */}
-        <div className="text-center max-w-2xl mx-auto mb-12">
-          <span className="text-primary text-sm font-semibold uppercase tracking-wider">
+        <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-12">
+          <span className="text-primary text-xs sm:text-sm font-semibold uppercase tracking-wider">
             Pricing Plans
           </span>
-          <h2 className="text-3xl md:text-5xl font-serif font-bold text-foreground mt-4 mb-6">
+          <h2 className="text-2xl sm:text-3xl md:text-5xl font-serif font-bold text-foreground mt-4 mb-4 sm:mb-6">
             Choose Your <span className="gold-text">Challenge</span>
           </h2>
-          <p className="text-muted-foreground text-lg">
+          <p className="text-muted-foreground text-base sm:text-lg">
             One-time fee. No monthly subscriptions. Trade your way to funding.
           </p>
         </div>
 
         {/* Challenge Type Selector */}
-        <div className="flex flex-wrap justify-center gap-3 mb-8">
+        <div className="flex flex-wrap justify-center gap-2 sm:gap-3 mb-6 sm:mb-8">
           {challengeTypes.map((challenge) => (
             <button
               key={challenge.id}
               onClick={() => setSelectedChallenge(challenge.id)}
               className={cn(
-                "relative flex items-center gap-2 px-4 py-3 rounded-xl border-2 transition-all",
+                "relative flex items-center gap-2 px-3 sm:px-4 py-2 sm:py-3 rounded-xl border-2 transition-all text-sm sm:text-base",
                 selectedChallenge === challenge.id
                   ? "border-primary bg-primary/10"
                   : "border-border hover:border-primary/50 bg-card"
@@ -183,7 +183,7 @@ export function PricingSection() {
                 </Badge>
               )}
               <challenge.icon className={cn(
-                "w-5 h-5",
+                "w-4 sm:w-5 h-4 sm:h-5",
                 selectedChallenge === challenge.id ? "text-primary" : "text-muted-foreground"
               )} />
               <span className={cn(
@@ -222,7 +222,7 @@ export function PricingSection() {
               variant={account.popular ? "gold" : "elevated"}
               className={cn(
                 "relative",
-                account.popular && "scale-105 z-10"
+                account.popular && "md:scale-105 md:z-10"
               )}
             >
               {account.popular && (
@@ -233,38 +233,38 @@ export function PricingSection() {
                   </div>
                 </div>
               )}
-              <CardHeader className="text-center pb-4">
-                <CardTitle className="text-2xl gold-text">{account.label}</CardTitle>
-                <div className="text-sm text-muted-foreground">Account Size</div>
-                <div className="mt-4">
-                  <span className="text-4xl font-bold text-foreground">
+              <CardHeader className="text-center pb-3 sm:pb-4">
+                <CardTitle className="text-lg sm:text-2xl gold-text">{account.label}</CardTitle>
+                <div className="text-xs sm:text-sm text-muted-foreground">Account Size</div>
+                <div className="mt-3 sm:mt-4">
+                  <span className="text-2xl sm:text-4xl font-bold text-foreground">
                     ${account.prices[selectedChallenge]}
                   </span>
-                  <span className="text-muted-foreground text-sm ml-2">one-time</span>
+                  <span className="text-muted-foreground text-xs sm:text-sm ml-1 sm:ml-2">one-time</span>
                 </div>
               </CardHeader>
-              <CardContent className="pt-4 border-t border-border">
-                <ul className="space-y-2 mb-6">
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+              <CardContent className="pt-3 sm:pt-4 border-t border-border">
+                <ul className="space-y-1 sm:space-y-2 mb-4 sm:mb-6 text-xs sm:text-sm">
+                  <li className="flex items-start gap-2">
+                    <Check className="w-3 sm:w-4 h-3 sm:h-4 text-primary shrink-0 mt-0.5" />
                     <span className="text-muted-foreground">Up to 90% Profit Split</span>
                   </li>
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                  <li className="flex items-start gap-2">
+                    <Check className="w-3 sm:w-4 h-3 sm:h-4 text-primary shrink-0 mt-0.5" />
                     <span className="text-muted-foreground">No Time Limits</span>
                   </li>
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                  <li className="flex items-start gap-2">
+                    <Check className="w-3 sm:w-4 h-3 sm:h-4 text-primary shrink-0 mt-0.5" />
                     <span className="text-muted-foreground">Weekend Trading</span>
                   </li>
-                  <li className="flex items-start gap-2 text-sm">
-                    <Check className="w-4 h-4 text-primary shrink-0 mt-0.5" />
+                  <li className="flex items-start gap-2">
+                    <Check className="w-3 sm:w-4 h-3 sm:h-4 text-primary shrink-0 mt-0.5" />
                     <span className="text-muted-foreground">Crypto Payments</span>
                   </li>
                 </ul>
                 <Button
                   variant={account.popular ? "gold" : "outline"}
-                  className="w-full"
+                  className="w-full text-sm sm:text-base py-2 sm:py-2.5"
                   onClick={() => handlePurchase(account.size)}
                 >
                   {isLoggedIn ? "Purchase Now" : "Get Started"}

@@ -55,39 +55,39 @@ const features = [
 
 export function FeaturesSection() {
   return (
-    <section className="py-24 relative">
+    <section className="py-16 sm:py-24 relative">
       <div className="absolute inset-0 bg-gradient-dark" />
       
       <div className="container mx-auto px-4 relative z-10">
         {/* Section Header */}
-        <div className="text-center max-w-2xl mx-auto mb-16">
-          <span className="text-primary text-sm font-semibold uppercase tracking-wider">
+        <div className="text-center max-w-2xl mx-auto mb-12 sm:mb-16">
+          <span className="text-primary text-xs sm:text-sm font-semibold uppercase tracking-wider">
             Why Choose Us
           </span>
-          <h2 className="text-3xl md:text-5xl font-serif font-bold text-foreground mt-4 mb-6">
+          <h2 className="text-2xl sm:text-3xl md:text-5xl font-serif font-bold text-foreground mt-4 mb-4 sm:mb-6">
             Built for <span className="gold-text">Serious Traders</span>
           </h2>
-          <p className="text-muted-foreground text-lg">
+          <p className="text-muted-foreground text-base sm:text-lg">
             We provide the capital, technology, and support you need to trade professionally.
           </p>
         </div>
 
         {/* Features Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
           {features.map((feature, index) => (
             <Card
               key={index}
               variant="elevated"
-              className="group cursor-pointer"
+              className="group cursor-pointer h-full"
             >
-              <CardContent className="p-6">
-                <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
-                  <feature.icon className="w-6 h-6 text-primary" />
+              <CardContent className="p-4 sm:p-6">
+                <div className="w-10 sm:w-12 h-10 sm:h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-3 sm:mb-4 group-hover:bg-primary/20 transition-colors">
+                  <feature.icon className="w-5 sm:w-6 h-5 sm:h-6 text-primary" />
                 </div>
-                <h3 className="text-lg font-semibold text-foreground mb-2">
+                <h3 className="text-base sm:text-lg font-semibold text-foreground mb-2">
                   {feature.title}
                 </h3>
-                <p className="text-muted-foreground text-sm">
+                <p className="text-muted-foreground text-xs sm:text-sm">
                   {feature.description}
                 </p>
               </CardContent>

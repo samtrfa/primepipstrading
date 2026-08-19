@@ -16,33 +16,33 @@ export function HeroSection() {
       <div className="container mx-auto px-4 relative z-10">
         <div className="max-w-4xl mx-auto text-center">
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-8 animate-fade-in-up">
+          <div className="inline-flex items-center gap-2 px-3 sm:px-4 py-2 rounded-full bg-primary/10 border border-primary/20 mb-6 sm:mb-8 animate-fade-in-up text-xs sm:text-sm">
             <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <span className="text-sm text-primary font-medium">Now Funding Traders Globally</span>
+            <span className="text-primary font-medium">Now Funding Traders Globally</span>
           </div>
 
           {/* Headline */}
-          <h1 className="text-4xl md:text-6xl lg:text-7xl font-serif font-bold text-foreground mb-6 animate-fade-in-up delay-100">
+          <h1 className="text-3xl sm:text-4xl md:text-6xl lg:text-7xl font-serif font-bold text-foreground mb-4 sm:mb-6 animate-fade-in-up delay-100">
             Trade With Our Capital,{" "}
             <span className="gold-text">Keep Your Profits</span>
           </h1>
 
           {/* Subheadline */}
-          <p className="text-lg md:text-xl text-muted-foreground mb-8 max-w-2xl mx-auto animate-fade-in-up delay-200">
+          <p className="text-base sm:text-lg md:text-xl text-muted-foreground mb-6 sm:mb-8 max-w-2xl mx-auto animate-fade-in-up delay-200 px-2 sm:px-0">
             Get funded up to $200,000 and keep up to 90% of your trading profits. 
             No risk to your own capital. Start your evaluation today.
           </p>
 
           {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-12 animate-fade-in-up delay-300">
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 mb-8 sm:mb-12 animate-fade-in-up delay-300 px-2 sm:px-0">
             <Link to="/register">
-              <Button variant="gold" size="xl" className="group">
+              <Button variant="gold" size="lg" className="group w-full sm:w-auto">
                 Start Your Evaluation
                 <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </Button>
             </Link>
             <Link to="/how-it-works">
-              <Button variant="outline" size="xl">
+              <Button variant="outline" size="lg" className="w-full sm:w-auto">
                 Learn How It Works
               </Button>
             </Link>

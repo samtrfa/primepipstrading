@@ -1,318 +1,125 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import {
-  CheckCircle2,
-  Clock,
-  AlertCircle,
-  FileText,
-  User,
-  MapPin,
-} from "lucide-react";
-import DashboardLayout from "@/components/layout/DashboardLayout";
-import { supabase } from "@/integrations/supabase/client";
+import { useEffect, useState } from "react";
 
-interface KYCStatus {
-  stage: "not_started" | "identity" | "address" | "review" | "approved" | "rejected";
-  completion: number;
-  identity: {
-    status: "pending" | "verified" | "rejected";
-    document_type?: string;
-    submitted_at?: string;
-  };
-  address: {
-    status: "pending" | "verified" | "rejected";
-    document_type?: string;
-    submitted_at?: string;
-  };
-  review: {
-    status: "pending" | "completed";
-    reviewed_at?: string;
-  };
-}
+type Status = "upload" | "validating" | "verified";
 
-const statusConfig: Record<string, { icon: any; color: string; label: string }> = {
-  pending: {
-    icon: Clock,
-    color: "text-warning",
-    label: "Pending",
-  },
-  verified: {
-    icon: CheckCircle2,
-    color: "text-success",
-    label: "Verified",
-  },
-  rejected: {
-    icon: AlertCircle,
-    color: "text-destructive",
-    label: "Rejected",
-  },
-  completed: {
-    icon: CheckCircle2,
-    color: "text-success",
-    label: "Completed",
-  },
-};
-
-export default function KYCPage() {
-  const navigate = useNavigate();
-  const [kycStatus, setKycStatus] = useState<KYCStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function KYC() {
+  const [status, setStatus] = useState<Status>("upload");
+  const [fileName, setFileName] = useState("");
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    const checkAuthAndFetchData = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        navigate("/login");
-        return;
-      }
+    if (status !== "validating") return;
 
-      // TODO: Fetch KYC verification status from backend when kyc_verification table is created\n      // For now, show not_started state with structure ready for integration\n      setKycStatus({\n        stage: \"not_started\",\n        completion: 0,\n        identity: {\n          status: \"pending\",\n        },\n        address: {\n          status: \"pending\",\n        },\n        review: {\n          status: \"pending\",\n        },\n      });\n      setLoading(false);
+    const startedAt = Date.now();
+
+    const timer = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      setProgress(Math.min(100, (elapsed / 15000) * 100));
+    }, 100);
+
+    const complete = window.setTimeout(() => {
+      window.clearInterval(timer);
+      setProgress(100);
+      setStatus("verified");
+    }, 15000);
+
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(complete);
     };
+  }, [status]);
 
-    checkAuthAndFetchData();
-  }, [navigate]);
+  const handleFile = (file?: File) => {
+    if (!file) return;
 
-  if (loading) {
-    return (
-      <DashboardLayout
-        title="KYC Verification"
-        subtitle="Complete your identity verification"
-      >
-        <div className="flex items-center justify-center py-12">
-          <p className="text-muted-foreground">Loading KYC status...</p>
-        </div>
-      </DashboardLayout>
-    );
-  }
+    const allowed = ["image/jpeg", "image/png", "application/pdf"];
 
-  if (!kycStatus) {
-    return (
-      <DashboardLayout
-        title="KYC Verification"
-        subtitle="Complete your identity verification"
-      >
-        <Card variant="elevated">
-          <CardContent className="p-8 text-center">
-            <AlertCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-            <p className="text-muted-foreground">Unable to load KYC status</p>
-          </CardContent>
-        </Card>
-      </DashboardLayout>
-    );
-  }
+    if (!allowed.includes(file.type)) {
+      window.alert("Please upload a JPG, PNG, or PDF document.");
+      return;
+    }
 
-  const getStageIcon = (status: string) => {
-    const config = statusConfig[status];
-    return config ? <config.icon className={`w-5 h-5 ${config.color}`} /> : null;
+    setFileName(file.name);
+    setProgress(0);
+    setStatus("validating");
   };
 
   return (
-    <DashboardLayout
-      title="KYC Verification"
-      subtitle="Complete your identity verification"
-    >
-      <div className="space-y-6">
-        {/* Overall Progress */}
-        <Card variant="elevated">
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Verification Progress</span>
-              <Badge
-                variant={
-                  kycStatus.stage === "approved"
-                    ? "default"
-                    : kycStatus.stage === "rejected"
-                      ? "destructive"
-                      : "secondary"
-                }
-              >
-                {kycStatus.stage.charAt(0).toUpperCase() + kycStatus.stage.slice(1)}
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-foreground">
-                  Completion Status
-                </span>
-                <span className="text-sm text-muted-foreground">
-                  {kycStatus.completion}%
-                </span>
-              </div>
-              <Progress value={kycStatus.completion} className="h-2" />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Complete all verification steps to unlock full account features and payout capabilities.
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Verification Stages */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Stage 1: Identity */}
-          <Card
-            variant="elevated"
-            className={
-              kycStatus.identity.status === "verified"
-                ? "border-success/50 bg-success/5"
-                : kycStatus.identity.status === "rejected"
-                  ? "border-destructive/50 bg-destructive/5"
-                  : ""
-            }
-          >
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                {getStageIcon(kycStatus.identity.status)}
-                <span className="text-base">Identity Verification</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">Document Type</p>
-                <p className="font-medium text-foreground">
-                  {kycStatus.identity.document_type || "Not submitted"}
-                </p>
-              </div>
-              {kycStatus.identity.submitted_at && (
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Submitted</p>
-                  <p className="font-medium text-foreground">
-                    {new Date(kycStatus.identity.submitted_at).toLocaleDateString()}
-                  </p>
-                </div>
-              )}
-              {kycStatus.identity.status === "pending" && (
-                <Button variant="gold" size="sm" className="w-full">
-                  <FileText className="w-4 h-4 mr-2" />
-                  Upload Document
-                </Button>
-              )}
-              {kycStatus.identity.status === "rejected" && (
-                <Button variant="outline" size="sm" className="w-full text-destructive">
-                  Resubmit
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Stage 2: Address */}
-          <Card
-            variant="elevated"
-            className={
-              kycStatus.address.status === "verified"
-                ? "border-success/50 bg-success/5"
-                : kycStatus.address.status === "rejected"
-                  ? "border-destructive/50 bg-destructive/5"
-                  : ""
-            }
-          >
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                {getStageIcon(kycStatus.address.status)}
-                <span className="text-base">Address Verification</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div>
-                <p className="text-sm text-muted-foreground mb-1">Document Type</p>
-                <p className="font-medium text-foreground">
-                  {kycStatus.address.document_type || "Not submitted"}
-                </p>
-              </div>
-              {kycStatus.address.submitted_at && (
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Submitted</p>
-                  <p className="font-medium text-foreground">
-                    {new Date(kycStatus.address.submitted_at).toLocaleDateString()}
-                  </p>
-                </div>
-              )}
-              {kycStatus.address.status === "pending" && (
-                <Button variant="gold" size="sm" className="w-full">
-                  <FileText className="w-4 h-4 mr-2" />
-                  Upload Document
-                </Button>
-              )}
-              {kycStatus.address.status === "rejected" && (
-                <Button variant="outline" size="sm" className="w-full text-destructive">
-                  Resubmit
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Stage 3: Review */}
-          <Card
-            variant="elevated"
-            className={
-              kycStatus.review.status === "completed"
-                ? "border-success/50 bg-success/5"
-                : ""
-            }
-          >
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                {getStageIcon(kycStatus.review.status)}
-                <span className="text-base">Final Review</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-sm text-muted-foreground">
-                {kycStatus.review.status === "pending"
-                  ? "Your documents are being reviewed. This usually takes 1-2 business days."
-                  : "Your verification has been completed."}
-              </p>
-              {kycStatus.review.reviewed_at && (
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">Reviewed</p>
-                  <p className="font-medium text-foreground">
-                    {new Date(kycStatus.review.reviewed_at).toLocaleDateString()}
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Requirements Info */}
-        <Card variant="elevated" className="bg-primary/5">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <AlertCircle className="w-5 h-5" />
-              Verification Requirements
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2">
-                <User className="w-4 h-4" />
-                Identity Document
-              </h4>
-              <ul className="space-y-1 text-sm text-muted-foreground ml-6">
-                <li>• Valid passport, driver's license, or national ID</li>
-                <li>• Must be clear and readable</li>
-                <li>• Must not be expired</li>
-              </ul>
-            </div>
-            <div>
-              <h4 className="font-semibold text-foreground mb-2 flex items-center gap-2">
-                <MapPin className="w-4 h-4" />
-                Address Proof
-              </h4>
-              <ul className="space-y-1 text-sm text-muted-foreground ml-6">
-                <li>• Utility bill, bank statement, or rent agreement</li>
-                <li>• Must be dated within last 3 months</li>
-                <li>• Must clearly show your name and address</li>
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
+    <main className="mx-auto w-full max-w-5xl p-4 sm:p-6 lg:p-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold sm:text-3xl">KYC Verification</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Verify your identity by submitting a valid document.
+        </p>
       </div>
-    </DashboardLayout>
+
+      <section className="rounded-xl border bg-card p-5 shadow-sm sm:p-8">
+        {status === "upload" && (
+          <div className="space-y-6 text-center">
+            <div>
+              <h2 className="text-xl font-semibold">Submit your document</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Upload a government-issued identity document to begin.
+              </p>
+            </div>
+
+            <label className="inline-flex cursor-pointer rounded-lg bg-primary px-5 py-3 text-sm font-medium text-primary-foreground transition hover:opacity-90">
+              Choose document
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.pdf"
+                className="hidden"
+                onChange={(event) => handleFile(event.target.files?.[0])}
+              />
+            </label>
+
+            <p className="text-xs text-muted-foreground">
+              Accepted formats: JPG, PNG, PDF
+            </p>
+          </div>
+        )}
+
+        {status === "validating" && (
+          <div className="mx-auto max-w-lg space-y-5 text-center">
+            <div className="text-5xl">📄</div>
+            <h2 className="text-xl font-semibold">
+              Your document is being validated
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              We received your document. Please wait while it is reviewed.
+            </p>
+
+            <div>
+              <div className="h-3 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary transition-all"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Validating… {Math.round(progress)}%
+              </p>
+            </div>
+
+            <p className="break-all text-sm text-muted-foreground">
+              Received: {fileName}
+            </p>
+          </div>
+        )}
+
+        {status === "verified" && (
+          <div className="space-y-4 text-center">
+            <div className="text-6xl text-green-600">✓</div>
+            <h2 className="text-2xl font-bold text-green-600">KYC Verified</h2>
+            <p className="text-sm text-muted-foreground">
+              Your document has been successfully validated.
+            </p>
+            <p className="break-all text-sm text-muted-foreground">
+              Verified document: {fileName}
+            </p>
+          </div>
+        )}
+      </section>
+    </main>
   );
 }

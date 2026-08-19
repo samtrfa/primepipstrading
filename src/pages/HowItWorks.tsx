@@ -85,12 +85,12 @@ export default function HowItWorks() {
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full max-w-4xl mx-auto">
+              <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="text-left py-4 px-6 text-foreground font-semibold">Metric</th>
+                    <th className="text-left py-3 px-2 sm:py-4 sm:px-6 text-foreground font-semibold text-sm sm:text-base">Metric</th>
                     {phases.map((phase) => (
-                      <th key={phase.phase} className="text-center py-4 px-6 text-foreground font-semibold">
+                      <th key={phase.phase} className="text-center py-3 px-2 sm:py-4 sm:px-6 text-foreground font-semibold text-sm sm:text-base">
                         {phase.phase}
                       </th>
                     ))}
@@ -98,41 +98,41 @@ export default function HowItWorks() {
                 </thead>
                 <tbody>
                   <tr className="border-b border-border">
-                    <td className="py-4 px-6 text-muted-foreground">Profit Target</td>
+                    <td className="py-3 px-2 sm:py-4 sm:px-6 text-muted-foreground text-sm">Profit Target</td>
                     {phases.map((phase) => (
-                      <td key={phase.phase} className="text-center py-4 px-6 text-foreground">
+                      <td key={phase.phase} className="text-center py-3 px-2 sm:py-4 sm:px-6 text-foreground text-sm">
                         {phase.profitTarget}
                       </td>
                     ))}
                   </tr>
                   <tr className="border-b border-border">
-                    <td className="py-4 px-6 text-muted-foreground">Daily Drawdown</td>
+                    <td className="py-3 px-2 sm:py-4 sm:px-6 text-muted-foreground text-sm">Daily Drawdown</td>
                     {phases.map((phase) => (
-                      <td key={phase.phase} className="text-center py-4 px-6 text-foreground">
+                      <td key={phase.phase} className="text-center py-3 px-2 sm:py-4 sm:px-6 text-foreground text-sm">
                         {phase.dailyDrawdown}
                       </td>
                     ))}
                   </tr>
                   <tr className="border-b border-border">
-                    <td className="py-4 px-6 text-muted-foreground">Max Drawdown</td>
+                    <td className="py-3 px-2 sm:py-4 sm:px-6 text-muted-foreground text-sm">Max Drawdown</td>
                     {phases.map((phase) => (
-                      <td key={phase.phase} className="text-center py-4 px-6 text-foreground">
+                      <td key={phase.phase} className="text-center py-3 px-2 sm:py-4 sm:px-6 text-foreground text-sm">
                         {phase.maxDrawdown}
                       </td>
                     ))}
                   </tr>
                   <tr className="border-b border-border">
-                    <td className="py-4 px-6 text-muted-foreground">Time Limit</td>
+                    <td className="py-3 px-2 sm:py-4 sm:px-6 text-muted-foreground text-sm">Time Limit</td>
                     {phases.map((phase) => (
-                      <td key={phase.phase} className="text-center py-4 px-6 text-primary font-medium">
+                      <td key={phase.phase} className="text-center py-3 px-2 sm:py-4 sm:px-6 text-primary font-medium text-sm">
                         {phase.timeLimit}
                       </td>
                     ))}
                   </tr>
                   <tr>
-                    <td className="py-4 px-6 text-muted-foreground">Min Trading Days</td>
+                    <td className="py-3 px-2 sm:py-4 sm:px-6 text-muted-foreground text-sm">Min Trading Days</td>
                     {phases.map((phase) => (
-                      <td key={phase.phase} className="text-center py-4 px-6 text-primary font-medium">
+                      <td key={phase.phase} className="text-center py-3 px-2 sm:py-4 sm:px-6 text-primary font-medium text-sm">
                         {phase.minTradingDays}
                       </td>
                     ))}
