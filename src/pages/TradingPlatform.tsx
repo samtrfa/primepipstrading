@@ -10,11 +10,16 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { calculatePositionPL, formatPips, getRequiredMargin } from "@/lib/tradingCalculations";
-import { getPhaseRules, getTotalPhases } from "@/lib/challengeRules";
+import {
+  FUNDED_MAX_RISK_PERCENT,
+  getPhaseRules,
+  getTotalPhases,
+} from "@/lib/challengeRules";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { AssetSelector } from "@/components/trading/AssetSelector";
 import { DrawdownTracker } from "@/components/trading/DrawdownTracker";
 import { ProfitTargetTracker } from "@/components/trading/ProfitTargetTracker";
+import { ConsistencyScoreTracker } from "@/components/trading/ConsistencyScoreTracker";
 import { useTradingViewPrices } from "@/hooks/useTradingViewPrices";
 import {
   TrendingUp,
@@ -218,6 +223,8 @@ export default function TradingPlatform() {
 
   const isBlocked =
     !!account && (account.status === "failed" || account.drawdown_violated === true);
+  const isFundedAccount =
+    account?.status === "funded" || account?.challenge_type === "instant";
 
   // ---- Margin (account balance is the total available margin) ----
   const usedMargin = positions
@@ -242,7 +249,7 @@ export default function TradingPlatform() {
   const breachHandledRef = useRef(false);
 
   const enforceRuleBreach = useCallback(
-    async (violation: "max_drawdown" | "daily_drawdown") => {
+    async (violation: "max_drawdown" | "daily_drawdown" | "max_risk") => {
       if (!account || breachHandledRef.current) return;
       breachHandledRef.current = true;
 
@@ -320,7 +327,7 @@ export default function TradingPlatform() {
         symbol: "-",
         lot_size: 0,
         price: 0,
-        notes: `Account failed - ${violation.replace("_", " ")} limit breached. All positions force-closed.`,
+        notes: `Account failed - ${violation === "max_risk" ? `max risk ${FUNDED_MAX_RISK_PERCENT}%` : violation.replace("_", " ")} limit breached. All positions force-closed.`,
       });
 
       setAccount((prev) => (prev ? { ...prev, ...accountUpdate } : null));
@@ -343,7 +350,9 @@ export default function TradingPlatform() {
         description:
           violation === "max_drawdown"
             ? "Max drawdown limit breached. All open trades were closed and this account is now blocked from trading."
-            : "Daily drawdown limit breached. All open trades were closed and this account is now blocked from trading.",
+            : violation === "daily_drawdown"
+              ? "Daily drawdown limit breached. All open trades were closed and this account is now blocked from trading."
+              : `Trade limit reached. Max risk ${FUNDED_MAX_RISK_PERCENT}% breached, all open trades were closed, and this account is now blocked from trading.`,
         variant: "destructive",
         duration: 12000,
       });
@@ -363,7 +372,6 @@ export default function TradingPlatform() {
 
     const maxDD = hwm > 0 ? ((hwm - liveEquity) / hwm) * 100 : 0;
     const dailyDD = dailyStart > 0 ? ((dailyStart - liveEquity) / dailyStart) * 100 : 0;
-
     if (maxDD >= rules.maxDrawdown) {
       enforceRuleBreach("max_drawdown");
     } else if (dailyDD >= rules.dailyDrawdown) {
@@ -1076,6 +1084,9 @@ export default function TradingPlatform() {
                   challengeType={account.challenge_type}
                   currentPhase={account.current_phase}
                 />
+                {isFundedAccount && (
+                  <ConsistencyScoreTracker positions={closedPositions} />
+                )}
               </div>
             )}
           </div>

@@ -8,6 +8,9 @@ export interface PhaseRules {
   maxDrawdown: number; // % of high water mark
 }
 
+export const FUNDED_MAX_RISK_PERCENT = 1;
+export const FUNDED_CONSISTENCY_PERCENT = 30;
+
 export const CHALLENGE_RULES: Record<string, PhaseRules[]> = {
   three_step: [
     { name: "Phase 1", profitTarget: 8, dailyDrawdown: 5, maxDrawdown: 10 },

@@ -8,9 +8,9 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Payouts from "./pages/Payouts";
-import KYC from "./pages/KYC";
 import Referrals from "./pages/Referrals";
 import Billing from "./pages/Billing";
+import Settings from "./pages/Settings";
 import Pricing from "./pages/Pricing";
 import HowItWorks from "./pages/HowItWorks";
 import FAQ from "./pages/FAQ";
@@ -33,9 +33,9 @@ const App = () => (
             <Route path="/register" element={<Register />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/dashboard/payouts" element={<Payouts />} />
-            <Route path="/dashboard/kyc" element={<KYC />} />
             <Route path="/dashboard/referrals" element={<Referrals />} />
             <Route path="/dashboard/billing" element={<Billing />} />
+            <Route path="/dashboard/settings" element={<Settings />} />
             <Route path="/purchase" element={<PurchaseAccount />} />
             <Route path="/trade/:accountId" element={<TradingPlatform />} />
             <Route path="/pricing" element={<Pricing />} />

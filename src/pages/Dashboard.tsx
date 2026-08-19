@@ -15,8 +15,10 @@ import {
   Clock,
   Rocket,
   Activity,
+  ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { FUNDED_CONSISTENCY_PERCENT } from "@/lib/challengeRules";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import DashboardLayout from "@/components/layout/DashboardLayout";
@@ -205,6 +207,16 @@ export default function Dashboard() {
                           </div>
                         )}
                       </div>
+                      {account.status === "funded" && (
+                        <div className="text-right">
+                          <div className="flex items-center justify-end gap-1 text-sm text-muted-foreground mb-1">
+                            <ShieldCheck className="w-4 h-4 text-primary" />
+                            Consistency Score
+                          </div>
+                          <div className="text-2xl font-bold text-primary">{FUNDED_CONSISTENCY_PERCENT}%</div>
+                          <div className="text-xs text-muted-foreground">Maximum best-day share</div>
+                        </div>
+                      )}
                       <Button
                         variant="gold"
                         size="lg"

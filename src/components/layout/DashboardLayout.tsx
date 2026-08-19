@@ -5,7 +5,6 @@ import {
   TrendingUp,
   BarChart3,
   Wallet,
-  FileCheck,
   Users,
   CreditCard,
   Bell,
@@ -21,7 +20,6 @@ import { useToast } from "@/hooks/use-toast";
 const sidebarLinks = [
   { href: "/dashboard", icon: BarChart3, label: "Overview" },
   { href: "/dashboard/payouts", icon: Wallet, label: "Payouts" },
-  { href: "/dashboard/kyc", icon: FileCheck, label: "KYC Verification" },
   { href: "/dashboard/referrals", icon: Users, label: "Referrals" },
   { href: "/dashboard/billing", icon: CreditCard, label: "Billing" },
 ];
@@ -135,7 +133,13 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
               </div>
             </div>
             <div className="flex gap-2">
-              <Button variant="ghost" size="sm" className="flex-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex-1"
+                onClick={() => navigate("/dashboard/settings")}
+                aria-label="Open settings"
+              >
                 <Settings className="w-4 h-4" />
               </Button>
               <Button variant="ghost" size="sm" className="flex-1" onClick={handleLogout}>
