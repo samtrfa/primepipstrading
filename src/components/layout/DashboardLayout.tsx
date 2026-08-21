@@ -1,9 +1,10 @@
 import { useState, useEffect, ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
   TrendingUp,
   BarChart3,
+  LineChart,
   Wallet,
   Users,
   CreditCard,
@@ -19,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 
 const sidebarLinks = [
   { href: "/dashboard", icon: BarChart3, label: "Overview" },
+  { href: "/dashboard/analytics", icon: LineChart, label: "Analytics", nested: true },
   { href: "/dashboard/payouts", icon: Wallet, label: "Payouts" },
   { href: "/dashboard/referrals", icon: Users, label: "Referrals" },
   { href: "/dashboard/billing", icon: CreditCard, label: "Billing" },
@@ -35,6 +37,7 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
   const [userName, setUserName] = useState("");
   const [activeAccounts, setActiveAccounts] = useState(0);
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -109,7 +112,11 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
                 key={link.href}
                 to={link.href}
                 onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-3 px-4 py-3 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                className={cn(
+                  "flex items-center gap-3 rounded-lg py-3 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+                  link.nested ? "ml-4 px-4 text-sm" : "px-4",
+                  location.pathname === link.href && "bg-primary/10 text-primary"
+                )}
               >
                 <link.icon className="w-5 h-5" />
                 <span>{link.label}</span>

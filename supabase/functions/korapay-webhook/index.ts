@@ -2,7 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { createHmac } from "node:crypto";
 
-const KORAPAY_SECRET_KEY = Deno.env.get("KORAPAY_SECRET_KEY");
+const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -18,25 +18,24 @@ Deno.serve(async (req) => {
     });
 
   try {
-    if (!KORAPAY_SECRET_KEY) {
-      console.error("KORAPAY_SECRET_KEY is not configured");
+    if (!PAYSTACK_SECRET_KEY) {
+      console.error("PAYSTACK_SECRET_KEY is not configured");
       return json({ error: "Not configured" }, 500);
     }
 
     const raw = await req.text();
-    const signature = req.headers.get("x-korapay-signature");
+    const signature = req.headers.get("x-paystack-signature");
     if (!signature) {
       return json({ error: "Missing signature" }, 401);
     }
 
     const payload = JSON.parse(raw);
-    // Korapay signs a HMAC-SHA256 of the JSON `data` object with the secret key
-    const expected = createHmac("sha256", KORAPAY_SECRET_KEY)
-      .update(JSON.stringify(payload.data))
+    const expected = createHmac("sha512", PAYSTACK_SECRET_KEY)
+      .update(raw)
       .digest("hex");
 
     if (expected !== signature) {
-      console.error("Invalid Korapay webhook signature");
+      console.error("Invalid Paystack webhook signature");
       return json({ error: "Invalid signature" }, 401);
     }
 
@@ -64,7 +63,7 @@ Deno.serve(async (req) => {
     }
 
     if (event === "charge.success") {
-      const paidAmount = Number(payload?.data?.amount ?? 0);
+      const paidAmount = Number(payload?.data?.amount ?? 0) / 100;
       const expectedAmount = Number(account.payment_amount_local ?? 0);
       // Allow a small rounding tolerance on the collected amount
       if (expectedAmount > 0 && paidAmount < expectedAmount * 0.98) {
@@ -82,7 +81,7 @@ Deno.serve(async (req) => {
           console.error("Failed to activate account:", updateError.message);
           return json({ error: "Activation failed" }, 500);
         }
-        console.log(`Activated account ${account.id} via Korapay reference ${reference}`);
+        console.log(`Activated account ${account.id} via Paystack reference ${reference}`);
       }
       return json({ received: true, activated: true });
     }
@@ -94,10 +93,10 @@ Deno.serve(async (req) => {
       return json({ received: true, activated: false });
     }
 
-    console.log(`Ignoring Korapay event: ${event}`);
+    console.log(`Ignoring Paystack event: ${event}`);
     return json({ received: true });
   } catch (error) {
-    console.error("korapay-webhook error:", error);
+    console.error("paystack-webhook error:", error);
     return json({ error: error instanceof Error ? error.message : "Unexpected error" }, 500);
   }
 });

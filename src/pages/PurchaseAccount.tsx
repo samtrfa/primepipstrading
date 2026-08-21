@@ -106,7 +106,7 @@ const CRYPTO_WALLET = "0x66aeC4645A4d204653d2e62FCA26968Ce1B5db1a";
 const challengeLabel = (type: ChallengeType) =>
   challengeTypes.find((c) => c.id === type)?.label ?? type.replace(/_/g, "-");
 
-type PaymentMethod = "korapay" | "crypto";
+type PaymentMethod = "paystack" | "crypto";
 
 function RuleItem({ label, value, ruleKey }: { label: string; value: string; ruleKey: string }) {
   return (
@@ -144,7 +144,7 @@ export default function PurchaseAccount() {
   );
   const [showPayment, setShowPayment] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("korapay");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("paystack");
   const [userId, setUserId] = useState<string | null>(null);
   const [couponInput, setCouponInput] = useState("");
   const [couponLoading, setCouponLoading] = useState(false);
@@ -236,7 +236,7 @@ export default function PurchaseAccount() {
     setCouponError(null);
   };
 
-  const handleKorapayCheckout = async () => {
+  const handlePaystackCheckout = async () => {
     setIsProcessing(true);
 
     const { data, error } = await supabase.functions.invoke("korapay-checkout", {
@@ -251,7 +251,7 @@ export default function PurchaseAccount() {
     if (error) {
       const details =
         error instanceof FunctionsHttpError ? await error.context.text() : error.message;
-      console.error("korapay-checkout failed:", details);
+      console.error("paystack-checkout failed:", details);
       setIsProcessing(false);
       toast({
         title: "Checkout failed",
@@ -568,10 +568,10 @@ export default function PurchaseAccount() {
                   <div className="grid grid-cols-2 gap-3">
                     <button
                       type="button"
-                      onClick={() => setPaymentMethod("korapay")}
+                      onClick={() => setPaymentMethod("paystack")}
                       className={cn(
                         "flex flex-col items-center gap-1 rounded-xl border-2 p-4 transition-all",
-                        paymentMethod === "korapay"
+                        paymentMethod === "paystack"
                           ? "border-primary bg-primary/10"
                           : "border-border hover:border-primary/50"
                       )}
@@ -579,7 +579,7 @@ export default function PurchaseAccount() {
                       <Landmark
                         className={cn(
                           "w-6 h-6",
-                          paymentMethod === "korapay" ? "text-primary" : "text-muted-foreground"
+                          paymentMethod === "paystack" ? "text-primary" : "text-muted-foreground"
                         )}
                       />
                       <span className="text-sm font-medium text-foreground">Bank Payment</span>
@@ -606,7 +606,7 @@ export default function PurchaseAccount() {
                     </button>
                   </div>
 
-                  {paymentMethod === "korapay" ? (
+                  {paymentMethod === "paystack" ? (
                     <div className="space-y-6">
                       <div className="bg-secondary/50 rounded-lg p-6 space-y-5">
                         <div className="text-center">
@@ -634,7 +634,7 @@ export default function PurchaseAccount() {
                         variant="gold"
                         size="lg"
                         className="w-full"
-                        onClick={handleKorapayCheckout}
+                        onClick={handlePaystackCheckout}
                         disabled={isProcessing}
                       >
                         {isProcessing ? (

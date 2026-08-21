@@ -160,6 +160,31 @@ System should:
 * Create challenge purchase record
 * Unlock dashboard on successful payment
 
+### **Current Supabase Paystack setup**
+
+The active card/bank flow uses Paystack through the Supabase Edge Functions in
+`supabase/functions/korapay-checkout` and `supabase/functions/korapay-webhook`.
+The folder names are retained for deployment compatibility; the provider code
+and database value are Paystack.
+
+Add the live secret manually in Supabase, not in the frontend or source code:
+
+1. Open **Supabase Dashboard → Project Settings → Edge Functions → Secrets**.
+2. Add `PAYSTACK_SECRET_KEY` with the Paystack live secret key (`sk_live_...`).
+3. Deploy both functions after adding the secret.
+
+The equivalent CLI commands are:
+
+```bash
+supabase secrets set PAYSTACK_SECRET_KEY='sk_live_your_key' --project-ref aqgflcdsaprvwlkeqdrq
+supabase functions deploy korapay-checkout --project-ref aqgflcdsaprvwlkeqdrq
+supabase functions deploy korapay-webhook --project-ref aqgflcdsaprvwlkeqdrq
+```
+
+Set this URL as the Paystack webhook URL:
+
+`https://aqgflcdsaprvwlkeqdrq.supabase.co/functions/v1/korapay-webhook`
+
 ---
 
 # 📈 **TRADER ACCOUNT METRICS (SIMULATION)**

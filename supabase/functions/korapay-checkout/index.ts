@@ -1,7 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
-const KORAPAY_SECRET_KEY = Deno.env.get("KORAPAY_SECRET_KEY");
+const PAYSTACK_SECRET_KEY = Deno.env.get("PAYSTACK_SECRET_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -42,8 +42,8 @@ Deno.serve(async (req) => {
     });
 
   try {
-    if (!KORAPAY_SECRET_KEY) {
-      return json({ error: "Korapay is not configured yet." }, 500);
+    if (!PAYSTACK_SECRET_KEY) {
+      return json({ error: "Paystack is not configured yet." }, 500);
     }
 
     const authHeader = req.headers.get("Authorization");
@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
         price: priceUsd,
         status: "pending_payment",
         current_balance: accountSize,
-        payment_provider: "korapay",
+        payment_provider: "paystack",
         payment_reference: reference,
         payment_currency: currency,
         payment_amount_local: localAmount,
@@ -153,48 +153,43 @@ Deno.serve(async (req) => {
       return json({ error: "Could not start checkout. Please try again." }, 500);
     }
 
-    const notificationUrl = `${SUPABASE_URL}/functions/v1/korapay-webhook`;
-
-    const koraRes = await fetch("https://api.korapay.com/merchant/api/v1/charges/initialize", {
+    const paystackRes = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${KORAPAY_SECRET_KEY}`,
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         reference,
-        amount: localAmount,
+        amount: localAmount * 100,
         currency,
-        redirect_url: redirectUrl,
-        notification_url: notificationUrl,
-        narration: `PrimePips ${challengeType.replace(/_/g, " ")} ${accountSize} USD account`
-          .replace(/[^a-zA-Z0-9 ]/g, "")
-          .slice(0, 100),
-        channels: ["bank_transfer", "pay_with_bank"],
-        customer: { name: customerName, email },
+        callback_url: redirectUrl,
+        channels: ["bank", "card", "ussd", "mobile_money", "bank_transfer"],
+        email,
         metadata: {
           account_id: account.id,
           user_id: userId,
           price_usd: String(priceUsd),
+          customer_name: customerName,
         },
       }),
     });
 
-    const koraBody = await koraRes.text();
-    if (!koraRes.ok) {
-      console.error(`Korapay initialize failed [${koraRes.status}]: ${koraBody}`);
+    const paystackBody = await paystackRes.text();
+    if (!paystackRes.ok) {
+      console.error(`Paystack initialize failed [${paystackRes.status}]: ${paystackBody}`);
       await admin.from("accounts").update({ status: "failed" }).eq("id", account.id);
       return json(
-        { error: "Payment provider request failed", status: koraRes.status, details: koraBody },
-        koraRes.status,
+        { error: "Payment provider request failed", status: paystackRes.status, details: paystackBody },
+        paystackRes.status,
       );
     }
 
-    const parsed = JSON.parse(koraBody);
-    if (parsed?.status !== true || !parsed?.data?.checkout_url) {
-      console.error("Korapay returned an unsuccessful payload:", koraBody);
+    const parsed = JSON.parse(paystackBody);
+    if (parsed?.status !== true || !parsed?.data?.authorization_url) {
+      console.error("Paystack returned an unsuccessful payload:", paystackBody);
       await admin.from("accounts").update({ status: "failed" }).eq("id", account.id);
-      return json({ error: parsed?.message || "Payment provider error", details: koraBody }, 502);
+      return json({ error: parsed?.message || "Payment provider error", details: paystackBody }, 502);
     }
 
     if (couponId) {
@@ -202,7 +197,7 @@ Deno.serve(async (req) => {
     }
 
     return json({
-      checkoutUrl: parsed.data.checkout_url,
+      checkoutUrl: parsed.data.authorization_url,
       reference,
       accountId: account.id,
       currency,
@@ -210,7 +205,7 @@ Deno.serve(async (req) => {
       priceUsd,
     });
   } catch (error) {
-    console.error("korapay-checkout error:", error);
+    console.error("paystack-checkout error:", error);
     return json({ error: error instanceof Error ? error.message : "Unexpected error" }, 500);
   }
 });

@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
+import Analytics from "./pages/Analytics";
 import Payouts from "./pages/Payouts";
 import Referrals from "./pages/Referrals";
 import Billing from "./pages/Billing";
@@ -16,6 +17,17 @@ import HowItWorks from "./pages/HowItWorks";
 import FAQ from "./pages/FAQ";
 import PurchaseAccount from "./pages/PurchaseAccount";
 import TradingPlatform from "./pages/TradingPlatform";
+import Terms from "./pages/Terms";
+import Privacy from "./pages/Privacy";
+import {
+  About,
+  Careers,
+  Contact,
+  Press,
+  Blog,
+  RiskDisclosure,
+  RefundPolicy,
+} from "./pages/FooterPages";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -32,6 +44,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/dashboard/analytics" element={<Analytics />} />
             <Route path="/dashboard/payouts" element={<Payouts />} />
             <Route path="/dashboard/referrals" element={<Referrals />} />
             <Route path="/dashboard/billing" element={<Billing />} />
@@ -41,6 +54,15 @@ const App = () => (
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/how-it-works" element={<HowItWorks />} />
             <Route path="/faq" element={<FAQ />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/careers" element={<Careers />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/press" element={<Press />} />
+            <Route path="/blog" element={<Blog />} />
+            <Route path="/risk-disclosure" element={<RiskDisclosure />} />
+            <Route path="/refund-policy" element={<RefundPolicy />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

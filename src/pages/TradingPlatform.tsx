@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -737,12 +737,16 @@ export default function TradingPlatform() {
         <div className="px-2 sm:px-4 py-2 sm:py-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2 sm:gap-4">
-              <Link to="/dashboard">
-                <Button variant="ghost" size="sm" className="px-2 sm:px-3">
-                  <ArrowLeft className="w-4 h-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Dashboard</span>
-                </Button>
-              </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="px-2 sm:px-3"
+                onClick={() => navigate("/dashboard")}
+                aria-label="Return to dashboard"
+              >
+                <ArrowLeft className="w-4 h-4 sm:mr-2" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </Button>
               <div className="hidden sm:block h-6 w-px bg-border" />
               <div className="flex items-center gap-2">
                 <Activity className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />
