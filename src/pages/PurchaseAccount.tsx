@@ -582,8 +582,8 @@ export default function PurchaseAccount() {
                           paymentMethod === "paystack" ? "text-primary" : "text-muted-foreground"
                         )}
                       />
-                      <span className="text-sm font-medium text-foreground">Bank Payment</span>
-                      <span className="text-[11px] text-muted-foreground">Recommended</span>
+                      <span className="text-sm font-medium text-foreground">Paystack</span>
+                      <span className="text-[11px] text-muted-foreground">Cards & bank payments</span>
                     </button>
                     <button
                       type="button"
@@ -621,7 +621,7 @@ export default function PurchaseAccount() {
                         <div className="text-sm text-muted-foreground space-y-2">
                           <p className="flex items-center gap-2">
                             <Landmark className="w-4 h-4 text-primary" />
-                            Bank transfer & pay with bank
+                            Pay with card, bank transfer, USSD, or mobile money
                           </p>
                           <p className="flex items-center gap-2">
                             <Check className="w-4 h-4 text-primary" />
