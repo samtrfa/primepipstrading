@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: account, error: accountError } = await admin
       .from("accounts")
-      .select("id, user_id, status, payment_amount_local")
+      .select("id, user_id, status, challenge_type, payment_amount_local, created_at")
       .eq("payment_reference", reference)
       .maybeSingle();
 
@@ -56,6 +56,22 @@ Deno.serve(async (req) => {
     }
     if (!account || account.user_id !== userId) {
       return json({ error: "Payment not found" }, 404);
+    }
+
+    if (
+      account.status === "pending_payment" &&
+      Date.now() - new Date(account.created_at).getTime() > 30 * 60 * 1000
+    ) {
+      const { error: deleteError } = await admin
+        .from("accounts")
+        .delete()
+        .eq("id", account.id)
+        .eq("status", "pending_payment");
+      if (deleteError) {
+        console.error("Failed to remove expired payment:", deleteError.message);
+        return json({ error: "Payment cleanup failed" }, 500);
+      }
+      return json({ verified: false, activated: false, expired: true });
     }
 
     const paystackResponse = await fetch(
@@ -78,7 +94,10 @@ Deno.serve(async (req) => {
       if (account.status === "pending_payment") {
         const { error: activateError } = await admin
           .from("accounts")
-          .update({ status: "active" })
+          .update({
+            status: account.challenge_type === "instant" ? "funded" : "active",
+            current_phase: account.challenge_type === "instant" ? null : 1,
+          })
           .eq("id", account.id)
           .eq("status", "pending_payment");
         if (activateError) {

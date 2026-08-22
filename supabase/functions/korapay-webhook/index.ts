@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
 
     const { data: account, error: fetchError } = await admin
       .from("accounts")
-      .select("id, status, price, payment_amount_local")
+      .select("id, status, challenge_type, price, payment_amount_local, created_at")
       .eq("payment_reference", reference)
       .maybeSingle();
 
@@ -60,6 +60,22 @@ Deno.serve(async (req) => {
     if (!account) {
       console.warn(`No account found for reference ${reference}`);
       return json({ received: true });
+    }
+
+    if (
+      account.status === "pending_payment" &&
+      Date.now() - new Date(account.created_at).getTime() > 30 * 60 * 1000
+    ) {
+      const { error: deleteError } = await admin
+        .from("accounts")
+        .delete()
+        .eq("id", account.id)
+        .eq("status", "pending_payment");
+      if (deleteError) {
+        console.error("Failed to remove expired payment:", deleteError.message);
+        return json({ error: "Payment cleanup failed" }, 500);
+      }
+      return json({ received: true, activated: false, expired: true });
     }
 
     if (event === "charge.success") {
@@ -75,7 +91,10 @@ Deno.serve(async (req) => {
       if (account.status === "pending_payment") {
         const { error: updateError } = await admin
           .from("accounts")
-          .update({ status: "active" })
+          .update({
+            status: account.challenge_type === "instant" ? "funded" : "active",
+            current_phase: account.challenge_type === "instant" ? null : 1,
+          })
           .eq("id", account.id);
         if (updateError) {
           console.error("Failed to activate account:", updateError.message);

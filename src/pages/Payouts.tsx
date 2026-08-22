@@ -66,7 +66,8 @@ export default function PayoutsPage() {
       const { data, error } = await supabase
         .from("accounts")
         .select("*")
-        .eq("status", "funded")
+        // Instant accounts are funded by definition, including legacy rows not yet normalized.
+        .or("status.eq.funded,and(status.eq.active,challenge_type.eq.instant)")
         .order("created_at", { ascending: false });
 
       if (error) {

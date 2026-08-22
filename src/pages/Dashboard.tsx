@@ -18,7 +18,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { FUNDED_CONSISTENCY_PERCENT } from "@/lib/challengeRules";
+import { FUNDED_CONSISTENCY_PERCENT, isInstantAccount } from "@/lib/challengeRules";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 
@@ -49,7 +49,7 @@ const statusColors: Record<string, string> = {
   funded: "bg-success/20 text-success",
 };
 
-const PAYMENT_EXPIRY_MS = 10 * 60 * 1000;
+const PAYMENT_EXPIRY_MS = 30 * 60 * 1000;
 
 export default function Dashboard() {
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -102,7 +102,8 @@ export default function Dashboard() {
           const { error: stalePendingError } = await supabase
             .from("accounts")
             .delete()
-            .in("id", stalePendingIds);
+            .in("id", stalePendingIds)
+            .eq("status", "pending_payment");
 
           if (stalePendingError) {
             console.error("Error expiring stale pending accounts:", stalePendingError);
@@ -185,7 +186,9 @@ export default function Dashboard() {
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <Badge className="bg-primary/20 text-primary">
-                          {account.status === "funded" ? "Funded" : `Phase ${account.current_phase}`}
+                          {account.status === "funded" || isInstantAccount(account.challenge_type)
+                            ? "Funded"
+                            : `Phase ${account.current_phase}`}
                         </Badge>
                         <Badge className={statusColors[account.status]}>
                           {account.status.charAt(0).toUpperCase() + account.status.slice(1)}

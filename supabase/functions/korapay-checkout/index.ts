@@ -65,6 +65,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => null);
     const challengeType = body?.challengeType;
     const accountSize = Number(body?.accountSize);
+    const paymentMethod = body?.paymentMethod === "other" ? "other" : "bank_transfer";
     const couponCode = typeof body?.couponCode === "string"
       ? body.couponCode.trim().toUpperCase().slice(0, 32)
       : null;
@@ -164,7 +165,9 @@ Deno.serve(async (req) => {
         amount: localAmount * 100,
         currency,
         callback_url: redirectUrl,
-        channels: ["bank_transfer", "bank", "card", "ussd", "mobile_money"],
+        channels: paymentMethod === "bank_transfer"
+          ? ["bank_transfer"]
+          : ["card", "ussd", "mobile_money", "bank_transfer", "bank"],
         email,
         metadata: {
           account_id: account.id,

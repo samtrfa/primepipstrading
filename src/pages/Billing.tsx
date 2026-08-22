@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
+import jsPDF from "jspdf";
 
 interface Invoice {
   id: string;
@@ -31,16 +32,7 @@ interface Invoice {
   description: string;
 }
 
-interface PaymentMethod {
-  id: string;
-  type: "card" | "bank";
-  last4: string;
-  brand: string;
-  expiry: string;
-  is_default: boolean;
-}
-
-const statusConfig: Record<string, { icon: any; color: string; label: string }> = {
+const statusConfig: Record<string, { icon: typeof Clock; color: string; label: string }> = {
   pending: {
     icon: Clock,
     color: "bg-warning/20 text-warning",
@@ -58,10 +50,82 @@ const statusConfig: Record<string, { icon: any; color: string; label: string }> 
   },
 };
 
+const formatCurrency = (value: number) => `$${value.toLocaleString("en-US", {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+})}`;
+
+function downloadInvoice(invoice: Invoice) {
+  const document = new jsPDF();
+  const pageWidth = document.internal.pageSize.getWidth();
+  const rightEdge = pageWidth - 20;
+
+  document.setFillColor(20, 29, 42);
+  document.rect(0, 0, pageWidth, 42, "F");
+  document.setTextColor(255, 255, 255);
+  document.setFont("helvetica", "bold");
+  document.setFontSize(24);
+  document.text("PrimePips", 20, 20);
+  document.setFont("helvetica", "normal");
+  document.setFontSize(10);
+  document.text("Trading performance, funded with purpose", 20, 29);
+
+  document.setTextColor(20, 29, 42);
+  document.setFont("helvetica", "bold");
+  document.setFontSize(20);
+  document.text("INVOICE", rightEdge, 62, { align: "right" });
+  document.setFont("helvetica", "normal");
+  document.setFontSize(10);
+  document.setTextColor(95, 105, 120);
+  document.text(invoice.id, rightEdge, 70, { align: "right" });
+  document.text(`Issued ${new Date(invoice.date).toLocaleDateString()}`, rightEdge, 77, { align: "right" });
+
+  document.setDrawColor(220, 225, 232);
+  document.line(20, 90, rightEdge, 90);
+  document.setTextColor(95, 105, 120);
+  document.setFontSize(10);
+  document.text("BILLED FOR", 20, 105);
+  document.setTextColor(20, 29, 42);
+  document.setFont("helvetica", "bold");
+  document.setFontSize(12);
+  document.text("PrimePips Trading Account", 20, 114);
+  document.setFont("helvetica", "normal");
+  document.setTextColor(95, 105, 120);
+  document.setFontSize(10);
+  document.text("Challenge access and trading platform services", 20, 122);
+
+  document.setFillColor(246, 248, 250);
+  document.roundedRect(20, 140, pageWidth - 40, 42, 3, 3, "F");
+  document.setTextColor(95, 105, 120);
+  document.text("DESCRIPTION", 28, 153);
+  document.text("STATUS", pageWidth - 92, 153);
+  document.text("AMOUNT", rightEdge - 2, 153, { align: "right" });
+  document.setTextColor(20, 29, 42);
+  document.setFont("helvetica", "bold");
+  document.text(invoice.description, 28, 166);
+  document.setFont("helvetica", "normal");
+  document.setTextColor(30, 130, 85);
+  document.text(statusConfig[invoice.status].label, pageWidth - 92, 166);
+  document.setTextColor(20, 29, 42);
+  document.setFont("helvetica", "bold");
+  document.text(formatCurrency(invoice.amount), rightEdge - 2, 166, { align: "right" });
+
+  document.setFont("helvetica", "normal");
+  document.setFontSize(10);
+  document.setTextColor(95, 105, 120);
+  document.text(`Payment due: ${new Date(invoice.due_date).toLocaleDateString()}`, 20, 205);
+  document.text("Thank you for choosing PrimePips.", 20, 222);
+  document.setDrawColor(220, 225, 232);
+  document.line(20, 270, rightEdge, 270);
+  document.setFontSize(9);
+  document.text("PrimePips Trading | This invoice was generated electronically.", 20, 280);
+
+  document.save(`${invoice.id.toLowerCase()}.pdf`);
+}
+
 export default function BillingPage() {
   const navigate = useNavigate();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalSpent, setTotalSpent] = useState(0);
   const [pendingBalance, setPendingBalance] = useState(0);
@@ -105,8 +169,6 @@ export default function BillingPage() {
         setPendingBalance(pending);
       }
 
-      // TODO: Fetch payment methods from backend when payment_methods table is created
-      setPaymentMethods([]);
       setLoading(false);
     };
 
@@ -131,11 +193,11 @@ export default function BillingPage() {
       title="Billing"
       subtitle="Manage your billing and invoices"
     >
-      <div className="space-y-6">
+      <div className="space-y-4 sm:space-y-6">
         {/* Summary Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card variant="elevated">
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Total Spent</p>
@@ -149,7 +211,7 @@ export default function BillingPage() {
           </Card>
 
           <Card variant="elevated">
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Pending Balance</p>
@@ -163,7 +225,7 @@ export default function BillingPage() {
           </Card>
 
           <Card variant="elevated">
-            <CardContent className="p-6">
+            <CardContent className="p-4 sm:p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Total Invoices</p>
@@ -175,73 +237,20 @@ export default function BillingPage() {
           </Card>
         </div>
 
-        {/* Payment Methods */}
-        <Card variant="elevated">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center justify-between">
-              <span>Payment Methods</span>
-              <Button variant="gold" size="sm">
-                Add Payment Method
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {paymentMethods.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-center">
-                <CreditCard className="w-12 h-12 text-muted-foreground mb-4 opacity-50" />
-                <p className="text-muted-foreground">No payment methods added</p>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Add a payment method to make purchases
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {paymentMethods.map((method) => (
-                  <div
-                    key={method.id}
-                    className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 hover:bg-secondary/70 transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="w-12 h-8 rounded bg-primary/20 flex items-center justify-center">
-                        <CreditCard className="w-5 h-5 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-foreground">
-                          {method.brand} •••• {method.last4}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Expires {method.expiry}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {method.is_default && (
-                        <Badge variant="secondary">Default</Badge>
-                      )}
-                      <Button variant="ghost" size="sm">
-                        Edit
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
         {/* Invoices */}
         <Card variant="elevated">
-          <CardHeader>
+          <CardHeader className="px-4 sm:px-6">
             <CardTitle>Invoices</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="px-3 sm:px-6">
             {invoices.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
                 <DollarSign className="w-12 h-12 text-muted-foreground mb-4 opacity-50" />
                 <p className="text-muted-foreground">No invoices yet</p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="space-y-4">
+                <div className="hidden overflow-x-auto md:block">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -284,6 +293,9 @@ export default function BillingPage() {
                               variant="ghost"
                               size="sm"
                               className="text-primary"
+                              onClick={() => downloadInvoice(invoice)}
+                              aria-label={`Download ${invoice.id} invoice`}
+                              title="Download invoice"
                             >
                               <Download className="w-4 h-4" />
                             </Button>
@@ -293,6 +305,51 @@ export default function BillingPage() {
                     })}
                   </TableBody>
                 </Table>
+                </div>
+                <div className="space-y-3 md:hidden">
+                {invoices.map((invoice) => {
+                  const config = statusConfig[invoice.status];
+                  const StatusIcon = config.icon;
+                  return (
+                    <div key={invoice.id} className="rounded-lg border border-border bg-secondary/30 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-foreground">{invoice.id}</p>
+                          <p className="mt-1 break-words text-sm text-muted-foreground">{invoice.description}</p>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0 text-primary"
+                          onClick={() => downloadInvoice(invoice)}
+                          aria-label={`Download ${invoice.id} invoice`}
+                          title="Download invoice"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Amount</p>
+                          <p className="mt-1 font-semibold text-foreground">{formatCurrency(invoice.amount)}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Status</p>
+                          <Badge className={`mt-1 ${config.color}`}><StatusIcon className="mr-1 h-3 w-3" />{config.label}</Badge>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Issued</p>
+                          <p className="mt-1 text-foreground">{new Date(invoice.date).toLocaleDateString()}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Due date</p>
+                          <p className="mt-1 text-foreground">{new Date(invoice.due_date).toLocaleDateString()}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                </div>
               </div>
             )}
           </CardContent>

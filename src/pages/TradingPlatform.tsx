@@ -11,9 +11,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { calculatePositionPL, formatPips, getRequiredMargin } from "@/lib/tradingCalculations";
 import {
+  calculateConsistencyScore,
+  FUNDED_CONSISTENCY_BREACH_PERCENT,
   FUNDED_MAX_RISK_PERCENT,
+  getInitialPhase,
   getPhaseRules,
   getTotalPhases,
+  isInstantAccount,
 } from "@/lib/challengeRules";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { AssetSelector } from "@/components/trading/AssetSelector";
@@ -244,7 +248,7 @@ export default function TradingPlatform() {
   const isBlocked =
     !!account && (account.status === "failed" || account.drawdown_violated === true);
   const isFundedAccount =
-    account?.status === "funded" || account?.challenge_type === "instant";
+    account?.status === "funded" || (account?.challenge_type === "instant" && account?.status === "active");
 
   // ---- Margin (account balance is the total available margin) ----
   const usedMargin = positions
@@ -269,11 +273,16 @@ export default function TradingPlatform() {
   const breachHandledRef = useRef(false);
 
   const enforceRuleBreach = useCallback(
-    async (violation: "max_drawdown" | "daily_drawdown" | "max_risk") => {
+    async (
+      violation: "max_drawdown" | "daily_drawdown" | "max_risk",
+      options?: { excludedPositionId?: string; balanceOverride?: number; profitLossOverride?: number },
+    ) => {
       if (!account || breachHandledRef.current) return;
       breachHandledRef.current = true;
 
-      const openNow = positions.filter((p) => p.status === "open");
+      const openNow = positions.filter(
+        (p) => p.status === "open" && p.id !== options?.excludedPositionId,
+      );
       const nowIso = new Date().toISOString();
       let realized = 0;
       const closedIds: Record<string, { exit: number; pl: number }> = {};
@@ -317,8 +326,8 @@ export default function TradingPlatform() {
         });
       }
 
-      const newBalance = (account.current_balance || account.account_size) + realized;
-      const newPL = (account.profit_loss || 0) + realized;
+      const newBalance = (options?.balanceOverride ?? account.current_balance ?? account.account_size) + realized;
+      const newPL = (options?.profitLossOverride ?? account.profit_loss ?? 0) + realized;
       const effectiveHWM = account.high_water_mark || account.account_size;
       const effectiveDailyStart = account.daily_start_balance || account.account_size;
       const maxDrawdownPercent =
@@ -588,6 +597,16 @@ export default function TradingPlatform() {
       violationType = 'daily_drawdown';
     }
 
+    const consistencyScore = calculateConsistencyScore([
+      ...positions.filter((item) => item.status === "closed"),
+      { profit_loss: profitLoss, closed_at: new Date().toISOString() },
+    ]);
+    const consistencyBreach =
+      isFundedAccount && consistencyScore >= FUNDED_CONSISTENCY_BREACH_PERCENT;
+    if (consistencyBreach) {
+      violationType = "max_risk";
+    }
+
     // Check for phase completion (profit target of the current phase met)
     const currentPhase = activePhase;
     const profitTarget = phaseRules.profitTarget;
@@ -668,7 +687,15 @@ export default function TradingPlatform() {
         variant: profitLoss >= 0 ? "default" : "destructive",
       });
     }
-  }, [account, isBlocked, prices, toast]);
+
+    if (consistencyBreach) {
+      await enforceRuleBreach("max_risk", {
+        excludedPositionId: position.id,
+        balanceOverride: newBalance,
+        profitLossOverride: newPL,
+      });
+    }
+  }, [account, isBlocked, prices, toast, positions, isFundedAccount, enforceRuleBreach]);
 
   const handleModifyPosition = async (position: Position) => {
     if (isBlocked) return;
@@ -742,10 +769,13 @@ export default function TradingPlatform() {
   const handleProceedToNextPhase = async () => {
     if (!account) return;
 
+    if (isInstantAccount(account.challenge_type)) return;
+    if (!account.phase_passed) return;
+
     setIsProceeding(true);
 
     const totalPhases = getTotalPhases(account.challenge_type);
-    const currentPhase = account.current_phase || 1;
+    const currentPhase = account.current_phase || getInitialPhase(account.challenge_type) || 1;
 
     // A phase must be finished flat — no open positions may carry into the next phase
     const stillOpen = positions.filter((p) => p.status === "open");

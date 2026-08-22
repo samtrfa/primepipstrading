@@ -10,6 +10,26 @@ export interface PhaseRules {
 
 export const FUNDED_MAX_RISK_PERCENT = 1;
 export const FUNDED_CONSISTENCY_PERCENT = 30;
+export const FUNDED_CONSISTENCY_BREACH_PERCENT = 31;
+
+export interface ConsistencyPosition {
+  profit_loss: number;
+  closed_at: string | null;
+}
+
+export function calculateConsistencyScore(positions: ConsistencyPosition[]): number {
+  const dailyProfits = positions.reduce<Record<string, number>>((totals, position) => {
+    if (!position.closed_at || position.profit_loss <= 0) return totals;
+
+    const day = position.closed_at.split("T")[0];
+    totals[day] = (totals[day] || 0) + position.profit_loss;
+    return totals;
+  }, {});
+
+  const totalProfit = positions.reduce((total, position) => total + position.profit_loss, 0);
+  const bestDayProfit = Math.max(0, ...Object.values(dailyProfits));
+  return totalProfit > 0 ? (bestDayProfit / totalProfit) * 100 : 0;
+}
 
 export const CHALLENGE_RULES: Record<string, PhaseRules[]> = {
   three_step: [
@@ -35,6 +55,14 @@ export function getPhases(challengeType: string): PhaseRules[] {
 
 export function getTotalPhases(challengeType: string): number {
   return challengeType === "instant" ? 0 : getPhases(challengeType).length;
+}
+
+export function getInitialPhase(challengeType: string): number | null {
+  return challengeType === "instant" ? null : 1;
+}
+
+export function isInstantAccount(challengeType: string): boolean {
+  return challengeType === "instant";
 }
 
 /** Rules for the given (1-based) phase, clamped to valid range. */

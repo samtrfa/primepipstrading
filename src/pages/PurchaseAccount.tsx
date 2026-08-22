@@ -9,11 +9,12 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
+import { getInitialPhase } from "@/lib/challengeRules";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type ChallengeType = "three_step" | "two_step" | "one_step" | "instant";
 
@@ -38,12 +39,14 @@ const ruleExplanations: Record<string, string> = {
   dailyDrawdown: "Maximum loss allowed in a single trading day. If your daily losses exceed this percentage, you breach the account.",
   maxDrawdown: "Maximum total loss allowed from your highest account balance. Trailing means it follows your highest balance reached.",
   profitTarget: "The profit percentage you need to achieve to pass the evaluation phase or qualify for payouts.",
-  consistencyRule: "Some challenges require consistent trading patterns. No consistency rule means you can trade freely.",
+  consistencyRule: "Funded accounts require the best trading day to stay within 30% of total profit.",
   minTradingDays: "Minimum number of days you must actively trade before completing a phase.",
   weekendTrading: "Whether you can hold trades over the weekend or must close positions before market close on Friday.",
   maxTradingDays: "Maximum time allowed to complete the challenge. Unlimited means no time pressure.",
   payouts: "How often you can withdraw your profits from the funded account.",
 };
+
+const noConsistencyRuleExplanation = "No consistency rule means you can trade freely.";
 
 const challengeRules: Record<ChallengeType, ChallengeRules> = {
   three_step: {
@@ -77,7 +80,7 @@ const challengeRules: Record<ChallengeType, ChallengeRules> = {
     dailyDrawdown: "6%",
     maxDrawdown: "10%",
     profitTarget: "N/A",
-    consistencyRule: "None",
+    consistencyRule: "30%",
     minTradingDays: "None",
     weekendTrading: "Allowed",
     maxTradingDays: "Unlimited",
@@ -109,20 +112,25 @@ const challengeLabel = (type: ChallengeType) =>
 type PaymentMethod = "paystack" | "crypto";
 
 function RuleItem({ label, value, ruleKey }: { label: string; value: string; ruleKey: string }) {
+  const explanation =
+    ruleKey === "consistencyRule" && value === "None"
+      ? noConsistencyRuleExplanation
+      : ruleExplanations[ruleKey];
+
   return (
     <div className="flex justify-between items-center py-2">
       <div className="flex items-center gap-1.5">
         <span className="text-muted-foreground text-sm">{label}</span>
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className="text-muted-foreground hover:text-primary transition-colors">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" className="text-muted-foreground hover:text-primary transition-colors">
               <HelpCircle className="w-3.5 h-3.5" />
             </button>
-          </PopoverTrigger>
-          <PopoverContent side="top" className="max-w-xs text-sm">
-            {ruleExplanations[ruleKey]}
-          </PopoverContent>
-        </Popover>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-xs text-sm">
+            {explanation}
+          </TooltipContent>
+        </Tooltip>
       </div>
       <span className="font-medium text-foreground text-sm">{value}</span>
     </div>
@@ -236,13 +244,14 @@ export default function PurchaseAccount() {
     setCouponError(null);
   };
 
-  const handlePaystackCheckout = async () => {
+  const handlePaystackCheckout = async (paymentMethod: "bank_transfer" | "other" = "bank_transfer") => {
     setIsProcessing(true);
 
     const { data, error } = await supabase.functions.invoke("korapay-checkout", {
       body: {
         challengeType: selectedChallenge,
         accountSize: selectedSize,
+        paymentMethod,
         couponCode: couponApplies ? appliedCoupon!.code : undefined,
         redirectUrl: `${window.location.origin}/dashboard`,
       },
@@ -293,6 +302,7 @@ export default function PurchaseAccount() {
       account_size: selectedSize,
       price: price,
       status: "pending_payment",
+      current_phase: getInitialPhase(selectedChallenge),
       current_balance: selectedSize,
       payment_address: CRYPTO_WALLET,
       coupon_code: couponApplies ? appliedCoupon!.code : null,
@@ -614,14 +624,14 @@ export default function PurchaseAccount() {
                             ${price}
                           </div>
                           <div className="text-sm text-muted-foreground">
-                            Converted to naira automatically on the secure checkout page
+                            Bank transfer is the default payment method
                           </div>
                         </div>
 
                         <div className="text-sm text-muted-foreground space-y-2">
                           <p className="flex items-center gap-2">
                             <Landmark className="w-4 h-4 text-primary" />
-                            Pay with card, bank transfer, USSD, or mobile money
+                            Pay by bank transfer, or choose another method below
                           </p>
                           <p className="flex items-center gap-2">
                             <Check className="w-4 h-4 text-primary" />
@@ -634,7 +644,7 @@ export default function PurchaseAccount() {
                         variant="gold"
                         size="lg"
                         className="w-full"
-                        onClick={handlePaystackCheckout}
+                        onClick={() => handlePaystackCheckout("bank_transfer")}
                         disabled={isProcessing}
                       >
                         {isProcessing ? (
@@ -643,8 +653,18 @@ export default function PurchaseAccount() {
                             Redirecting…
                           </>
                         ) : (
-                          "Pay Securely"
+                          "Continue with Bank Transfer"
                         )}
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        className="w-full"
+                        onClick={() => handlePaystackCheckout("other")}
+                        disabled={isProcessing}
+                      >
+                        Use Another Payment Method
                       </Button>
 
                       <p className="text-center text-sm text-muted-foreground">
