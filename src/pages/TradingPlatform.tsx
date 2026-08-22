@@ -34,6 +34,8 @@ import {
   WifiOff,
   Lock,
   ShieldAlert,
+  Pencil,
+  Save,
 } from "lucide-react";
 
 interface Account {
@@ -108,6 +110,8 @@ export default function TradingPlatform() {
   const [isLoading, setIsLoading] = useState(true);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [isProceeding, setIsProceeding] = useState(false);
+  const [editingPositionId, setEditingPositionId] = useState<string | null>(null);
+  const [positionDraft, setPositionDraft] = useState({ stopLoss: "", takeProfit: "" });
   const [view, setView] = useState<"trade" | "chart">("trade");
 
   // Get symbols for live prices synced with TradingView
@@ -219,6 +223,22 @@ export default function TradingPlatform() {
     if (price >= 1) return price.toFixed(3);
     if (price >= 0.01) return price.toFixed(4);
     return price.toFixed(6);
+  };
+
+  const getOrderTargetPreview = (target: string, type: "buy" | "sell") => {
+    if (!selectedAsset || !target) return null;
+    const targetPrice = Number(target);
+    const entryPrice = prices[selectedAsset.symbol]?.[type === "buy" ? "ask" : "bid"];
+    const lots = Number(lotSize);
+    if (!Number.isFinite(targetPrice) || !entryPrice || !Number.isFinite(lots) || lots <= 0) return null;
+    return calculatePositionPL(selectedAsset, type, entryPrice, targetPrice, lots).profitLoss;
+  };
+
+  const targetPreview = (target: string, kind: "loss" | "profit") => {
+    const buy = getOrderTargetPreview(target, "buy");
+    const sell = getOrderTargetPreview(target, "sell");
+    if (buy === null && sell === null) return null;
+    return `${kind === "loss" ? "Risk" : "Reward"} - Buy: ${buy === null ? "-" : `$${Math.abs(buy).toFixed(2)}`} | Sell: ${sell === null ? "-" : `$${Math.abs(sell).toFixed(2)}`}`;
   };
 
   const isBlocked =
@@ -405,6 +425,26 @@ export default function TradingPlatform() {
       return;
     }
 
+    const stopLossPrice = stopLoss.trim() ? Number(stopLoss) : null;
+    const takeProfitPrice = takeProfit.trim() ? Number(takeProfit) : null;
+    const invalidLevels =
+      (stopLossPrice !== null && !Number.isFinite(stopLossPrice)) ||
+      (takeProfitPrice !== null && !Number.isFinite(takeProfitPrice)) ||
+      (stopLossPrice !== null && (type === "buy" ? stopLossPrice >= entryPrice : stopLossPrice <= entryPrice)) ||
+      (takeProfitPrice !== null && (type === "buy" ? takeProfitPrice <= entryPrice : takeProfitPrice >= entryPrice));
+
+    if (invalidLevels) {
+      toast({
+        title: "Invalid stop loss or take profit",
+        description: type === "buy"
+          ? "For a buy, stop loss must be below entry and take profit above entry."
+          : "For a sell, stop loss must be above entry and take profit below entry.",
+        variant: "destructive",
+      });
+      setIsPlacingOrder(false);
+      return;
+    }
+
     // Balance is the total margin available — reject orders it can't cover
     const requiredMargin = getRequiredMargin(selectedAsset, lots, entryPrice);
     if (requiredMargin > freeMargin) {
@@ -426,8 +466,8 @@ export default function TradingPlatform() {
         position_type: type,
         lot_size: lots,
         entry_price: entryPrice,
-        stop_loss: stopLoss ? parseFloat(stopLoss) : null,
-        take_profit: takeProfit ? parseFloat(takeProfit) : null,
+        stop_loss: stopLossPrice,
+        take_profit: takeProfitPrice,
         status: "open",
       })
       .select("*, assets(*)")
@@ -464,15 +504,20 @@ export default function TradingPlatform() {
     setIsPlacingOrder(false);
   };
 
-  const handleClosePosition = async (position: Position) => {
+  const handleClosePosition = useCallback(async (
+    position: Position,
+    triggeredPrice?: number,
+    triggerAction: "close" | "sl_hit" | "tp_hit" = "close"
+  ) => {
     if (!account || !position.assets) return;
     if (isBlocked) return;
 
     const currentPrice = prices[position.assets.symbol];
     if (!currentPrice) return;
 
-    const exitPrice =
-      position.position_type === "buy" ? currentPrice.bid : currentPrice.ask;
+    const exitPrice = triggeredPrice ?? (
+      position.position_type === "buy" ? currentPrice.bid : currentPrice.ask
+    );
 
     // Use proper pip calculation
     const { profitLoss, pips } = calculatePositionPL(
@@ -568,7 +613,7 @@ export default function TradingPlatform() {
     await supabase.from("trade_history").insert({
       account_id: account.id,
       position_id: position.id,
-      action: "close",
+      action: triggerAction,
       symbol: position.assets.symbol,
       lot_size: position.lot_size,
       price: exitPrice,
@@ -605,12 +650,80 @@ export default function TradingPlatform() {
 
     if (!phasePassed || account.phase_passed) {
       toast({
-        title: "Position Closed",
+        title: triggerAction === "sl_hit" ? "Stop Loss Hit" : triggerAction === "tp_hit" ? "Take Profit Hit" : "Position Closed",
         description: `${position.assets.symbol} P/L: ${profitLoss >= 0 ? "+" : ""}$${profitLoss.toFixed(2)}`,
         variant: profitLoss >= 0 ? "default" : "destructive",
       });
     }
+  }, [account, isBlocked, prices, toast]);
+
+  const handleModifyPosition = async (position: Position) => {
+    if (isBlocked) return;
+
+    const stopLoss = positionDraft.stopLoss.trim() ? Number(positionDraft.stopLoss) : null;
+    const takeProfit = positionDraft.takeProfit.trim() ? Number(positionDraft.takeProfit) : null;
+    if ((stopLoss !== null && !Number.isFinite(stopLoss)) || (takeProfit !== null && !Number.isFinite(takeProfit))) {
+      toast({ title: "Invalid stop loss or take profit", variant: "destructive" });
+      return;
+    }
+
+    const { error } = await supabase
+      .from("positions")
+      .update({ stop_loss: stopLoss, take_profit: takeProfit })
+      .eq("id", position.id)
+      .eq("status", "open");
+
+    if (error) {
+      toast({ title: "Failed to modify position", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    await supabase.from("trade_history").insert({
+      account_id: account?.id,
+      position_id: position.id,
+      action: "modify",
+      symbol: position.assets?.symbol || "-",
+      lot_size: position.lot_size,
+      price: position.entry_price,
+      notes: `SL: ${stopLoss ?? "none"}, TP: ${takeProfit ?? "none"}`,
+    });
+
+    setPositions((prev) => prev.map((item) => item.id === position.id
+      ? { ...item, stop_loss: stopLoss, take_profit: takeProfit }
+      : item));
+    setEditingPositionId(null);
+    toast({ title: "Position modified" });
   };
+
+  // Execute attached exits from the same live bid/ask prices used for unrealized P/L.
+  const handledTriggersRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (isBlocked) return;
+
+    for (const position of positions) {
+      if (position.status !== "open" || !position.assets) continue;
+      const quote = prices[position.assets.symbol];
+      if (!quote) continue;
+
+      const marketPrice = position.position_type === "buy" ? quote.bid : quote.ask;
+      const stopTriggered = position.stop_loss !== null && (
+        position.position_type === "buy" ? marketPrice <= position.stop_loss : marketPrice >= position.stop_loss
+      );
+      const targetTriggered = position.take_profit !== null && (
+        position.position_type === "buy" ? marketPrice >= position.take_profit : marketPrice <= position.take_profit
+      );
+      const trigger = stopTriggered
+        ? { key: `${position.id}:sl`, price: position.stop_loss as number, action: "sl_hit" as const }
+        : targetTriggered
+          ? { key: `${position.id}:tp`, price: position.take_profit as number, action: "tp_hit" as const }
+          : null;
+
+      if (trigger && !handledTriggersRef.current.has(trigger.key)) {
+        handledTriggersRef.current.add(trigger.key);
+        void handleClosePosition(position, trigger.price, trigger.action);
+      }
+    }
+  }, [handleClosePosition, isBlocked, positions, prices]);
 
   // Handle proceeding to next phase
   const handleProceedToNextPhase = async () => {
@@ -981,6 +1094,9 @@ export default function TradingPlatform() {
                         disabled={isBlocked}
                         className="mt-1 h-9"
                       />
+                      <p className="mt-1 text-[10px] text-red-500/80">
+                        {targetPreview(stopLoss, "loss") || "Enter a price to see potential loss"}
+                      </p>
                     </div>
                     <div>
                       <Label htmlFor="take-profit" className="text-xs">
@@ -996,6 +1112,9 @@ export default function TradingPlatform() {
                         disabled={isBlocked}
                         className="mt-1 h-9"
                       />
+                      <p className="mt-1 text-[10px] text-green-500/80">
+                        {targetPreview(takeProfit, "profit") || "Enter a price to see potential profit"}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1112,7 +1231,7 @@ export default function TradingPlatform() {
                 <CardContent className="p-0">
                   <TabsContent value="positions" className="m-0">
                     <div className="overflow-x-auto">
-                      <table className="w-full text-xs sm:text-sm min-w-[600px]">
+                      <table className="w-full text-xs sm:text-sm min-w-[760px]">
                         <thead className="bg-muted/50">
                           <tr>
                             <th className="px-2 sm:px-4 py-2 text-left font-medium">
@@ -1131,6 +1250,9 @@ export default function TradingPlatform() {
                               Current
                             </th>
                             <th className="px-2 sm:px-4 py-2 text-right font-medium">
+                              SL / TP
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-right font-medium">
                               P/L
                             </th>
                             <th className="px-2 sm:px-4 py-2 text-right font-medium">
@@ -1142,7 +1264,7 @@ export default function TradingPlatform() {
                           {openPositions.length === 0 ? (
                             <tr>
                               <td
-                                colSpan={7}
+                                colSpan={8}
                                 className="px-4 py-6 text-center text-muted-foreground"
                               >
                                 No open positions
@@ -1171,6 +1293,7 @@ export default function TradingPlatform() {
                                   )
                                 : { pips: 0, profitLoss: 0 };
                               const { pips, profitLoss: pl } = plCalc;
+                              const isEditing = editingPositionId === position.id;
 
                               return (
                                 <tr
@@ -1205,6 +1328,35 @@ export default function TradingPlatform() {
                                       ? formatPrice(asset.symbol, priceNow)
                                       : priceNow}
                                   </td>
+                                  <td className="px-2 sm:px-4 py-2 text-right">
+                                    {isEditing ? (
+                                      <div className="flex min-w-[150px] flex-col gap-1">
+                                        <Input
+                                          type="number"
+                                          step="0.0001"
+                                          placeholder="Stop loss"
+                                          value={positionDraft.stopLoss}
+                                          onChange={(event) => setPositionDraft((draft) => ({ ...draft, stopLoss: event.target.value }))}
+                                          className="h-7 text-right text-[11px]"
+                                          disabled={isBlocked}
+                                        />
+                                        <Input
+                                          type="number"
+                                          step="0.0001"
+                                          placeholder="Take profit"
+                                          value={positionDraft.takeProfit}
+                                          onChange={(event) => setPositionDraft((draft) => ({ ...draft, takeProfit: event.target.value }))}
+                                          className="h-7 text-right text-[11px]"
+                                          disabled={isBlocked}
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-col text-[10px]">
+                                        <span className="text-red-500">SL: {position.stop_loss === null ? "-" : formatPrice(asset?.symbol || "", position.stop_loss)}</span>
+                                        <span className="text-green-500">TP: {position.take_profit === null ? "-" : formatPrice(asset?.symbol || "", position.take_profit)}</span>
+                                      </div>
+                                    )}
+                                  </td>
                                   <td
                                     className={cn(
                                       "px-2 sm:px-4 py-2 text-right font-medium",
@@ -1219,16 +1371,38 @@ export default function TradingPlatform() {
                                     </div>
                                   </td>
                                   <td className="px-2 sm:px-4 py-2 text-right">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleClosePosition(position)}
-                                      disabled={isBlocked}
-                                      className="h-7 px-2 text-xs"
-                                    >
-                                      <X className="w-3 h-3 mr-1" />
-                                      Close
-                                    </Button>
+                                    <div className="flex justify-end gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                          if (isEditing) {
+                                            void handleModifyPosition(position);
+                                          } else {
+                                            setEditingPositionId(position.id);
+                                            setPositionDraft({
+                                              stopLoss: position.stop_loss?.toString() || "",
+                                              takeProfit: position.take_profit?.toString() || "",
+                                            });
+                                          }
+                                        }}
+                                        disabled={isBlocked}
+                                        className="h-7 px-2 text-xs"
+                                      >
+                                        {isEditing ? <Save className="w-3 h-3 mr-1" /> : <Pencil className="w-3 h-3 mr-1" />}
+                                        {isEditing ? "Save" : "Edit"}
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleClosePosition(position)}
+                                        disabled={isBlocked || isEditing}
+                                        className="h-7 px-2 text-xs"
+                                      >
+                                        <X className="w-3 h-3 mr-1" />
+                                        Close
+                                      </Button>
+                                    </div>
                                   </td>
                                 </tr>
                               );

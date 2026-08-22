@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
       // Allow a small rounding tolerance on the collected amount
       if (expectedAmount > 0 && paidAmount < expectedAmount * 0.98) {
         console.error(`Underpayment for ${reference}: paid ${paidAmount}, expected ${expectedAmount}`);
-        await admin.from("accounts").update({ status: "failed" }).eq("id", account.id);
+        await admin.from("accounts").delete().eq("id", account.id).eq("status", "pending_payment");
         return json({ received: true, activated: false });
       }
 
@@ -88,7 +88,7 @@ Deno.serve(async (req) => {
 
     if (event === "charge.failed") {
       if (account.status === "pending_payment") {
-        await admin.from("accounts").update({ status: "failed" }).eq("id", account.id);
+        await admin.from("accounts").delete().eq("id", account.id);
       }
       return json({ received: true, activated: false });
     }

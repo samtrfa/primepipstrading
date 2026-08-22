@@ -1,4 +1,4 @@
-project_id = "aqgflcdsaprvwlkeqdrq"
+project_id = "wnbynyymqhkestmkcenj"
 
 [functions.verify-bsc-payment]
 verify_jwt = false

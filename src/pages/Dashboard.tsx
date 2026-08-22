@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -20,7 +20,6 @@ import {
 import { cn } from "@/lib/utils";
 import { FUNDED_CONSISTENCY_PERCENT } from "@/lib/challengeRules";
 import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 
 interface Account {
@@ -56,6 +55,7 @@ export default function Dashboard() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     const checkAuthAndFetchData = async () => {
@@ -64,6 +64,20 @@ export default function Dashboard() {
       if (!session) {
         navigate("/login");
         return;
+      }
+
+      const paymentReference = searchParams.get("reference") || searchParams.get("trxref");
+      if (paymentReference) {
+        const { error: verificationError } = await supabase.functions.invoke(
+          "verify-paystack-payment",
+          { body: { reference: paymentReference } },
+        );
+
+        if (verificationError) {
+          console.error("Error verifying Paystack payment:", verificationError);
+        }
+
+        navigate("/dashboard", { replace: true });
       }
 
       const { data, error } = await supabase
@@ -87,17 +101,13 @@ export default function Dashboard() {
         if (stalePendingIds.length > 0) {
           const { error: stalePendingError } = await supabase
             .from("accounts")
-            .update({ status: "failed" })
+            .delete()
             .in("id", stalePendingIds);
 
           if (stalePendingError) {
             console.error("Error expiring stale pending accounts:", stalePendingError);
           } else {
-            accountsData = accountsData.map((account) =>
-              stalePendingIds.includes(account.id)
-                ? { ...account, status: "failed" }
-                : account
-            );
+            accountsData = accountsData.filter((account) => !stalePendingIds.includes(account.id));
           }
         }
 
@@ -116,7 +126,7 @@ export default function Dashboard() {
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
   const activeAccounts = accounts.filter(a => a.status === "active" || a.status === "funded");
   const pendingAccounts = accounts.filter(a => a.status === "pending_payment");

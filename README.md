@@ -167,23 +167,26 @@ The active card/bank flow uses Paystack through the Supabase Edge Functions in
 The folder names are retained for deployment compatibility; the provider code
 and database value are Paystack.
 
-Add the live secret manually in Supabase, not in the frontend or source code:
+Add the Paystack secret manually in Supabase, not in the frontend or source code.
+Use `sk_test_...` while testing and replace it with `sk_live_...` only when you
+are ready for production:
 
 1. Open **Supabase Dashboard → Project Settings → Edge Functions → Secrets**.
-2. Add `PAYSTACK_SECRET_KEY` with the Paystack live secret key (`sk_live_...`).
-3. Deploy both functions after adding the secret.
+2. Add `PAYSTACK_SECRET_KEY` with the appropriate Paystack test or live secret key.
+3. Deploy all three payment functions after adding or changing the secret.
 
 The equivalent CLI commands are:
 
 ```bash
-supabase secrets set PAYSTACK_SECRET_KEY='sk_live_your_key' --project-ref aqgflcdsaprvwlkeqdrq
-supabase functions deploy korapay-checkout --project-ref aqgflcdsaprvwlkeqdrq
-supabase functions deploy korapay-webhook --project-ref aqgflcdsaprvwlkeqdrq
+npx supabase secrets set PAYSTACK_SECRET_KEY='sk_test_your_key' --project-ref wnbynyymqhkestmkcenj
+npx supabase functions deploy korapay-checkout --project-ref wnbynyymqhkestmkcenj
+npx supabase functions deploy korapay-webhook --project-ref wnbynyymqhkestmkcenj
+npx supabase functions deploy verify-paystack-payment --project-ref wnbynyymqhkestmkcenj
 ```
 
 Set this URL as the Paystack webhook URL:
 
-`https://aqgflcdsaprvwlkeqdrq.supabase.co/functions/v1/korapay-webhook`
+`https://wnbynyymqhkestmkcenj.supabase.co/functions/v1/korapay-webhook`
 
 ---
 

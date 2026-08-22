@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
         amount: localAmount * 100,
         currency,
         callback_url: redirectUrl,
-        channels: ["bank", "card", "ussd", "mobile_money", "bank_transfer"],
+        channels: ["bank_transfer", "bank", "card", "ussd", "mobile_money"],
         email,
         metadata: {
           account_id: account.id,
@@ -178,7 +178,7 @@ Deno.serve(async (req) => {
     const paystackBody = await paystackRes.text();
     if (!paystackRes.ok) {
       console.error(`Paystack initialize failed [${paystackRes.status}]: ${paystackBody}`);
-      await admin.from("accounts").update({ status: "failed" }).eq("id", account.id);
+      await admin.from("accounts").delete().eq("id", account.id).eq("status", "pending_payment");
       return json(
         { error: "Payment provider request failed", status: paystackRes.status, details: paystackBody },
         paystackRes.status,
@@ -188,7 +188,7 @@ Deno.serve(async (req) => {
     const parsed = JSON.parse(paystackBody);
     if (parsed?.status !== true || !parsed?.data?.authorization_url) {
       console.error("Paystack returned an unsuccessful payload:", paystackBody);
-      await admin.from("accounts").update({ status: "failed" }).eq("id", account.id);
+      await admin.from("accounts").delete().eq("id", account.id).eq("status", "pending_payment");
       return json({ error: parsed?.message || "Payment provider error", details: paystackBody }, 502);
     }
 
