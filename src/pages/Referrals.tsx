@@ -49,31 +49,44 @@ export default function ReferralsPage() {
         return;
       }
 
-      // Generate referral link based on user ID
+      // The first eight characters are the public referral code stored at signup.
       setReferralLink(`${window.location.origin}/?ref=${session.user.id.slice(0, 8)}`);
 
-      // TODO: Fetch referrals data from backend when referrals table is created
-      // For now show empty state with structure ready for integration
-      setReferrals([]);
-      setTotalCommission(0);
+      const { data, error } = await supabase
+        .from("referrals")
+        .select("id, status, commission_earned, referred_at, account_purchased, referred_user_id")
+        .order("referred_at", { ascending: false });
+
+      if (error) {
+        console.error("Error fetching referrals:", error);
+        toast({ title: "Unable to load referrals", description: "Please refresh the page and try again.", variant: "destructive" });
+      } else {
+        const loadedReferrals = (data ?? []).map((referral) => ({
+          ...referral,
+          name: "Referred trader",
+          email: "Hidden for privacy",
+          status: referral.status as Referral["status"],
+          commission_earned: Number(referral.commission_earned),
+        }));
+        setReferrals(loadedReferrals);
+        setTotalCommission(loadedReferrals.reduce((total, referral) => total + referral.commission_earned, 0));
+      }
       setLoading(false);
     };
 
     checkAuthAndFetchData();
-  }, [navigate]);
+  }, [navigate, toast]);
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(referralLink);
-    toast({
-      title: "Copied!",
-      description: "Referral link copied to clipboard",
+    navigator.clipboard.writeText(referralLink).then(() => {
+      toast({ title: "Copied!", description: "Referral link copied to clipboard" });
     });
   };
 
-  const statusConfig: Record<string, { color: string; icon: any }> = {
-    pending: { color: "bg-warning/20 text-warning", icon: TrendingUp },
-    active: { color: "bg-success/20 text-success", icon: CheckCircle2 },
-    completed: { color: "bg-primary/20 text-primary", icon: Gift },
+  const statusConfig: Record<string, { color: string }> = {
+    pending: { color: "bg-warning/20 text-warning" },
+    active: { color: "bg-success/20 text-success" },
+    completed: { color: "bg-primary/20 text-primary" },
   };
 
   return (

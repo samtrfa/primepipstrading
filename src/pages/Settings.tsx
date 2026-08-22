@@ -67,7 +67,7 @@ export default function SettingsPage() {
   return (
     <DashboardLayout title="Settings" subtitle="Manage your personal account details">
       <div className="mx-auto max-w-3xl space-y-6">
-        <Button variant="ghost" className="px-0 hover:bg-transparent" onClick={() => navigate("/dashboard")}>
+        <Button variant="ghost" className="px-0 hover:bg-transparent" onClick={() => window.location.assign("/dashboard")}>
           <ArrowLeft className="h-4 w-4" />
           Back to dashboard
         </Button>

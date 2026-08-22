@@ -19,6 +19,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -111,12 +112,14 @@ export default function Analytics() {
 
   const equityData = useMemo(() => {
     let equity = activeAccounts.reduce((sum, account) => sum + account.account_size, 0);
-    const points = [{ label: "Start", equity }];
+    let peakEquity = equity;
+    const points = [{ label: "Start", equity, drawdown: 0 }];
     closedTrades.forEach((trade, index) => {
       equity += trade.profit_loss || 0;
-      points.push({ label: `T${index + 1}`, equity });
+      peakEquity = Math.max(peakEquity, equity);
+      points.push({ label: `T${index + 1}`, equity, drawdown: Math.max(0, peakEquity - equity) });
     });
-    return points.length > 1 ? points : [{ label: "Start", equity }, { label: "Now", equity: totalBalance }];
+    return points.length > 1 ? points : [{ label: "Start", equity, drawdown: 0 }, { label: "Now", equity: totalBalance, drawdown: Math.max(0, equity - totalBalance) }];
   }, [activeAccounts, closedTrades, totalBalance]);
 
   const balanceData = activeAccounts.map((account, index) => ({
@@ -142,7 +145,7 @@ export default function Analytics() {
       const date = new Date();
       date.setDate(date.getDate() - (34 - index));
       const key = date.toISOString().slice(0, 10);
-      return { key, value: byDay[key] || 0, label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }) };
+      return { key, value: byDay[key] || 0, traded: Object.hasOwn(byDay, key), label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }) };
     });
   }, [closedTrades]);
 
@@ -192,14 +195,14 @@ export default function Analytics() {
 
         <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
           <Card variant="elevated"><CardHeader className="flex-row items-start justify-between"><div><CardTitle>Equity curve</CardTitle><p className="mt-1 text-sm text-muted-foreground">Cumulative closed-trade performance</p></div><span className="text-sm font-semibold text-success">{formatMoney(totalPnl, true)}</span></CardHeader><CardContent>
-            <div className="h-[280px] w-full"><ResponsiveContainer width="100%" height="100%"><AreaChart data={equityData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}><defs><linearGradient id="equityFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d6a940" stopOpacity={0.3} /><stop offset="100%" stopColor="#d6a940" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="hsl(220 15% 18%)" strokeDasharray="4 4" vertical={false} /><XAxis dataKey="label" tick={{ fill: "hsl(220 10% 55%)", fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis tick={{ fill: "hsl(220 10% 55%)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value) => formatMoney(value, true)} width={58} /><Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => [formatMoney(value), "Equity"]} /><Area type="monotone" dataKey="equity" stroke="#d6a940" strokeWidth={3} fill="url(#equityFill)" /></AreaChart></ResponsiveContainer></div>
+            <div className="h-[280px] w-full"><ResponsiveContainer width="100%" height="100%"><AreaChart data={equityData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}><defs><linearGradient id="equityFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d6a940" stopOpacity={0.3} /><stop offset="100%" stopColor="#d6a940" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="hsl(220 15% 18%)" strokeDasharray="4 4" vertical={false} /><XAxis dataKey="label" tick={{ fill: "hsl(220 10% 55%)", fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis yAxisId="equity" tick={{ fill: "hsl(220 10% 55%)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value) => formatMoney(value, true)} width={58} /><YAxis yAxisId="drawdown" orientation="right" tick={{ fill: "#d77a88", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value) => formatMoney(value, true)} width={58} /><Tooltip contentStyle={chartTooltipStyle} formatter={(value: number, name: string) => [formatMoney(value), name === "drawdown" ? "Drawdown" : "Equity"]} /><Area yAxisId="equity" type="monotone" dataKey="equity" stroke="#d6a940" strokeWidth={3} fill="url(#equityFill)" /><Line yAxisId="drawdown" type="monotone" dataKey="drawdown" stroke="#d77a88" strokeWidth={2} dot={false} /></AreaChart></ResponsiveContainer></div>
           </CardContent></Card>
 
           <Card variant="elevated"><CardHeader><CardTitle>Balance allocation</CardTitle><p className="text-sm text-muted-foreground">Equity across active accounts</p></CardHeader><CardContent><div className="h-[190px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={balanceData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={80} paddingAngle={3} stroke="none">{balanceData.map((entry, index) => <Cell key={entry.name} fill={balanceColors[index % balanceColors.length]} />)}</Pie><Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => [formatMoney(value), "Balance"]} /></PieChart></ResponsiveContainer></div><div className="space-y-2">{balanceData.map((item, index) => <div key={item.name} className="flex items-center justify-between text-sm"><span className="flex items-center gap-2 text-muted-foreground"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: balanceColors[index % balanceColors.length] }} />{item.name}</span><span className="font-medium">{formatMoney(item.value)}</span></div>)}</div></CardContent></Card>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
-          <Card variant="elevated"><CardHeader><CardTitle>Daily P/L rhythm</CardTitle><p className="text-sm text-muted-foreground">The last 35 trading days</p></CardHeader><CardContent><div className="mb-4 grid grid-cols-7 gap-1.5 sm:gap-2">{calendarData.map((day) => { const intensity = Math.min(Math.abs(day.value) / Math.max(averageWin, averageLoss, 1), 1); return <div key={day.key} title={`${day.label}: ${day.value >= 0 ? "+" : "-"}${formatMoney(Math.abs(day.value))}`} className={cn("aspect-square rounded-sm border border-border/30 transition-colors", day.value === 0 ? "bg-secondary" : day.value > 0 ? "bg-success" : "bg-destructive")} style={{ opacity: day.value === 0 ? 1 : 0.3 + intensity * 0.7 }} />; })}</div><div className="flex items-center justify-between text-xs text-muted-foreground"><span>Less active</span><div className="flex gap-1"><span className="h-3 w-3 rounded-sm bg-secondary" /><span className="h-3 w-3 rounded-sm bg-success/50" /><span className="h-3 w-3 rounded-sm bg-success" /></div><span>More active</span></div></CardContent></Card>
+          <Card variant="elevated"><CardHeader><CardTitle>Daily P/L rhythm</CardTitle><p className="text-sm text-muted-foreground">The last 35 trading days</p></CardHeader><CardContent><div className="mb-4 grid grid-cols-7 gap-1.5 sm:gap-2">{calendarData.map((day) => { const intensity = Math.min(Math.abs(day.value) / Math.max(averageWin, averageLoss, 1), 1); return <div key={day.key} title={day.traded ? `${day.label}: ${day.value >= 0 ? "+" : "-"}${formatMoney(Math.abs(day.value))}` : `${day.label}: No trades`} className={cn("flex aspect-square items-center justify-center rounded-sm border border-border/30 text-[10px] font-semibold text-white transition-colors", !day.traded ? "bg-secondary" : day.value >= 0 ? "bg-success" : "bg-destructive")} style={{ opacity: day.traded ? 0.3 + intensity * 0.7 : 1 }}>{day.traded && `${day.value >= 0 ? "+" : "-"}${formatMoney(Math.abs(day.value), true)}`}</div>; })}</div><div className="flex items-center justify-between text-xs text-muted-foreground"><span>Less active</span><div className="flex gap-1"><span className="h-3 w-3 rounded-sm bg-secondary" /><span className="h-3 w-3 rounded-sm bg-success/50" /><span className="h-3 w-3 rounded-sm bg-success" /></div><span>More active</span></div></CardContent></Card>
           <Card variant="elevated"><CardHeader><CardTitle>By instrument</CardTitle><p className="text-sm text-muted-foreground">Where your P/L is coming from</p></CardHeader><CardContent><div className="h-[220px] w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={instrumentData} layout="vertical" margin={{ top: 0, right: 12, left: 8, bottom: 0 }}><CartesianGrid stroke="hsl(220 15% 18%)" strokeDasharray="4 4" horizontal={false} /><XAxis type="number" hide /><YAxis dataKey="symbol" type="category" tick={{ fill: "hsl(220 10% 70%)", fontSize: 12 }} axisLine={false} tickLine={false} width={56} /><Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => [formatMoney(value), "P/L"]} /><Bar dataKey="pnl" radius={[0, 4, 4, 0]} fill="#d6a940" /></BarChart></ResponsiveContainer></div>{!instrumentData.length && <p className="pt-4 text-sm text-muted-foreground">Instrument breakdown appears after your first closed trade.</p>}</CardContent></Card>
         </div>
 

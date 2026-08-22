@@ -20,12 +20,12 @@ export default function Register() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const referralCode = searchParams.get("ref") || localStorage.getItem("primepips_referral_code");
 
   useEffect(() => {
     const redirect = searchParams.get("redirect");
     const challenge = searchParams.get("challenge");
     const size = searchParams.get("size");
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
         // If there's a pending purchase, redirect to purchase page
@@ -84,6 +84,7 @@ export default function Register() {
         emailRedirectTo: `${window.location.origin}/`,
         data: {
           full_name: formData.fullName,
+          referral_code: referralCode,
         },
       },
     });

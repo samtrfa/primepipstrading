@@ -332,7 +332,7 @@ export default function PurchaseAccount() {
                   Prime<span className="text-primary">Pips</span>
                 </span>
               </Link>
-              <Button variant="ghost" onClick={() => navigate("/dashboard")}>
+              <Button variant="ghost" onClick={() => window.location.assign("/dashboard")}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Back to Dashboard
               </Button>

@@ -386,9 +386,22 @@ export default function TradingPlatform() {
 
     const unrealized = calculateUnrealizedPL();
     const liveEquity = (account.current_balance || account.account_size) + unrealized;
-    const hwm = account.high_water_mark || account.account_size;
-    const dailyStart = account.daily_start_balance || account.account_size;
+    const storedHWM = account.high_water_mark ?? account.account_size;
+    const hwm = Math.max(storedHWM, liveEquity);
+    const dailyStart = account.daily_start_balance ?? account.account_size;
     const rules = getPhaseRules(account.challenge_type, account.current_phase || 1);
+
+    if (liveEquity > storedHWM) {
+      void supabase
+        .from("accounts")
+        .update({ high_water_mark: liveEquity })
+        .eq("id", account.id);
+      setAccount((previous) =>
+        previous && previous.id === account.id
+          ? { ...previous, high_water_mark: liveEquity }
+          : previous
+      );
+    }
 
     const maxDD = hwm > 0 ? ((hwm - liveEquity) / hwm) * 100 : 0;
     const dailyDD = dailyStart > 0 ? ((dailyStart - liveEquity) / dailyStart) * 100 : 0;

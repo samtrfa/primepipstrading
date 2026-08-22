@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      referrals: {
+        Row: {
+          id: string
+          referrer_id: string
+          referred_user_id: string
+          status: string
+          commission_earned: number
+          referred_at: string
+          account_purchased: boolean
+        }
+        Insert: {
+          id?: string
+          referrer_id: string
+          referred_user_id: string
+          status?: string
+          commission_earned?: number
+          referred_at?: string
+          account_purchased?: boolean
+        }
+        Update: {
+          id?: string
+          referrer_id?: string
+          referred_user_id?: string
+          status?: string
+          commission_earned?: number
+          referred_at?: string
+          account_purchased?: boolean
+        }
+        Relationships: []
+      }
       accounts: {
         Row: {
           account_size: number
