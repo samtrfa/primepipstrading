@@ -68,7 +68,9 @@ Deno.serve(async (req) => {
     const paymentMethod = body?.paymentMethod === "other" ? "other" : "bank_transfer";
     const couponCode = typeof body?.couponCode === "string"
       ? body.couponCode.trim().toUpperCase().slice(0, 32)
-      : null;
+      : challengeType === "one_step"
+        ? "PRIME50"
+        : null;
     const currency = "NGN";
     const redirectUrl = typeof body?.redirectUrl === "string" ? body.redirectUrl : null;
     const customerName = typeof body?.customerName === "string" && body.customerName.trim()

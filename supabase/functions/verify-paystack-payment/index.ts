@@ -62,13 +62,13 @@ Deno.serve(async (req) => {
       account.status === "pending_payment" &&
       Date.now() - new Date(account.created_at).getTime() > 30 * 60 * 1000
     ) {
-      const { error: deleteError } = await admin
+      const { error: expireError } = await admin
         .from("accounts")
-        .delete()
+        .update({ status: "failed" })
         .eq("id", account.id)
         .eq("status", "pending_payment");
-      if (deleteError) {
-        console.error("Failed to remove expired payment:", deleteError.message);
+      if (expireError) {
+        console.error("Failed to mark expired payment:", expireError.message);
         return json({ error: "Payment cleanup failed" }, 500);
       }
       return json({ verified: false, activated: false, expired: true });

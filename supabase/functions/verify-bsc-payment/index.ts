@@ -176,7 +176,7 @@ serve(async (req) => {
         
         const { error: expireError } = await supabase
           .from("accounts")
-          .delete()
+          .update({ status: "failed" })
           .eq("id", account.id)
           .eq("status", "pending_payment");
         

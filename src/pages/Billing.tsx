@@ -26,7 +26,7 @@ import jsPDF from "jspdf";
 interface Invoice {
   id: string;
   amount: number;
-  status: "pending" | "paid" | "overdue";
+  status: "pending" | "paid" | "failed" | "overdue";
   date: string;
   due_date: string;
   description: string;
@@ -48,12 +48,19 @@ const statusConfig: Record<string, { icon: typeof Clock; color: string; label: s
     color: "bg-destructive/20 text-destructive",
     label: "Overdue",
   },
+  failed: {
+    icon: AlertCircle,
+    color: "bg-destructive/20 text-destructive",
+    label: "Failed",
+  },
 };
 
 const formatCurrency = (value: number) => `$${value.toLocaleString("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 })}`;
+
+const PAYMENT_EXPIRY_MS = 30 * 60 * 1000;
 
 function downloadInvoice(invoice: Invoice) {
   const document = new jsPDF();
@@ -147,11 +154,41 @@ export default function BillingPage() {
       if (error) {
         console.error("Error fetching accounts:", error);
       } else if (accounts) {
+        const stalePendingIds = accounts
+          .filter((account) => (
+            account.status === "pending_payment" &&
+            Date.now() - new Date(account.created_at).getTime() > PAYMENT_EXPIRY_MS
+          ))
+          .map((account) => account.id);
+
+        let accountsData = accounts;
+        if (stalePendingIds.length > 0) {
+          const { error: expiryError } = await supabase
+            .from("accounts")
+            .update({ status: "failed" })
+            .in("id", stalePendingIds)
+            .eq("status", "pending_payment");
+
+          if (expiryError) {
+            console.error("Error expiring stale pending accounts:", expiryError);
+          } else {
+            accountsData = accounts.map((account) =>
+              stalePendingIds.includes(account.id)
+                ? { ...account, status: "failed" }
+                : account,
+            );
+          }
+        }
+
         // Generate invoices from accounts data
-        const generatedInvoices = accounts.map((account, index) => ({
+        const generatedInvoices = accountsData.map((account, index) => ({
           id: `INV-${String(index + 1).padStart(3, "0")}`,
           amount: account.price,
-          status: account.status === "pending_payment" ? "pending" : "paid",
+          status: account.status === "pending_payment"
+            ? "pending"
+            : account.status === "failed"
+              ? "failed"
+              : "paid",
           date: account.created_at,
           due_date: new Date(new Date(account.created_at).getTime() + 10 * 24 * 60 * 60 * 1000).toISOString(),
           description: `$${account.account_size.toLocaleString()} ${account.challenge_type.replace(/_/g, " ")} Challenge`,
@@ -159,11 +196,13 @@ export default function BillingPage() {
         setInvoices(generatedInvoices);
 
         // Calculate total spent from all accounts
-        const total = accounts.reduce((sum, a) => sum + a.price, 0);
+        const total = accountsData
+          .filter(a => a.status !== "pending_payment" && a.status !== "failed")
+          .reduce((sum, a) => sum + a.price, 0);
         setTotalSpent(total);
 
         // Calculate pending balance
-        const pending = accounts
+        const pending = accountsData
           .filter(a => a.status === "pending_payment")
           .reduce((sum, a) => sum + a.price, 0);
         setPendingBalance(pending);

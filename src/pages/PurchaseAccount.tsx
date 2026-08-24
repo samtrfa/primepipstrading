@@ -178,11 +178,18 @@ export default function PurchaseAccount() {
   const selectedTier = pricingTiers.find(t => t.size === selectedSize);
   const basePrice = selectedTier?.prices[selectedChallenge] || 0;
   const rules = challengeRules[selectedChallenge];
+  const defaultOneStepCoupon = {
+    code: "PRIME50",
+    discountPercent: 50,
+    challengeTypes: ["one_step"] as ChallengeType[],
+  };
+  const activeCoupon = appliedCoupon ?? (selectedChallenge === "one_step" ? defaultOneStepCoupon : null);
+  const defaultCouponApplied = selectedChallenge === "one_step" && !appliedCoupon;
 
   const couponApplies =
-    !!appliedCoupon &&
-    (!appliedCoupon.challengeTypes || appliedCoupon.challengeTypes.includes(selectedChallenge));
-  const discountPercent = couponApplies ? appliedCoupon!.discountPercent : 0;
+    !!activeCoupon &&
+    (!activeCoupon.challengeTypes || activeCoupon.challengeTypes.includes(selectedChallenge));
+  const discountPercent = couponApplies ? activeCoupon.discountPercent : 0;
   const discountAmount = Math.round(basePrice * discountPercent) / 100;
   const price = Math.round((basePrice - discountAmount) * 100) / 100;
 
@@ -252,7 +259,7 @@ export default function PurchaseAccount() {
         challengeType: selectedChallenge,
         accountSize: selectedSize,
         paymentMethod,
-        couponCode: couponApplies ? appliedCoupon!.code : undefined,
+        couponCode: couponApplies ? activeCoupon!.code : undefined,
         redirectUrl: `${window.location.origin}/dashboard`,
       },
     });
@@ -305,7 +312,7 @@ export default function PurchaseAccount() {
       current_phase: getInitialPhase(selectedChallenge),
       current_balance: selectedSize,
       payment_address: CRYPTO_WALLET,
-      coupon_code: couponApplies ? appliedCoupon!.code : null,
+      coupon_code: couponApplies ? activeCoupon!.code : null,
       discount_percent: discountPercent,
     });
 
@@ -479,11 +486,13 @@ export default function PurchaseAccount() {
                     {couponApplies ? (
                       <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/50 bg-primary/10 px-3 py-2">
                         <span className="text-sm font-semibold text-foreground">
-                          {appliedCoupon!.code} · {discountPercent}% off
+                          {activeCoupon!.code} · {discountPercent}% off
                         </span>
-                        <Button variant="ghost" size="sm" onClick={removeCoupon}>
-                          <X className="w-4 h-4" />
-                        </Button>
+                        {!defaultCouponApplied && (
+                          <Button variant="ghost" size="sm" onClick={removeCoupon}>
+                            <X className="w-4 h-4" />
+                          </Button>
+                        )}
                       </div>
                     ) : (
                       <form

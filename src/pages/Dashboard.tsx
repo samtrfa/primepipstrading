@@ -101,14 +101,18 @@ export default function Dashboard() {
         if (stalePendingIds.length > 0) {
           const { error: stalePendingError } = await supabase
             .from("accounts")
-            .delete()
+            .update({ status: "failed" })
             .in("id", stalePendingIds)
             .eq("status", "pending_payment");
 
           if (stalePendingError) {
             console.error("Error expiring stale pending accounts:", stalePendingError);
           } else {
-            accountsData = accountsData.filter((account) => !stalePendingIds.includes(account.id));
+            accountsData = accountsData.map((account) =>
+              stalePendingIds.includes(account.id)
+                ? { ...account, status: "failed" }
+                : account,
+            );
           }
         }
 
