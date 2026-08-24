@@ -896,7 +896,7 @@ export default function TradingPlatform() {
                 variant="ghost"
                 size="sm"
                 className="px-2 sm:px-3"
-                onClick={() => navigate("/dashboard")}
+                onClick={() => window.location.assign("/dashboard")}
                 aria-label="Return to dashboard"
               >
                 <ArrowLeft className="w-4 h-4 sm:mr-2" />
