@@ -16,7 +16,6 @@ import {
   Users,
   Gift,
   TrendingUp,
-  Share2,
   CheckCircle2,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
@@ -158,34 +157,6 @@ export default function ReferralsPage() {
                 className="shrink-0"
               >
                 <Copy className="w-4 h-4" />
-              </Button>
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => {
-                  // Share via social media
-                  const text = "Join me on PrimePips and start funded trading! Use my referral link to get started.";
-                  window.open(
-                    `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(referralLink)}`,
-                    "_blank"
-                  );
-                }}
-              >
-                <Share2 className="w-4 h-4 mr-2" />
-                Share on Twitter
-              </Button>
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => {
-                  // Share via email
-                  window.location.href = `mailto:?subject=Join PrimePips Funded Trading&body=Check out PrimePips for funded trading opportunities: ${referralLink}`;
-                }}
-              >
-                <Share2 className="w-4 h-4 mr-2" />
-                Share via Email
               </Button>
             </div>
           </CardContent>
