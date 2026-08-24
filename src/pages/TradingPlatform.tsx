@@ -149,8 +149,7 @@ export default function TradingPlatform() {
 
       if (
         accountData.status !== "active" &&
-        accountData.status !== "funded" &&
-        accountData.status !== "failed"
+        accountData.status !== "funded"
       ) {
         toast({
           title: "Account not active",

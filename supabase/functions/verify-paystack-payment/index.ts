@@ -109,13 +109,13 @@ Deno.serve(async (req) => {
     }
 
     if (account.status === "pending_payment") {
-      const { error: deleteError } = await admin
+      const { error: failureError } = await admin
         .from("accounts")
-        .delete()
+        .update({ status: "failed" })
         .eq("id", account.id)
         .eq("status", "pending_payment");
-      if (deleteError) {
-        console.error("Failed to remove unsuccessful payment:", deleteError.message);
+      if (failureError) {
+        console.error("Failed to mark unsuccessful payment:", failureError.message);
         return json({ error: "Payment cleanup failed" }, 500);
       }
     }

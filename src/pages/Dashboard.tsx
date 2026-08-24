@@ -31,6 +31,7 @@ interface Account {
   current_balance: number | null;
   profit_loss: number | null;
   current_phase: number | null;
+  drawdown_violated: boolean | null;
   created_at: string;
 }
 
@@ -88,7 +89,9 @@ export default function Dashboard() {
       if (error) {
         console.error("Error fetching accounts:", error);
       } else {
-        let accountsData = data || [];
+        let accountsData = (data || []).filter(
+          (account) => account.status !== "failed" || account.drawdown_violated === true,
+        );
 
         const stalePendingIds = accountsData
           .filter((account) => {
@@ -108,11 +111,7 @@ export default function Dashboard() {
           if (stalePendingError) {
             console.error("Error expiring stale pending accounts:", stalePendingError);
           } else {
-            accountsData = accountsData.map((account) =>
-              stalePendingIds.includes(account.id)
-                ? { ...account, status: "failed" }
-                : account,
-            );
+            accountsData = accountsData.filter((account) => !stalePendingIds.includes(account.id));
           }
         }
 
