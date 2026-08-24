@@ -32,6 +32,15 @@ interface Invoice {
   description: string;
 }
 
+interface BillingAccount {
+  price: number;
+  status: string;
+  drawdown_violated: boolean | null;
+  created_at: string;
+  account_size: number;
+  challenge_type: string;
+}
+
 const statusConfig: Record<string, { icon: typeof Clock; color: string; label: string }> = {
   pending: {
     icon: Clock,
@@ -182,7 +191,7 @@ export default function BillingPage() {
 
         // Generate invoices from accounts data
         const generatedInvoices = accountsData.map((account, index) => ({
-          id: `INV-${String(index + 1).padStart(3, "0")}`,
+          id: `INV-${String(accountsData.length - index).padStart(3, "0")}`,
           amount: account.price,
           status: account.status === "pending_payment"
             ? "pending"
@@ -196,8 +205,8 @@ export default function BillingPage() {
         setInvoices(generatedInvoices);
 
         // Calculate total spent from all accounts
-        const total = accountsData
-          .filter(a => a.status !== "pending_payment" && a.status !== "failed")
+        const total = (accountsData as BillingAccount[])
+          .filter(a => a.status !== "pending_payment" && (a.status !== "failed" || a.drawdown_violated === true))
           .reduce((sum, a) => sum + a.price, 0);
         setTotalSpent(total);
 
