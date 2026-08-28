@@ -98,10 +98,6 @@ export default function Terms() {
           </div>
         </section>
         <article className="container mx-auto max-w-4xl px-4 py-12">
-          <div className="mb-12 border border-primary/40 bg-primary/10 p-6 text-foreground">
-            <h2 className="mb-3 text-xl font-serif font-bold text-primary">Read this before using the Services</h2>
-            <p className="leading-7">PrimePips is a simulated trading skills platform. The accounts and results described here are not real funded trading accounts, and users should not expect real rewards or financial returns. This is a central condition of using the platform, not a guarantee or promise of payment.</p>
-          </div>
           <div className="space-y-10">
             {[...sections, ...supplementalSections, ...finalSections].map(([title, content]) => (
               <section key={title}>
