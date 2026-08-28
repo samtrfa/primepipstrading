@@ -44,7 +44,7 @@ const features = [
   {
     icon: HeadphonesIcon,
     title: "24/7 Support",
-    description: "Dedicated support team ready to help you succeed. Live chat, email, and Discord.",
+    description: "Dedicated support team ready to help you succeed through live chat and email.",
   },
   {
     icon: ArrowUpRight,
