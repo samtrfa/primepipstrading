@@ -71,7 +71,7 @@ export function HeroSection() {
             { value: "50+", label: "Funded Traders" },
             { value: "$25K+", label: "Total Payouts" },
             { value: "90%", label: "Profit Split" },
-            { value: "150+", label: "Countries" },
+            { value: "15+", label: "Countries" },
           ].map((stat, index) => (
             <div
               key={index}
