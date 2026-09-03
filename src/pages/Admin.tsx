@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   ChevronDown,
   CircleDollarSign,
+  CreditCard,
   Clock3,
   RefreshCw,
   ShieldCheck,
@@ -15,6 +16,8 @@ import {
   FileCheck2,
   ExternalLink,
   Gift,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -27,9 +30,10 @@ import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 
 type User = { id: string; email?: string; name: string | null; lastSignInAt: string | null; createdAt: string; isAffiliate: boolean; isAdmin: boolean };
-type Account = { id: string; user_id: string; account_size: number; challenge_type: string; status: string; current_balance: number | null; profit_loss: number | null; updated_at: string; created_at: string };
+type Account = { id: string; user_id: string; account_size: number; challenge_type: string; status: string; current_balance: number | null; profit_loss: number | null; current_phase: number | null; updated_at: string; created_at: string };
 type Asset = { symbol: string; pip_value?: number | null; asset_type: string; quote_currency?: string | null; lot_size?: number | null };
 type Position = { id: string; account_id: string; asset_id: string; position_type: string; lot_size: number; profit_loss: number | null; status: string; opened_at: string; entry_price: number; assets?: Asset };
 type Referral = { referrer_id: string; referred_user_id: string; status: string; commission_earned: number; referred_at: string; account_purchased: boolean };
@@ -39,6 +43,17 @@ type AdminSection = "traders" | "exposure" | "referrals" | "affiliates" | "activ
 type Kyc = { id: string; user_id: string; identity_document_type: string | null; identity_document_path: string | null; identity_submitted_at: string | null; address_document_type: string | null; address_document_path: string | null; address_submitted_at: string | null; status: string; rejection_reason: string | null; reviewed_at: string | null; reviewed_by: string | null; created_at: string; updated_at: string };
 type Snapshot = { users: User[]; accounts: Account[]; positions: Position[]; referrals: Referral[]; history: History[]; kyc: Kyc[]; payments: Payment[]; generatedAt: string };
 type GrantChallenge = "three_step" | "two_step" | "one_step" | "instant";
+
+const normalizeSnapshot = (data: Partial<Snapshot>): Snapshot => ({
+  users: data.users ?? [],
+  accounts: data.accounts ?? [],
+  positions: data.positions ?? [],
+  referrals: data.referrals ?? [],
+  history: data.history ?? [],
+  kyc: data.kyc ?? [],
+  payments: data.payments ?? [],
+  generatedAt: data.generatedAt ?? new Date().toISOString(),
+});
 
 const money = (value: number) => `${value < 0 ? "-" : ""}$${Math.abs(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 const date = (value: string | null) => value ? new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }) : "Never";
@@ -57,6 +72,18 @@ export default function Admin({ section }: { section?: AdminSection }) {
   const [grantChallenge, setGrantChallenge] = useState<GrantChallenge>("one_step");
   const [grantSize, setGrantSize] = useState("10000");
   const [grantingAccount, setGrantingAccount] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [savingAccount, setSavingAccount] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState<string | null>(null);
+  const [deletingUser, setDeletingUser] = useState(false);
+  const [deleteUserId, setDeleteUserId] = useState("");
+  const [editUserId, setEditUserId] = useState("");
+  const [editChallenge, setEditChallenge] = useState<GrantChallenge>("one_step");
+  const [editSize, setEditSize] = useState("10000");
+  const [editStatus, setEditStatus] = useState("active");
+  const [editPhase, setEditPhase] = useState("1");
+  const [editBalance, setEditBalance] = useState("0");
+  const [editProfitLoss, setEditProfitLoss] = useState("0");
 
   const loadSnapshot = async () => {
     setLoading(true);
@@ -66,7 +93,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
     if (session.user.app_metadata?.role !== "admin") { navigate("/dashboard", { replace: true }); return; }
     const { data, error: invokeError } = await supabase.functions.invoke("admin-snapshot");
     if (invokeError) setError("The admin snapshot could not be loaded.");
-    else setSnapshot(data as Snapshot);
+    else setSnapshot(normalizeSnapshot(data as Partial<Snapshot>));
     setLoading(false);
   };
 
@@ -98,6 +125,74 @@ export default function Admin({ section }: { section?: AdminSection }) {
       setSnapshot((current) => current ? { ...current, accounts: [...current.accounts, data.account as Account] } : current);
     }
     setGrantingAccount(false);
+  };
+
+  const startEditingAccount = (account: Account) => {
+    setEditingAccount(account);
+    setEditUserId(account.user_id);
+    setEditChallenge(account.challenge_type as GrantChallenge);
+    setEditSize(String(account.account_size));
+    setEditStatus(account.status);
+    setEditPhase(account.current_phase === null ? "none" : String(account.current_phase));
+    setEditBalance(String(account.current_balance ?? 0));
+    setEditProfitLoss(String(account.profit_loss ?? 0));
+  };
+
+  const updateAccount = async () => {
+    if (!editingAccount || !editUserId) return;
+    setSavingAccount(true);
+    setError("");
+    const { data, error: updateError } = await supabase.functions.invoke("admin-account", {
+      body: {
+        action: "update",
+        accountId: editingAccount.id,
+        userId: editUserId,
+        challengeType: editChallenge,
+        accountSize: Number(editSize),
+        status: editStatus,
+        currentPhase: editPhase === "none" ? null : Number(editPhase),
+        currentBalance: Number(editBalance),
+        profitLoss: Number(editProfitLoss),
+      },
+    });
+    if (updateError || !data?.account) setError(updateError?.message || "The account could not be updated.");
+    else {
+      setSnapshot((current) => current ? { ...current, accounts: current.accounts.map((account) => account.id === editingAccount.id ? data.account as Account : account) } : current);
+      setEditingAccount(null);
+    }
+    setSavingAccount(false);
+  };
+
+  const deleteAccount = async (account: Account) => {
+    if (!window.confirm(`Delete account ${account.id.slice(0, 8)}? This cannot be undone.`)) return;
+    setDeletingAccount(account.id);
+    setError("");
+    const { data, error: deleteError } = await supabase.functions.invoke("admin-account", {
+      body: { action: "delete", accountId: account.id, userId: account.user_id },
+    });
+    if (deleteError || !data?.deleted) setError(deleteError?.message || "The account could not be deleted.");
+    else {
+      setSnapshot((current) => current ? { ...current, accounts: current.accounts.filter((candidate) => candidate.id !== account.id) } : current);
+      if (editingAccount?.id === account.id) setEditingAccount(null);
+    }
+    setDeletingAccount(null);
+  };
+
+  const deleteTrader = async () => {
+    const user = snapshot?.users.find((candidate) => candidate.id === deleteUserId);
+    if (!user) { setError("Select a trader to delete."); return; }
+    if (!window.confirm(`Delete ${user.email || user.name || "this trader"}? This cannot be undone.`)) return;
+    setDeletingUser(true);
+    setError("");
+    const { data, error: deleteError } = await supabase.functions.invoke("admin-account", {
+      body: { action: "delete-user", userId: user.id },
+    });
+    if (deleteError || !data?.deleted) setError(deleteError?.message || "The trader could not be deleted.");
+    else {
+      setSnapshot((current) => current ? { ...current, users: current.users.filter((candidate) => candidate.id !== user.id) } : current);
+      setDeleteUserId("");
+    }
+    setDeletingUser(false);
   };
 
   const reviewKyc = async (application: Kyc, status: "approved" | "rejected") => {
@@ -171,7 +266,13 @@ export default function Admin({ section }: { section?: AdminSection }) {
 
           {(!section || section === "traders") && <Card><CardHeader><CardTitle className="flex items-center gap-2 text-xl"><Gift className="h-5 w-5 text-primary" />Grant a trading account</CardTitle><p className="text-sm text-muted-foreground">Create a complimentary account with no payment required.</p></CardHeader><CardContent><div className="grid gap-4 md:grid-cols-[1.4fr_1fr_1fr_auto] md:items-end"><div className="space-y-2"><Label htmlFor="grant-user">Trader</Label><Select value={grantUserId} onValueChange={setGrantUserId}><SelectTrigger id="grant-user"><SelectValue placeholder="Choose a trader" /></SelectTrigger><SelectContent>{snapshot.users.filter((user) => !user.isAdmin).map((user) => <SelectItem key={user.id} value={user.id}>{user.name || user.email || "Unnamed trader"}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Challenge</Label><Select value={grantChallenge} onValueChange={(value) => setGrantChallenge(value as GrantChallenge)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="three_step">3-Step Challenge</SelectItem><SelectItem value="two_step">2-Step Challenge</SelectItem><SelectItem value="one_step">1-Step Challenge</SelectItem><SelectItem value="instant">Instant Funding</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Account size</Label><Select value={grantSize} onValueChange={setGrantSize}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[5000, 10000, 25000, 50000, 100000, 200000].map((size) => <SelectItem key={size} value={String(size)}>${size.toLocaleString()}</SelectItem>)}</SelectContent></Select></div><Button variant="gold" onClick={() => void grantAccount()} disabled={grantingAccount || !snapshot.users.some((user) => !user.isAdmin)}>{grantingAccount ? "Granting..." : "Grant account"}</Button></div></CardContent></Card>}
 
+          {(!section || section === "traders") && <Card><CardHeader><CardTitle className="flex items-center gap-2 text-xl"><Pencil className="h-5 w-5 text-primary" />Manage user accounts</CardTitle><p className="text-sm text-muted-foreground">Reassign accounts and update their trading state, balance, or performance.</p></CardHeader><CardContent className="space-y-4">{editingAccount && <div className="grid gap-4 rounded-lg border border-primary/30 bg-primary/5 p-4 md:grid-cols-2 xl:grid-cols-4"><div className="space-y-2 md:col-span-2"><Label>Account owner</Label><Select value={editUserId} onValueChange={setEditUserId}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{snapshot.users.filter((user) => !user.isAdmin).map((user) => <SelectItem key={user.id} value={user.id}>{user.name || user.email || "Unnamed trader"}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Challenge</Label><Select value={editChallenge} onValueChange={(value) => setEditChallenge(value as GrantChallenge)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="three_step">3-Step Challenge</SelectItem><SelectItem value="two_step">2-Step Challenge</SelectItem><SelectItem value="one_step">1-Step Challenge</SelectItem><SelectItem value="instant">Instant Funding</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label>Account size</Label><Select value={editSize} onValueChange={setEditSize}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[5000, 10000, 25000, 50000, 100000, 200000].map((size) => <SelectItem key={size} value={String(size)}>${size.toLocaleString()}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Status</Label><Select value={editStatus} onValueChange={setEditStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{["pending_payment", "active", "failed", "passed", "funded"].map((status) => <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>)}</SelectContent></Select></div><div className="space-y-2"><Label>Phase</Label><Select value={editPhase} onValueChange={setEditPhase}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="1">Phase 1</SelectItem><SelectItem value="2">Phase 2</SelectItem><SelectItem value="3">Phase 3</SelectItem><SelectItem value="none">No phase</SelectItem></SelectContent></Select></div><div className="space-y-2"><Label htmlFor="edit-balance">Balance</Label><Input id="edit-balance" type="number" value={editBalance} onChange={(event) => setEditBalance(event.target.value)} /></div><div className="space-y-2"><Label htmlFor="edit-profit-loss">Profit / loss</Label><Input id="edit-profit-loss" type="number" value={editProfitLoss} onChange={(event) => setEditProfitLoss(event.target.value)} /></div><div className="flex items-end gap-2"><Button variant="gold" onClick={() => void updateAccount()} disabled={savingAccount}>{savingAccount ? "Saving..." : "Save changes"}</Button><Button variant="outline" onClick={() => setEditingAccount(null)} disabled={savingAccount}>Cancel</Button></div></div>}<div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-y border-border bg-secondary/40 text-xs uppercase text-muted-foreground"><tr><th className="px-4 py-3">Owner</th><th className="px-4 py-3">Account</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Balance</th><th className="px-4 py-3 text-right">Action</th></tr></thead><tbody>{snapshot.accounts.map((account) => <tr key={account.id} className="border-b border-border/60 last:border-0"><td className="px-4 py-3"><div className="font-medium">{userMap.get(account.user_id)?.name || "Unnamed trader"}</div><div className="text-xs text-muted-foreground">{userMap.get(account.user_id)?.email || account.user_id.slice(0, 8)}</div></td><td className="px-4 py-3"><div>${account.account_size.toLocaleString()} · {account.challenge_type.replace("_", " ")}</div><div className="font-mono text-[10px] text-muted-foreground">{account.id.slice(0, 8)}</div></td><td className="px-4 py-3"><Badge variant={account.status === "failed" ? "destructive" : "outline"}>{account.status.replace("_", " ")}</Badge></td><td className="px-4 py-3">{money(account.current_balance ?? 0)}</td><td className="px-4 py-3 text-right"><Button size="sm" variant="outline" onClick={() => startEditingAccount(account)}><Pencil className="mr-2 h-3.5 w-3.5" />Edit</Button></td></tr>)}</tbody></table></div>{snapshot.accounts.length === 0 && <p className="text-sm text-muted-foreground">No accounts have been created.</p>}</CardContent></Card>}
+
           {(!section || section === "payments") && <Card><CardHeader><CardTitle className="flex items-center gap-2 text-xl"><CreditCard className="h-5 w-5 text-primary" />Payment reconciliation</CardTitle><p className="text-sm text-muted-foreground">Review provider callbacks that need investigation or did not match a checkout order.</p></CardHeader><CardContent className="p-0"><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="border-y border-border bg-secondary/40 text-xs uppercase text-muted-foreground"><tr><th className="px-6 py-3">Reference</th><th className="px-4 py-3">Owner</th><th className="px-4 py-3">Amount</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Checkout</th><th className="px-6 py-3">Reason</th></tr></thead><tbody>{snapshot.payments.filter((payment) => ["unmatched", "failed", "refunded"].includes(payment.status)).map((payment) => <tr key={payment.id} className="border-b border-border/60 last:border-0"><td className="px-6 py-4 font-mono text-xs">{payment.provider_reference}</td><td className="px-4 py-4 text-xs">{payment.user_id ? userMap.get(payment.user_id)?.email || payment.user_id.slice(0, 8) : "Unknown"}</td><td className="px-4 py-4 font-medium">{payment.currency} {Number(payment.amount).toLocaleString()}</td><td className="px-4 py-4"><Badge variant={payment.status === "failed" ? "destructive" : "outline"}>{payment.status}</Badge></td><td className="whitespace-nowrap px-4 py-4 text-xs text-muted-foreground">{date(payment.checkout_at)}</td><td className="max-w-xs px-6 py-4 text-xs text-muted-foreground">{payment.failure_reason || "Provider event requires review"}</td></tr>)}</tbody></table></div>{snapshot.payments.filter((payment) => ["unmatched", "failed", "refunded"].includes(payment.status)).length === 0 && <p className="p-6 text-sm text-muted-foreground">No unmatched, failed, or refunded payments.</p>}</CardContent></Card>}
+
+          {editingAccount && (!section || section === "traders") && <div className="flex justify-end"><Button size="sm" variant="destructive" onClick={() => void deleteAccount(editingAccount)} disabled={deletingAccount === editingAccount.id}>{deletingAccount === editingAccount.id ? "Deleting..." : <><Trash2 className="mr-2 h-3.5 w-3.5" />Delete selected account</>}</Button></div>}
+
+          {(!section || section === "traders") && <Card><CardHeader><CardTitle className="flex items-center gap-2 text-xl"><Trash2 className="h-5 w-5 text-primary" />Delete trader</CardTitle><p className="text-sm text-muted-foreground">Remove a trader and their accounts. Traders with payout history are protected.</p></CardHeader><CardContent><div className="flex flex-col gap-4 sm:flex-row sm:items-end"><div className="w-full space-y-2 sm:max-w-md"><Label htmlFor="delete-trader">Trader</Label><Select value={deleteUserId} onValueChange={setDeleteUserId}><SelectTrigger id="delete-trader"><SelectValue placeholder="Choose a trader" /></SelectTrigger><SelectContent>{snapshot.users.filter((user) => !user.isAdmin).map((user) => <SelectItem key={user.id} value={user.id}>{user.name || user.email || "Unnamed trader"}</SelectItem>)}</SelectContent></Select></div><Button variant="destructive" onClick={() => void deleteTrader()} disabled={deletingUser || !deleteUserId}>{deletingUser ? "Deleting..." : "Delete trader"}</Button></div></CardContent></Card>}
 
           <div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
             {(section === "kyc" || !section) && <Card><CardHeader><CardTitle className="flex items-center gap-2 text-xl"><FileCheck2 className="h-5 w-5 text-primary" />KYC review queue</CardTitle><p className="text-sm text-muted-foreground">Review private identity and address documents. Pending applications require a decision.</p></CardHeader><CardContent className="space-y-4">{snapshot.kyc.filter((application) => application.status === "pending").length === 0 ? <p className="text-sm text-muted-foreground">No pending KYC applications.</p> : snapshot.kyc.filter((application) => application.status === "pending").map((application) => <div key={application.id} className="space-y-3 rounded-lg border border-border p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="font-medium">{userMap.get(application.user_id)?.name || userMap.get(application.user_id)?.email || application.user_id}</p><p className="text-xs text-muted-foreground">Submitted {date(application.identity_submitted_at || application.created_at)}</p></div><Badge variant="outline">Pending</Badge></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="outline" onClick={() => void previewDocument(application.identity_document_path)} disabled={!application.identity_document_path}><ExternalLink className="h-4 w-4" />Identity document</Button><Button size="sm" variant="outline" onClick={() => void previewDocument(application.address_document_path)} disabled={!application.address_document_path}><ExternalLink className="h-4 w-4" />Proof of address</Button></div><textarea aria-label="Rejection reason" placeholder="Required only when rejecting" value={rejectionReasons[application.id] || ""} onChange={(event) => setRejectionReasons((current) => ({ ...current, [application.id]: event.target.value }))} className="min-h-16 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /><div className="flex justify-end gap-2"><Button size="sm" variant="outline" onClick={() => void reviewKyc(application, "rejected")} disabled={reviewingKyc === application.id}>Reject</Button><Button size="sm" variant="gold" onClick={() => void reviewKyc(application, "approved")} disabled={reviewingKyc === application.id}>Approve</Button></div></div>)}</CardContent></Card>}

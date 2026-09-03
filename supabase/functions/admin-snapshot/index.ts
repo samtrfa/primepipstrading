@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const [{ data: usersData, error: usersError }, accounts, positions, referrals, history, kyc, payments] = await Promise.all([
       admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-      admin.from("accounts").select("id, user_id, account_size, challenge_type, status, current_balance, profit_loss, updated_at, created_at").in("status", ["active", "funded", "passed"]),
+      admin.from("accounts").select("id, user_id, account_size, challenge_type, status, current_balance, profit_loss, current_phase, updated_at, created_at"),
       admin.from("positions").select("id, account_id, asset_id, position_type, lot_size, profit_loss, status, opened_at, entry_price, assets(symbol, pip_value, asset_type, quote_currency, lot_size)"),
       admin.from("referrals").select("referrer_id, referred_user_id, status, commission_earned, referred_at, account_purchased"),
       admin.from("trade_history").select("id, account_id, symbol, action, lot_size, profit_loss, created_at, price").order("created_at", { ascending: false }).limit(200),
@@ -53,9 +53,11 @@ Deno.serve(async (req) => {
     }
 
     const users = usersData?.users ?? [];
+    const adminUserIds = new Set(users.filter((user) => user.app_metadata?.role === "admin").map((user) => user.id));
+    const visibleAccounts = (accounts.data ?? []).filter((account) => !adminUserIds.has(account.user_id));
 
     return json({
-      users: (users ?? []).map((user) => ({
+      users: (users ?? []).filter((user) => user.app_metadata?.role !== "admin").map((user) => ({
         id: user.id,
         email: user.email,
         name: user.user_metadata?.full_name ?? null,
@@ -64,7 +66,7 @@ Deno.serve(async (req) => {
         isAffiliate: user.app_metadata?.affiliate === true,
         isAdmin: user.app_metadata?.role === "admin",
       })),
-      accounts: accounts.data ?? [],
+      accounts: visibleAccounts,
       positions: positions.data ?? [],
       referrals: referrals.data ?? [],
       history: history.data ?? [],
