@@ -35,6 +35,15 @@ interface Invoice {
   reference?: string;
 }
 
+interface BillingAccount {
+  id: string;
+  price: number;
+  status: "pending_payment" | "active" | "failed" | "passed" | "funded";
+  created_at: string;
+  account_size: number;
+  challenge_type: string;
+}
+
 interface CommissionEntry {
   id: string;
   commission_earned: number;
@@ -190,32 +199,60 @@ export default function BillingPage() {
         return;
       }
 
-      const { data: payments, error } = await supabase
-        .from("payment_orders")
-        .select("id, amount, currency, status, checkout_at, provider_reference, account_id, provider")
-        .order("checkout_at", { ascending: false });
+      const [{ data: accounts, error: accountsError }, { data: payments, error: paymentsError }] = await Promise.all([
+        supabase
+          .from("accounts")
+          .select("id, price, status, created_at, account_size, challenge_type")
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("payment_orders")
+          .select("id, amount, currency, status, checkout_at, provider_reference, account_id, provider")
+          .order("checkout_at", { ascending: false }),
+      ]);
 
-      if (error) {
-        console.error("Error fetching payment orders:", error);
-      } else if (payments) {
-        const generatedInvoices: Invoice[] = payments.map((payment) => ({
+      if (accountsError) console.error("Error fetching accounts:", accountsError);
+      if (paymentsError) console.error("Error fetching payment orders:", paymentsError);
+
+      const accountRows = (accounts || []) as BillingAccount[];
+      const paymentRows = payments || [];
+      const paymentsByAccount = new Map(paymentRows.filter((payment) => payment.account_id).map((payment) => [payment.account_id, payment]));
+      const generatedInvoices: Invoice[] = accountRows.map((account) => {
+        const payment = paymentsByAccount.get(account.id);
+        const status = account.status === "pending_payment"
+          ? "pending"
+          : account.status === "failed"
+            ? "failed"
+            : "paid";
+        return {
+          id: payment ? `PAY-${payment.id.slice(0, 8).toUpperCase()}` : `INV-${account.id.slice(0, 8).toUpperCase()}`,
+          amount: Number(account.price),
+          status,
+          date: payment?.checkout_at || account.created_at,
+          due_date: payment?.checkout_at || account.created_at,
+          description: `${account.account_size.toLocaleString()} ${account.challenge_type.replace(/_/g, " ")} Challenge`,
+          currency: payment?.currency,
+          reference: payment?.provider_reference,
+        };
+      });
+
+      const accountIds = new Set(accountRows.map((account) => account.id));
+      const standaloneInvoices: Invoice[] = paymentRows
+        .filter((payment) => !payment.account_id || !accountIds.has(payment.account_id))
+        .map((payment) => ({
           id: `PAY-${payment.id.slice(0, 8).toUpperCase()}`,
           amount: Number(payment.amount),
           status: payment.status === "success" ? "paid" : payment.status === "granted" ? "granted" : payment.status === "refunded" ? "refunded" : payment.status === "unmatched" ? "unmatched" : payment.status === "pending" ? "pending" : "failed",
           date: payment.checkout_at,
           due_date: payment.checkout_at,
-          description: payment.status === "granted" ? `Admin-granted account${payment.account_id ? ` ${payment.account_id.slice(0, 8)}` : ""}` : `${payment.provider.toUpperCase()} payment${payment.account_id ? ` for account ${payment.account_id.slice(0, 8)}` : ""}`,
+          description: `${payment.provider.toUpperCase()} payment${payment.account_id ? ` for account ${payment.account_id.slice(0, 8)}` : ""}`,
           currency: payment.currency,
           reference: payment.provider_reference,
         }));
-        setInvoices(generatedInvoices);
+      setInvoices([...generatedInvoices, ...standaloneInvoices]);
 
-        const total = payments.filter((payment) => payment.status === "success").reduce((sum, payment) => sum + Number(payment.amount), 0);
-        setTotalSpent(total);
-
-        const pending = payments.filter((payment) => payment.status === "pending").reduce((sum, payment) => sum + Number(payment.amount), 0);
-        setPendingBalance(pending);
-      }
+      const allPaymentInvoices = [...generatedInvoices, ...standaloneInvoices];
+      setTotalSpent(allPaymentInvoices.filter((invoice) => invoice.status === "paid").reduce((sum, invoice) => sum + invoice.amount, 0));
+      setPendingBalance(allPaymentInvoices.filter((invoice) => invoice.status === "pending").reduce((sum, invoice) => sum + invoice.amount, 0));
 
       const [{ data: commissionData, error: commissionError }, { data: withdrawalData, error: withdrawalError }] = await Promise.all([
         supabase
