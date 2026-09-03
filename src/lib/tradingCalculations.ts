@@ -1,7 +1,7 @@
 /**
- * Crypto Trading P/L, Pip and Lot Calculations
+ * Trading P/L, Pip and Lot Calculations
  *
- * The platform trades crypto CFDs quoted in USD only.
+ * The platform supports various asset classes quoted in USD.
  * 1 lot = CONTRACT_SIZE units of the base coin (chosen so 1 lot is a
  * comparable notional across coins, the way brokers scale low-priced coins).
  *

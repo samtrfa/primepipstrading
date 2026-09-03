@@ -1,12 +1,23 @@
+## Admin dashboard
+
+The private admin dashboard is available at `/admin`. Access requires the signed-in Supabase user to have `role: "admin"` in Auth `app_metadata`; this value must be assigned from the Supabase dashboard or another trusted server-side process. Do not place the service-role key in frontend environment variables. The `admin-snapshot` Edge Function verifies the role before using its service-role connection to join Auth users with platform activity.
+
+Deploy the function and migration from a machine authenticated with Supabase CLI:
+
+```bash
+npx supabase login
+npx supabase functions deploy admin-snapshot --project-ref wnbynyymqhkestmkcenj
+npx supabase db push --project-ref wnbynyymqhkestmkcenj
+```
 # PrimePips Platform
 
-# 🚀 Full Forex Prop Firm Website — One‑Prompt Build for Lovable
+# 🚀 Full Trading Prop Firm Website — One‑Prompt Build for Lovable
 
 Copy and paste this entire file into **Lovable** and it will generate a complete, fully functional, market‑ready site with payment integration, dashboard, backend, admin controls, and branding.
 
 ---
 
-# 🏦 **PROJECT: Full Forex Prop Firm Platform (Market‑Ready)**
+# 🏦 **PROJECT: Full Trading Prop Firm Platform (Market‑Ready)**
 
 Use this prompt to create everything: branding, frontend, backend, database, APIs, user flows, dashboards, KYC uploads, MT5/MT4 integration endpoints, and payment processing.
 
@@ -20,7 +31,7 @@ Use this prompt to create everything: branding, frontend, backend, database, API
 
 * Luxury fintech style
 * Black × Gold primary palette
-* Clean, modern UI (similar to FTMO, MyForexFunds, Funding Pips)
+* Clean, modern UI (similar to leading trading evaluation platforms)
 * Minimal heavy gradients, bold headers, glass‑morphism on cards
 
 **Logo Direction:**
@@ -262,7 +273,7 @@ You should now:
 
 ---
 
-# 🎉 **END OF FILE — Build the full production-grade Forex Prop Firm Platform**
+# 🎉 **END OF FILE — Build the full production-grade Trading Prop Firm Platform**
 
 This project was built with [Lovable](https://lovable.dev).
 
@@ -286,3 +297,22 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+## Transactional email
+
+Transactional email is an outbox-driven Supabase Edge Function workflow. Database triggers create one idempotent `email_events` row for each mandatory account, payment, security, phase, payout, and KYC event. `send-transactional-email` claims pending rows, sends both HTML and plain text through Resend, and records the provider message ID or a retryable failure. Marketing email preference is separate in `email_preferences`; mandatory emails cannot be disabled.
+
+Configure these Supabase Edge Function secrets (never add them to `VITE_*` frontend variables):
+
+```sh
+npx supabase secrets set RESEND_API_KEY='re_...' EMAIL_FROM='PrimePips <notifications@example.com>' EMAIL_LOGO_URL='https://app.example.com/primepips-logo.svg' APP_URL='https://app.example.com' SUPPORT_EMAIL='support@example.com' --project-ref wnbynyymqhkestmkcenj
+```
+
+`EMAIL_LOGO_URL` must be a public HTTPS URL to `public/primepips-email-logo.svg` (or an equivalent high-resolution PNG), for example `https://app.example.com/primepips-email-logo.svg`. The sender always renders it in the charcoal header, never as a standalone light-background image. Deploy the migration and function with:
+
+```sh
+npx supabase db push --project-ref wnbynyymqhkestmkcenj
+npx supabase functions deploy send-transactional-email --project-ref wnbynyymqhkestmkcenj
+```
+
+Run the sender from a trusted scheduler every minute by POSTing to its function URL with the service-role key as the bearer token. Do not expose that key to the browser. For safe testing, use a Resend test domain/API key and a test recipient, inspect `email_events` for `sent`/`failed` status, then switch `RESEND_API_KEY`, `EMAIL_FROM`, `EMAIL_LOGO_URL`, and `APP_URL` to production values after DNS verification. Local SQL lint requires `supabase start`; this repository does not include a test-email command or provider credentials.

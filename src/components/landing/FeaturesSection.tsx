@@ -39,7 +39,7 @@ const features = [
   {
     icon: Globe,
     title: "Trade Anywhere",
-    description: "Access MT4/MT5 platforms from any device. Trade forex, indices, commodities, and more.",
+    description: "Access our trading panel from any device and trade across various asset classes.",
   },
   {
     icon: HeadphonesIcon,

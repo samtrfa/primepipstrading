@@ -3,6 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -17,6 +22,10 @@ import {
   Gift,
   TrendingUp,
   CheckCircle2,
+  Clock3,
+  Send,
+  ArrowDownRight,
+  Wallet,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -32,6 +41,34 @@ interface Referral {
   account_purchased: boolean;
 }
 
+interface AffiliateApplication {
+  id: string;
+  status: "pending" | "approved" | "rejected";
+  rejection_reason: string | null;
+  created_at: string;
+}
+
+interface PaymentMethod {
+  id: string;
+  network: string;
+  wallet_address: string;
+  label: string | null;
+}
+
+const emptyApplication = {
+  phone: "",
+  country: "",
+  website: "",
+  instagram: "",
+  tiktok: "",
+  youtube: "",
+  x_handle: "",
+  audience_size: "",
+  promotion_channels: "",
+  affiliate_experience: "",
+  promotion_plan: "",
+};
+
 export default function ReferralsPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -39,12 +76,39 @@ export default function ReferralsPage() {
   const [loading, setLoading] = useState(true);
   const [referralLink, setReferralLink] = useState("");
   const [totalCommission, setTotalCommission] = useState(0);
+  const [isAffiliate, setIsAffiliate] = useState(false);
+  const [application, setApplication] = useState<AffiliateApplication | null>(null);
+  const [applicationForm, setApplicationForm] = useState(emptyApplication);
+  const [submittingApplication, setSubmittingApplication] = useState(false);
+  const [commissionAvailable, setCommissionAvailable] = useState(0);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [selectedPaymentMethodId, setSelectedPaymentMethodId] = useState("");
+  const [withdrawing, setWithdrawing] = useState(false);
 
   useEffect(() => {
     const checkAuthAndFetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
         navigate("/login");
+        return;
+      }
+      if (session.user.app_metadata?.role === "admin") {
+        navigate("/admin", { replace: true });
+        return;
+      }
+      const affiliate = session.user.app_metadata?.affiliate === true;
+      setIsAffiliate(affiliate);
+
+      if (!affiliate) {
+        const { data, error } = await supabase
+          .from("affiliate_applications")
+          .select("id, status, rejection_reason, created_at")
+          .maybeSingle();
+        if (error) toast({ title: "Unable to load affiliate application", description: "Please refresh the page and try again.", variant: "destructive" });
+        else setApplication(data as AffiliateApplication | null);
+        setLoading(false);
         return;
       }
 
@@ -70,16 +134,80 @@ export default function ReferralsPage() {
         setReferrals(loadedReferrals);
         setTotalCommission(loadedReferrals.reduce((total, referral) => total + referral.commission_earned, 0));
       }
+
+      const [{ data: balanceData, error: balanceError }, { data: paymentMethodData, error: paymentMethodError }] = await Promise.all([
+        supabase.from("affiliate_balances").select("available").maybeSingle(),
+        supabase.from("payment_methods").select("id, network, wallet_address, label").order("created_at", { ascending: false }),
+      ]);
+      if (balanceError) console.error("Error fetching affiliate balance:", balanceError);
+      else setCommissionAvailable(Number(balanceData?.available || 0));
+      if (paymentMethodError) console.error("Error fetching payment methods:", paymentMethodError);
+      else {
+        setPaymentMethods(paymentMethodData || []);
+        setSelectedPaymentMethodId(paymentMethodData?.[0]?.id || "");
+      }
       setLoading(false);
     };
 
     checkAuthAndFetchData();
   }, [navigate, toast]);
 
+  const updateApplicationField = (field: keyof typeof emptyApplication, value: string) => {
+    setApplicationForm((current) => ({ ...current, [field]: value }));
+  };
+
+  const submitApplication = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { navigate("/login"); return; }
+    setSubmittingApplication(true);
+    const { data, error } = await supabase
+      .from("affiliate_applications")
+      .insert({ user_id: session.user.id, ...applicationForm })
+      .select("id, status, rejection_reason, created_at")
+      .single();
+    if (error) {
+      toast({ title: "Application could not be submitted", description: error.code === "23505" ? "You already have an affiliate application under review." : "Please check your details and try again.", variant: "destructive" });
+    } else {
+      setApplication(data as AffiliateApplication);
+      toast({ title: "Application submitted", description: "Our team will review your affiliate application." });
+    }
+    setSubmittingApplication(false);
+  };
+
   const copyToClipboard = () => {
     navigator.clipboard.writeText(referralLink).then(() => {
       toast({ title: "Copied!", description: "Referral link copied to clipboard" });
     });
+  };
+
+  const openWithdrawDialog = () => {
+    setWithdrawAmount(commissionAvailable >= 50 ? String(Math.floor(commissionAvailable)) : "");
+    setSelectedPaymentMethodId(paymentMethods[0]?.id || "");
+    setWithdrawOpen(true);
+  };
+
+  const submitWithdrawal = async () => {
+    const wallet = paymentMethods.find((paymentMethod) => paymentMethod.id === selectedPaymentMethodId);
+    const amount = Number(withdrawAmount);
+    if (amount < 50 || amount > commissionAvailable || !wallet) {
+      toast({ title: "Check your withdrawal", description: "Enter at least $50 within your available commission and select a crypto wallet.", variant: "destructive" });
+      return;
+    }
+
+    setWithdrawing(true);
+    const { error } = await supabase.rpc("create_commission_payout", {
+      payout_amount: amount,
+      payout_destination: wallet.wallet_address,
+    });
+    setWithdrawing(false);
+    if (error) {
+      toast({ title: "Withdrawal failed", description: error.message, variant: "destructive" });
+      return;
+    }
+    setCommissionAvailable((current) => current - amount);
+    setWithdrawOpen(false);
+    toast({ title: "Withdrawal submitted", description: "Your crypto commission withdrawal is pending review." });
   };
 
   const statusConfig: Record<string, { color: string }> = {
@@ -88,9 +216,42 @@ export default function ReferralsPage() {
     completed: { color: "bg-primary/20 text-primary" },
   };
 
+  if (loading) {
+    return <DashboardLayout title="Affiliate" subtitle="Apply to partner with PrimePips"><div className="py-16 text-center text-muted-foreground">Loading affiliate information...</div></DashboardLayout>;
+  }
+
+  if (!isAffiliate) {
+    const isPending = application?.status === "pending";
+    return (
+      <DashboardLayout title="Become an Affiliate" subtitle="Apply to partner with PrimePips">
+        <div className="mx-auto max-w-3xl space-y-6">
+          {application ? (
+            <Card variant="elevated">
+              <CardContent className="flex items-start gap-4 p-6">
+                {isPending ? <Clock3 className="mt-1 h-6 w-6 shrink-0 text-warning" /> : <CheckCircle2 className="mt-1 h-6 w-6 shrink-0 text-destructive" />}
+                <div><h2 className="font-serif text-2xl font-bold">Application {isPending ? "under review" : "not approved"}</h2><p className="mt-2 text-sm text-muted-foreground">{isPending ? "Our team is reviewing your details. We will update your account after a decision." : application.rejection_reason || "Your application was not approved at this time."}</p></div>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card variant="gold"><CardHeader><CardTitle>Partner with PrimePips</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">Tell us about your audience and how you plan to introduce traders to PrimePips. Applications are reviewed by our team before affiliate access is granted.</p></CardContent></Card>
+          )}
+          {!application && <Card><CardHeader><CardTitle>Affiliate application</CardTitle></CardHeader><CardContent><form onSubmit={submitApplication} className="space-y-6">
+            <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="phone">Phone number</Label><Input id="phone" required value={applicationForm.phone} onChange={(event) => updateApplicationField("phone", event.target.value)} /></div><div className="space-y-2"><Label htmlFor="country">Country</Label><Input id="country" required value={applicationForm.country} onChange={(event) => updateApplicationField("country", event.target.value)} /></div></div>
+            <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="website">Website or profile link</Label><Input id="website" type="url" placeholder="https://" value={applicationForm.website} onChange={(event) => updateApplicationField("website", event.target.value)} /></div><div className="space-y-2"><Label htmlFor="audience_size">Audience size</Label><Input id="audience_size" required placeholder="e.g. 10,000 followers" value={applicationForm.audience_size} onChange={(event) => updateApplicationField("audience_size", event.target.value)} /></div></div>
+            <div className="space-y-3"><Label>Social media handles</Label><div className="grid gap-4 sm:grid-cols-2"><Input aria-label="Instagram handle" placeholder="Instagram" value={applicationForm.instagram} onChange={(event) => updateApplicationField("instagram", event.target.value)} /><Input aria-label="TikTok handle" placeholder="TikTok" value={applicationForm.tiktok} onChange={(event) => updateApplicationField("tiktok", event.target.value)} /><Input aria-label="YouTube channel" placeholder="YouTube" value={applicationForm.youtube} onChange={(event) => updateApplicationField("youtube", event.target.value)} /><Input aria-label="X handle" placeholder="X / Twitter" value={applicationForm.x_handle} onChange={(event) => updateApplicationField("x_handle", event.target.value)} /></div></div>
+            <div className="space-y-2"><Label htmlFor="promotion_channels">Where will you promote PrimePips?</Label><Input id="promotion_channels" required placeholder="e.g. YouTube, Telegram, email newsletter" value={applicationForm.promotion_channels} onChange={(event) => updateApplicationField("promotion_channels", event.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="affiliate_experience">Previous affiliate experience</Label><Textarea id="affiliate_experience" placeholder="Tell us about relevant partnerships or campaigns." value={applicationForm.affiliate_experience} onChange={(event) => updateApplicationField("affiliate_experience", event.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="promotion_plan">How would you introduce PrimePips to your audience?</Label><Textarea id="promotion_plan" required placeholder="Share your content and promotion approach." value={applicationForm.promotion_plan} onChange={(event) => updateApplicationField("promotion_plan", event.target.value)} /></div>
+            <Button type="submit" variant="gold" disabled={submittingApplication}><Send className="mr-2 h-4 w-4" />{submittingApplication ? "Submitting application..." : "Submit affiliate application"}</Button>
+          </form></CardContent></Card>}
+        </div>
+      </DashboardLayout>
+    );
+  }
+
   return (
     <DashboardLayout
-      title="Referrals"
+      title="Affiliate"
       subtitle="Earn commissions by referring other traders"
     >
       <div className="space-y-6">
@@ -119,6 +280,14 @@ export default function ReferralsPage() {
                 </div>
                 <Gift className="w-10 h-10 text-success opacity-50" />
               </div>
+              <div className="mt-4 border-t border-border pt-4">
+                <p className="text-sm text-muted-foreground mb-1">Withdrawable commission</p>
+                <p className="text-2xl font-bold text-primary">${commissionAvailable.toLocaleString()}</p>
+                <Button className="mt-3 w-full" variant="gold" size="sm" onClick={openWithdrawDialog} disabled={commissionAvailable < 50}>
+                  <ArrowDownRight className="mr-2 h-4 w-4" />Withdraw commission
+                </Button>
+                {commissionAvailable < 50 && <p className="mt-2 text-xs text-muted-foreground">Minimum crypto withdrawal: $50</p>}
+              </div>
             </CardContent>
           </Card>
 
@@ -144,7 +313,7 @@ export default function ReferralsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Share this link to earn 10% commission on the first account purchase of each referred trader.
+              Share this link to earn 12.5% commission on every successful account sale.
             </p>
             <div className="flex gap-2 items-center">
               <div className="flex-1 bg-secondary rounded-lg p-3 font-mono text-sm text-foreground break-all">
@@ -171,21 +340,12 @@ export default function ReferralsPage() {
             <div className="space-y-3">
               <div className="flex items-center justify-between p-3 rounded-lg bg-background/50">
                 <div>
-                  <p className="font-medium text-foreground">First Account Purchase</p>
+                  <p className="font-medium text-foreground">Successful Account Sale</p>
                   <p className="text-sm text-muted-foreground">
-                    Earned when your referral buys their first account
+                    Earn 12.5% on every account purchased by your referral
                   </p>
                 </div>
-                <p className="text-lg font-bold text-primary">10%</p>
-              </div>
-              <div className="flex items-center justify-between p-3 rounded-lg bg-background/50">
-                <div>
-                  <p className="font-medium text-foreground">Additional Purchases</p>
-                  <p className="text-sm text-muted-foreground">
-                    Earned on any subsequent purchases
-                  </p>
-                </div>
-                <p className="text-lg font-bold text-primary">5%</p>
+                <p className="text-lg font-bold text-primary">12.5%</p>
               </div>
             </div>
           </CardContent>
@@ -259,7 +419,7 @@ export default function ReferralsPage() {
                 How long does it take to earn commission?
               </h4>
               <p className="text-sm text-muted-foreground">
-                Commission is credited immediately after your referral completes their first account purchase.
+                Commission is credited immediately after your referral completes an account purchase.
               </p>
             </div>
             <div>
@@ -281,6 +441,32 @@ export default function ReferralsPage() {
           </CardContent>
         </Card>
       </div>
+      <Dialog open={withdrawOpen} onOpenChange={setWithdrawOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Withdraw commission</DialogTitle>
+            <DialogDescription>Send your available referral commission to a saved crypto wallet.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="affiliate-withdraw-amount">Amount (USD)</Label>
+              <Input id="affiliate-withdraw-amount" type="number" min="50" max={commissionAvailable} step="0.01" value={withdrawAmount} onChange={(event) => setWithdrawAmount(event.target.value)} placeholder="50" />
+              <p className="text-xs text-muted-foreground">Available: ${commissionAvailable.toLocaleString()} · Minimum: $50</p>
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3"><Label htmlFor="affiliate-withdraw-wallet">Crypto wallet</Label><Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => navigate("/dashboard/settings")}>Manage wallets</Button></div>
+              {paymentMethods.length > 0 ? <Select value={selectedPaymentMethodId} onValueChange={setSelectedPaymentMethodId}>
+                <SelectTrigger id="affiliate-withdraw-wallet"><SelectValue placeholder="Select a saved wallet" /></SelectTrigger>
+                <SelectContent>{paymentMethods.map((paymentMethod) => <SelectItem key={paymentMethod.id} value={paymentMethod.id}>{paymentMethod.label || paymentMethod.network} · {paymentMethod.wallet_address.slice(0, 8)}...{paymentMethod.wallet_address.slice(-6)}</SelectItem>)}</SelectContent>
+              </Select> : <p className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm text-warning"><Wallet className="mr-2 inline h-4 w-4" />Add a crypto wallet in Settings before withdrawing.</p>}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setWithdrawOpen(false)}>Cancel</Button>
+            <Button variant="gold" onClick={submitWithdrawal} disabled={withdrawing || paymentMethods.length === 0}>{withdrawing ? "Submitting..." : "Submit withdrawal"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DashboardLayout>
   );
 }

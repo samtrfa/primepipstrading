@@ -44,34 +44,19 @@ Deno.serve(async (req) => {
 
     const userId = claimsData.claims.sub as string;
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const { data: account, error: accountError } = await admin
-      .from("accounts")
-      .select("id, user_id, status, challenge_type, payment_amount_local, created_at")
-      .eq("payment_reference", reference)
+    const { data: payment, error: accountError } = await admin
+      .from("payment_orders")
+      .select("id, user_id, account_id, provider_reference, amount, currency")
+      .eq("provider", "paystack")
+      .eq("provider_reference", reference)
       .maybeSingle();
 
     if (accountError) {
       console.error("Failed to look up payment account:", accountError.message);
       return json({ error: "Lookup failed" }, 500);
     }
-    if (!account || account.user_id !== userId) {
+    if (!payment || payment.user_id !== userId) {
       return json({ error: "Payment not found" }, 404);
-    }
-
-    if (
-      account.status === "pending_payment" &&
-      Date.now() - new Date(account.created_at).getTime() > 30 * 60 * 1000
-    ) {
-      const { error: expireError } = await admin
-        .from("accounts")
-        .update({ status: "failed" })
-        .eq("id", account.id)
-        .eq("status", "pending_payment");
-      if (expireError) {
-        console.error("Failed to mark expired payment:", expireError.message);
-        return json({ error: "Payment cleanup failed" }, 500);
-      }
-      return json({ verified: false, activated: false, expired: true });
     }
 
     const paystackResponse = await fetch(
@@ -86,41 +71,18 @@ Deno.serve(async (req) => {
     }
 
     const paidAmount = Number(transaction?.amount ?? 0) / 100;
-    const expectedAmount = Number(account.payment_amount_local ?? 0);
-    const paidInFull = expectedAmount > 0 && paidAmount >= expectedAmount * 0.98;
-    const successful = transaction.status === "success" && paidInFull;
-
-    if (successful) {
-      if (account.status === "pending_payment") {
-        const { error: activateError } = await admin
-          .from("accounts")
-          .update({
-            status: account.challenge_type === "instant" ? "funded" : "active",
-            current_phase: account.challenge_type === "instant" ? null : 1,
-          })
-          .eq("id", account.id)
-          .eq("status", "pending_payment");
-        if (activateError) {
-          console.error("Failed to activate account:", activateError.message);
-          return json({ error: "Activation failed" }, 500);
-        }
-      }
-      return json({ verified: true, activated: true });
-    }
-
-    if (account.status === "pending_payment") {
-      const { error: failureError } = await admin
-        .from("accounts")
-        .update({ status: "failed" })
-        .eq("id", account.id)
-        .eq("status", "pending_payment");
-      if (failureError) {
-        console.error("Failed to mark unsuccessful payment:", failureError.message);
-        return json({ error: "Payment cleanup failed" }, 500);
-      }
-    }
-
-    return json({ verified: false, activated: false });
+    const providerUserId = typeof transaction?.metadata?.user_id === "string" && /^[0-9a-f-]{36}$/i.test(transaction.metadata.user_id) ? transaction.metadata.user_id : null;
+    const { data: result, error: reconcileError } = await admin.rpc("reconcile_paystack_payment", {
+      p_reference: reference,
+      p_status: transaction.status === "success" ? "success" : transaction.status === "failed" ? "failed" : "pending",
+      p_amount: paidAmount,
+      p_currency: transaction.currency || null,
+      p_provider_user_id: providerUserId,
+      p_metadata: { status: transaction.status, gateway_response: transaction.gateway_response, channel: transaction.channel, transaction_id: transaction.id },
+      p_source: "verification",
+    });
+    if (reconcileError) throw reconcileError;
+    return json({ verified: result?.status === "success", ...result });
   } catch (error) {
     console.error("verify-paystack-payment error:", error);
     return json({ error: error instanceof Error ? error.message : "Unexpected error" }, 500);

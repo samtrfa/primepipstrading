@@ -169,6 +169,8 @@ export default function PurchaseAccount() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) {
         navigate("/login");
+      } else if (session.user.app_metadata?.role === "admin") {
+        navigate("/admin", { replace: true });
       } else {
         setUserId(session.user.id);
       }
@@ -178,13 +180,7 @@ export default function PurchaseAccount() {
   const selectedTier = pricingTiers.find(t => t.size === selectedSize);
   const basePrice = selectedTier?.prices[selectedChallenge] || 0;
   const rules = challengeRules[selectedChallenge];
-  const defaultOneStepCoupon = {
-    code: "PRIME50",
-    discountPercent: 50,
-    challengeTypes: ["one_step"] as ChallengeType[],
-  };
-  const activeCoupon = appliedCoupon ?? (selectedChallenge === "one_step" ? defaultOneStepCoupon : null);
-  const defaultCouponApplied = selectedChallenge === "one_step" && !appliedCoupon;
+  const activeCoupon = appliedCoupon;
 
   const couponApplies =
     !!activeCoupon &&
@@ -488,11 +484,9 @@ export default function PurchaseAccount() {
                         <span className="text-sm font-semibold text-foreground">
                           {activeCoupon!.code} · {discountPercent}% off
                         </span>
-                        {!defaultCouponApplied && (
-                          <Button variant="ghost" size="sm" onClick={removeCoupon}>
-                            <X className="w-4 h-4" />
-                          </Button>
-                        )}
+                        <Button variant="ghost" size="sm" onClick={removeCoupon}>
+                          <X className="w-4 h-4" />
+                        </Button>
                       </div>
                     ) : (
                       <form
@@ -544,7 +538,7 @@ export default function PurchaseAccount() {
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Check className="w-4 h-4 text-primary" />
-                      Trade forex, crypto, indices & commodities
+                      Trade across various asset classes
                     </div>
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Check className="w-4 h-4 text-primary" />

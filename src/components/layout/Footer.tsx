@@ -101,7 +101,7 @@ export function Footer() {
               © {new Date().getFullYear()} PrimePips Funding. All rights reserved.
             </p>
             <p className="text-xs text-muted-foreground text-center md:text-right max-w-lg">
-              Trading foreign exchange on margin carries a high level of risk and may not be suitable for all investors. 
+              Trading across various asset classes on margin carries a high level of risk and may not be suitable for all investors.
               Past performance is not indicative of future results.
             </p>
           </div>

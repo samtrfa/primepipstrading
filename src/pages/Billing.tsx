@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   Clock,
   DollarSign,
+  Gift,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -26,19 +27,25 @@ import jsPDF from "jspdf";
 interface Invoice {
   id: string;
   amount: number;
-  status: "pending" | "paid" | "failed" | "overdue";
+  status: "pending" | "paid" | "failed" | "overdue" | "refunded" | "unmatched" | "granted";
   date: string;
   due_date: string;
   description: string;
+  currency?: string;
+  reference?: string;
 }
 
-interface BillingAccount {
-  price: number;
-  status: string;
-  drawdown_violated: boolean | null;
+interface CommissionEntry {
+  id: string;
+  commission_earned: number;
+  referred_at: string;
+}
+
+interface CommissionWithdrawal {
+  id: string;
+  amount: number;
+  status: "pending" | "approved" | "paid" | "rejected";
   created_at: string;
-  account_size: number;
-  challenge_type: string;
 }
 
 const statusConfig: Record<string, { icon: typeof Clock; color: string; label: string }> = {
@@ -62,6 +69,21 @@ const statusConfig: Record<string, { icon: typeof Clock; color: string; label: s
     color: "bg-destructive/20 text-destructive",
     label: "Failed",
   },
+  refunded: {
+    icon: AlertCircle,
+    color: "bg-secondary text-muted-foreground",
+    label: "Refunded",
+  },
+  unmatched: {
+    icon: AlertCircle,
+    color: "bg-destructive/20 text-destructive",
+    label: "Unmatched",
+  },
+  granted: {
+    icon: Gift,
+    color: "bg-primary/20 text-primary",
+    label: "Granted",
+  },
 };
 
 const formatCurrency = (value: number) => `$${value.toLocaleString("en-US", {
@@ -69,22 +91,36 @@ const formatCurrency = (value: number) => `$${value.toLocaleString("en-US", {
   maximumFractionDigits: 2,
 })}`;
 
-const PAYMENT_EXPIRY_MS = 30 * 60 * 1000;
-
-function downloadInvoice(invoice: Invoice) {
+async function downloadInvoice(invoice: Invoice) {
   const document = new jsPDF();
   const pageWidth = document.internal.pageSize.getWidth();
   const rightEdge = pageWidth - 20;
 
   document.setFillColor(20, 29, 42);
   document.rect(0, 0, pageWidth, 42, "F");
+  const logo = await fetch("/logo.svg").then((response) => response.text()).catch(() => "");
+  if (logo) {
+    const logoData = await new Promise<string>((resolve) => {
+      const image = new Image();
+      image.onload = () => {
+        const canvas = window.document.createElement("canvas");
+        canvas.width = 128;
+        canvas.height = 128;
+        canvas.getContext("2d")?.drawImage(image, 0, 0, 128, 128);
+        resolve(canvas.toDataURL("image/png"));
+      };
+      image.onerror = () => resolve("");
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(logo)}`;
+    });
+    if (logoData) document.addImage(logoData, "PNG", 20, 7, 28, 28);
+  }
   document.setTextColor(255, 255, 255);
   document.setFont("helvetica", "bold");
   document.setFontSize(24);
-  document.text("PrimePips", 20, 20);
+  document.text("PrimePips", 54, 20);
   document.setFont("helvetica", "normal");
   document.setFontSize(10);
-  document.text("Trading performance, funded with purpose", 20, 29);
+  document.text("Trading performance, funded with purpose", 54, 29);
 
   document.setTextColor(20, 29, 42);
   document.setFont("helvetica", "bold");
@@ -154,67 +190,77 @@ export default function BillingPage() {
         return;
       }
 
-      // Fetch accounts to generate invoices from purchases
-      const { data: accounts, error } = await supabase
-        .from("accounts")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const { data: payments, error } = await supabase
+        .from("payment_orders")
+        .select("id, amount, currency, status, checkout_at, provider_reference, account_id, provider")
+        .order("checkout_at", { ascending: false });
 
       if (error) {
-        console.error("Error fetching accounts:", error);
-      } else if (accounts) {
-        const stalePendingIds = accounts
-          .filter((account) => (
-            account.status === "pending_payment" &&
-            Date.now() - new Date(account.created_at).getTime() > PAYMENT_EXPIRY_MS
-          ))
-          .map((account) => account.id);
-
-        let accountsData = accounts;
-        if (stalePendingIds.length > 0) {
-          const { error: expiryError } = await supabase
-            .from("accounts")
-            .update({ status: "failed" })
-            .in("id", stalePendingIds)
-            .eq("status", "pending_payment");
-
-          if (expiryError) {
-            console.error("Error expiring stale pending accounts:", expiryError);
-          } else {
-            accountsData = accounts.map((account) =>
-              stalePendingIds.includes(account.id)
-                ? { ...account, status: "failed" }
-                : account,
-            );
-          }
-        }
-
-        // Generate invoices from accounts data
-        const generatedInvoices = accountsData.map((account, index) => ({
-          id: `INV-${String(accountsData.length - index).padStart(3, "0")}`,
-          amount: account.price,
-          status: account.status === "pending_payment"
-            ? "pending"
-            : account.status === "failed"
-              ? "failed"
-              : "paid",
-          date: account.created_at,
-          due_date: new Date(new Date(account.created_at).getTime() + 10 * 24 * 60 * 60 * 1000).toISOString(),
-          description: `$${account.account_size.toLocaleString()} ${account.challenge_type.replace(/_/g, " ")} Challenge`,
+        console.error("Error fetching payment orders:", error);
+      } else if (payments) {
+        const generatedInvoices: Invoice[] = payments.map((payment) => ({
+          id: `PAY-${payment.id.slice(0, 8).toUpperCase()}`,
+          amount: Number(payment.amount),
+          status: payment.status === "success" ? "paid" : payment.status === "granted" ? "granted" : payment.status === "refunded" ? "refunded" : payment.status === "unmatched" ? "unmatched" : payment.status === "pending" ? "pending" : "failed",
+          date: payment.checkout_at,
+          due_date: payment.checkout_at,
+          description: payment.status === "granted" ? `Admin-granted account${payment.account_id ? ` ${payment.account_id.slice(0, 8)}` : ""}` : `${payment.provider.toUpperCase()} payment${payment.account_id ? ` for account ${payment.account_id.slice(0, 8)}` : ""}`,
+          currency: payment.currency,
+          reference: payment.provider_reference,
         }));
         setInvoices(generatedInvoices);
 
-        // Calculate total spent from all accounts
-        const total = (accountsData as BillingAccount[])
-          .filter(a => a.status !== "pending_payment" && (a.status !== "failed" || a.drawdown_violated === true))
-          .reduce((sum, a) => sum + a.price, 0);
+        const total = payments.filter((payment) => payment.status === "success").reduce((sum, payment) => sum + Number(payment.amount), 0);
         setTotalSpent(total);
 
-        // Calculate pending balance
-        const pending = accountsData
-          .filter(a => a.status === "pending_payment")
-          .reduce((sum, a) => sum + a.price, 0);
+        const pending = payments.filter((payment) => payment.status === "pending").reduce((sum, payment) => sum + Number(payment.amount), 0);
         setPendingBalance(pending);
+      }
+
+      const [{ data: commissionData, error: commissionError }, { data: withdrawalData, error: withdrawalError }] = await Promise.all([
+        supabase
+          .from("referrals")
+          .select("id, commission_earned, referred_at")
+          .gt("commission_earned", 0)
+          .order("referred_at", { ascending: false }),
+        supabase
+          .from("payout_requests")
+          .select("id, amount, status, created_at")
+          .eq("source", "referral_commission")
+          .order("created_at", { ascending: false }),
+      ]);
+
+      if (commissionError) {
+        console.error("Error fetching commission entries:", commissionError);
+      }
+      if (withdrawalError) {
+        console.error("Error fetching commission withdrawals:", withdrawalError);
+      }
+
+      const commissionEntries: Invoice[] = (commissionData as CommissionEntry[] || []).map((entry) => ({
+        id: `COM-${entry.id.slice(0, 8).toUpperCase()}`,
+        amount: entry.commission_earned,
+        status: "paid",
+        date: entry.referred_at,
+        due_date: entry.referred_at,
+        description: "Referral commission earned",
+      }));
+      const commissionWithdrawals: Invoice[] = (withdrawalData as CommissionWithdrawal[] || []).map((withdrawal) => ({
+        id: `WD-${withdrawal.id.slice(0, 8).toUpperCase()}`,
+        amount: withdrawal.amount,
+        status: withdrawal.status === "paid"
+          ? "paid"
+          : withdrawal.status === "rejected"
+            ? "failed"
+            : "pending",
+        date: withdrawal.created_at,
+        due_date: withdrawal.created_at,
+        description: "Referral commission withdrawal",
+      }));
+
+      if (commissionEntries.length > 0 || commissionWithdrawals.length > 0) {
+        setInvoices((current) => [...current, ...commissionEntries, ...commissionWithdrawals]
+          .sort((first, second) => new Date(second.date).getTime() - new Date(first.date).getTime()));
       }
 
       setLoading(false);
@@ -323,7 +369,7 @@ export default function BillingPage() {
                             {invoice.description}
                           </TableCell>
                           <TableCell className="font-semibold">
-                            ${invoice.amount.toLocaleString()}
+                              {invoice.currency || "USD"} {invoice.amount.toLocaleString()}
                           </TableCell>
                           <TableCell>
                             <Badge className={config.color}>
@@ -379,7 +425,7 @@ export default function BillingPage() {
                       <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
                         <div>
                           <p className="text-xs text-muted-foreground">Amount</p>
-                          <p className="mt-1 font-semibold text-foreground">{formatCurrency(invoice.amount)}</p>
+                          <p className="mt-1 font-semibold text-foreground">{invoice.currency || "USD"} {invoice.amount.toLocaleString()}</p>
                         </div>
                         <div>
                           <p className="text-xs text-muted-foreground">Status</p>

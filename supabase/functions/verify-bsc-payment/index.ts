@@ -171,7 +171,7 @@ serve(async (req) => {
       const accountAgeMinutes = (Date.now() - new Date(account.created_at).getTime()) / (1000 * 60);
       
       // Remove purchases that were not validated within the checkout window.
-      if (accountAgeMinutes > PAYMENT_EXPIRY_MINUTES) {
+      if (accountAgeMinutes >= PAYMENT_EXPIRY_MINUTES) {
         console.log(`Account ${account.id} payment expired after ${accountAgeMinutes.toFixed(0)} minutes`);
         
         const { error: expireError } = await supabase

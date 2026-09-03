@@ -6,6 +6,8 @@ import {
   ArrowUpRight,
   BarChart3,
   CalendarDays,
+  ChevronLeft,
+  ChevronRight,
   CircleDollarSign,
   Gauge,
   Target,
@@ -29,6 +31,7 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
@@ -45,9 +48,22 @@ interface Trade {
   account_id: string;
   action: string;
   created_at: string;
+  position_id: string | null;
   profit_loss: number | null;
   symbol: string;
 }
+
+interface PositionTime {
+  opened_at: string;
+  closed_at: string | null;
+}
+
+const equityRanges = [
+  { label: "1D", days: 1 },
+  { label: "7D", days: 7 },
+  { label: "14D", days: 14 },
+  { label: "1M", days: 30 },
+] as const;
 
 const chartTooltipStyle = {
   backgroundColor: "hsl(220 15% 8%)",
@@ -63,13 +79,30 @@ const formatMoney = (value: number, compact = false) =>
     style: "currency",
     currency: "USD",
     notation: compact ? "compact" : "standard",
-    maximumFractionDigits: compact ? 1 : 0,
+    minimumFractionDigits: compact ? 0 : 2,
+    maximumFractionDigits: 2,
   }).format(value);
+
+const formatDuration = (openedAt: string | undefined, closedAt: string | undefined) => {
+  if (!openedAt || !closedAt) return "Not available";
+  const totalMinutes = Math.max(0, Math.round((new Date(closedAt).getTime() - new Date(openedAt).getTime()) / 60000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return `${String(hours).padStart(2, "0")}h:${String(minutes).padStart(2, "0")}m`;
+};
 
 export default function Analytics() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [trades, setTrades] = useState<Trade[]>([]);
+  const [positionTimes, setPositionTimes] = useState<Record<string, PositionTime>>({});
   const [loading, setLoading] = useState(true);
+  const [equityRange, setEquityRange] = useState<(typeof equityRanges)[number]["days"]>(7);
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [selectedCalendarDay, setSelectedCalendarDay] = useState<{ label: string; value: number; trades: Trade[] } | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -80,16 +113,18 @@ export default function Analytics() {
         return;
       }
 
-      const [{ data: accountData }, { data: tradeData }] = await Promise.all([
+      const [{ data: accountData }, { data: tradeData }, { data: positionData }] = await Promise.all([
         supabase.from("accounts").select("id, account_size, current_balance, profit_loss, status"),
         supabase
           .from("trade_history")
-          .select("account_id, action, created_at, profit_loss, symbol")
+          .select("account_id, action, created_at, position_id, profit_loss, symbol")
           .order("created_at", { ascending: true }),
+        supabase.from("positions").select("id, opened_at, closed_at"),
       ]);
 
       setAccounts(accountData || []);
       setTrades(tradeData || []);
+      setPositionTimes(Object.fromEntries((positionData || []).map((position) => [position.id, { opened_at: position.opened_at, closed_at: position.closed_at }])));
       setLoading(false);
     };
 
@@ -101,8 +136,10 @@ export default function Analytics() {
   }, [navigate]);
 
   const activeAccounts = accounts.filter((account) => account.status === "active" || account.status === "funded");
-  const closedTrades = trades.filter((trade) => trade.action !== "open" && trade.action !== "modify");
-  const totalBalance = activeAccounts.reduce((sum, account) => sum + (account.current_balance || account.account_size), 0);
+  const selectedAccount = activeAccounts.find((account) => account.id === selectedAccountId) || activeAccounts[0];
+  const accountTrades = selectedAccount ? trades.filter((trade) => trade.account_id === selectedAccount.id) : [];
+  const closedTrades = accountTrades.filter((trade) => trade.action !== "open" && trade.action !== "modify");
+  const totalBalance = selectedAccount?.current_balance || selectedAccount?.account_size || 0;
   const totalPnl = closedTrades.reduce((sum, trade) => sum + (trade.profit_loss || 0), 0);
   const winners = closedTrades.filter((trade) => (trade.profit_loss || 0) > 0);
   const losers = closedTrades.filter((trade) => (trade.profit_loss || 0) < 0);
@@ -111,21 +148,24 @@ export default function Analytics() {
   const averageLoss = losers.length ? Math.abs(losers.reduce((sum, trade) => sum + (trade.profit_loss || 0), 0) / losers.length) : 0;
 
   const equityData = useMemo(() => {
-    let equity = activeAccounts.reduce((sum, account) => sum + account.account_size, 0);
+    const cutoff = Date.now() - equityRange * 24 * 60 * 60 * 1000;
+    const priorTrades = closedTrades.filter((trade) => new Date(trade.created_at).getTime() < cutoff);
+    const rangeTrades = closedTrades.filter((trade) => new Date(trade.created_at).getTime() >= cutoff);
+    let equity = (selectedAccount?.account_size || 0) + priorTrades.reduce((sum, trade) => sum + (trade.profit_loss || 0), 0);
     let peakEquity = equity;
     const points = [{ label: "Start", equity, drawdown: 0 }];
-    closedTrades.forEach((trade, index) => {
+    rangeTrades.forEach((trade) => {
       equity += trade.profit_loss || 0;
       peakEquity = Math.max(peakEquity, equity);
-      points.push({ label: `T${index + 1}`, equity, drawdown: Math.max(0, peakEquity - equity) });
+      points.push({ label: new Date(trade.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }), equity, drawdown: Math.max(0, peakEquity - equity) });
     });
     return points.length > 1 ? points : [{ label: "Start", equity, drawdown: 0 }, { label: "Now", equity: totalBalance, drawdown: Math.max(0, equity - totalBalance) }];
-  }, [activeAccounts, closedTrades, totalBalance]);
+  }, [closedTrades, equityRange, selectedAccount, totalBalance]);
 
-  const balanceData = activeAccounts.map((account, index) => ({
-    name: `Account ${index + 1}`,
-    value: account.current_balance || account.account_size,
-  }));
+  const balanceData = selectedAccount ? [{
+    name: `Account ${activeAccounts.indexOf(selectedAccount) + 1}`,
+    value: selectedAccount.current_balance || selectedAccount.account_size,
+  }] : [];
 
   const instrumentData = useMemo(() => {
     const grouped = closedTrades.reduce<Record<string, number>>((result, trade) => {
@@ -136,18 +176,30 @@ export default function Analytics() {
   }, [closedTrades]);
 
   const calendarData = useMemo(() => {
-    const byDay = closedTrades.reduce<Record<string, number>>((result, trade) => {
+    const byDay = closedTrades.reduce<Record<string, { value: number; trades: number }>>((result, trade) => {
       const day = new Date(trade.created_at).toISOString().slice(0, 10);
-      result[day] = (result[day] || 0) + (trade.profit_loss || 0);
+      result[day] = result[day] || { value: 0, trades: 0 };
+      result[day].value += trade.profit_loss || 0;
+      result[day].trades += 1;
       return result;
     }, {});
-    return Array.from({ length: 35 }, (_, index) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (34 - index));
+    const [year, month] = calendarMonth.split("-").map(Number);
+    const firstDay = new Date(year, month - 1, 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const leadingDays = firstDay.getDay();
+    return Array.from({ length: Math.ceil((leadingDays + daysInMonth) / 7) * 7 }, (_, index) => {
+      const date = new Date(year, month - 1, index - leadingDays + 1);
       const key = date.toISOString().slice(0, 10);
-      return { key, value: byDay[key] || 0, traded: Object.hasOwn(byDay, key), label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }) };
+      return { key, value: byDay[key]?.value || 0, trades: byDay[key]?.trades || 0, tradeDetails: closedTrades.filter((trade) => new Date(trade.created_at).toISOString().slice(0, 10) === key), traded: Object.hasOwn(byDay, key), label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }), day: date.getDate(), inMonth: date.getMonth() === month - 1 };
     });
-  }, [closedTrades]);
+  }, [calendarMonth, closedTrades]);
+
+  const monthlyPnl = calendarData.filter((day) => day.inMonth).reduce((sum, day) => sum + day.value, 0);
+  const calendarWeeks = Array.from({ length: calendarData.length / 7 }, (_, index) => calendarData.slice(index * 7, index * 7 + 7));
+
+  const currentMonth = new Date();
+  const isCurrentMonth = calendarMonth === `${currentMonth.getFullYear()}-${String(currentMonth.getMonth() + 1).padStart(2, "0")}`;
+  const displayedMonth = new Date(`${calendarMonth}-01T00:00:00`).toLocaleDateString("en-US", { month: "long", year: "numeric" });
 
   if (loading) {
     return <DashboardLayout title="Analytics" subtitle="Your performance, at a glance"><div className="flex items-center justify-center py-24 text-muted-foreground">Loading analytics...</div></DashboardLayout>;
@@ -176,12 +228,12 @@ export default function Analytics() {
             <p className="mb-1 text-xs font-semibold uppercase tracking-[0.2em] text-primary">Performance cockpit</p>
             <h2 className="text-3xl font-bold tracking-tight">The numbers behind your next move</h2>
           </div>
-          <Badge className="border border-success/20 bg-success/10 px-3 py-1.5 text-success"><Activity className="mr-2 h-3.5 w-3.5" />Live account data</Badge>
+          <div className="flex items-center gap-3"><label htmlFor="analytics-account" className="text-sm text-muted-foreground">Account</label><select id="analytics-account" value={selectedAccount?.id || ""} onChange={(event) => setSelectedAccountId(event.target.value)} className="h-10 min-w-44 rounded-md border border-input bg-background px-3 text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-ring">{activeAccounts.map((account, index) => <option key={account.id} value={account.id}>Account {index + 1} · {formatMoney(account.account_size, true)}</option>)}</select><Badge className="border border-success/20 bg-success/10 px-3 py-1.5 text-success"><Activity className="mr-2 h-3.5 w-3.5" />Live account data</Badge></div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            { label: "Total equity", value: formatMoney(totalBalance, true), detail: `${activeAccounts.length} active account${activeAccounts.length === 1 ? "" : "s"}`, icon: CircleDollarSign, tone: "text-primary" },
+            { label: "Total equity", value: formatMoney(totalBalance, true), detail: "Selected account", icon: CircleDollarSign, tone: "text-primary" },
             { label: "Net P/L", value: `${totalPnl >= 0 ? "+" : "-"}${formatMoney(Math.abs(totalPnl), true)}`, detail: `${closedTrades.length} closed trade${closedTrades.length === 1 ? "" : "s"}`, icon: totalPnl >= 0 ? TrendingUp : TrendingDown, tone: totalPnl >= 0 ? "text-success" : "text-destructive" },
             { label: "Win rate", value: `${winRate}%`, detail: `${winners.length} wins / ${losers.length} losses`, icon: Target, tone: "text-blue-300" },
             { label: "Profit factor", value: averageLoss ? (averageWin / averageLoss).toFixed(2) : "—", detail: "Avg win vs avg loss", icon: Gauge, tone: "text-violet-300" },
@@ -194,15 +246,17 @@ export default function Analytics() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
-          <Card variant="elevated"><CardHeader className="flex-row items-start justify-between"><div><CardTitle>Equity curve</CardTitle><p className="mt-1 text-sm text-muted-foreground">Cumulative closed-trade performance</p></div><span className="text-sm font-semibold text-success">{formatMoney(totalPnl, true)}</span></CardHeader><CardContent>
+          <Card variant="elevated"><CardHeader className="flex-row items-start justify-between gap-4"><div><CardTitle>Equity curve</CardTitle><p className="mt-1 text-sm text-muted-foreground">Cumulative closed-trade performance</p></div><div className="flex shrink-0 items-center gap-3"><div className="flex rounded-lg border border-border/60 bg-secondary/40 p-1" role="group" aria-label="Equity curve range">{equityRanges.map((range) => <button key={range.days} type="button" onClick={() => setEquityRange(range.days)} aria-pressed={equityRange === range.days} className={cn("rounded-md px-2.5 py-1 text-xs font-semibold transition-colors", equityRange === range.days ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground")}>{range.label}</button>)}</div><span className="text-sm font-semibold text-success">{formatMoney(totalPnl, true)}</span></div></CardHeader><CardContent>
             <div className="h-[280px] w-full"><ResponsiveContainer width="100%" height="100%"><AreaChart data={equityData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}><defs><linearGradient id="equityFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d6a940" stopOpacity={0.3} /><stop offset="100%" stopColor="#d6a940" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="hsl(220 15% 18%)" strokeDasharray="4 4" vertical={false} /><XAxis dataKey="label" tick={{ fill: "hsl(220 10% 55%)", fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis yAxisId="equity" tick={{ fill: "hsl(220 10% 55%)", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value) => formatMoney(value, true)} width={58} /><YAxis yAxisId="drawdown" orientation="right" tick={{ fill: "#d77a88", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(value) => formatMoney(value, true)} width={58} /><Tooltip contentStyle={chartTooltipStyle} formatter={(value: number, name: string) => [formatMoney(value), name === "drawdown" ? "Drawdown" : "Equity"]} /><Area yAxisId="equity" type="monotone" dataKey="equity" stroke="#d6a940" strokeWidth={3} fill="url(#equityFill)" /><Line yAxisId="drawdown" type="monotone" dataKey="drawdown" stroke="#d77a88" strokeWidth={2} dot={false} /></AreaChart></ResponsiveContainer></div>
           </CardContent></Card>
 
-          <Card variant="elevated"><CardHeader><CardTitle>Balance allocation</CardTitle><p className="text-sm text-muted-foreground">Equity across active accounts</p></CardHeader><CardContent><div className="h-[190px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={balanceData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={80} paddingAngle={3} stroke="none">{balanceData.map((entry, index) => <Cell key={entry.name} fill={balanceColors[index % balanceColors.length]} />)}</Pie><Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => [formatMoney(value), "Balance"]} /></PieChart></ResponsiveContainer></div><div className="space-y-2">{balanceData.map((item, index) => <div key={item.name} className="flex items-center justify-between text-sm"><span className="flex items-center gap-2 text-muted-foreground"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: balanceColors[index % balanceColors.length] }} />{item.name}</span><span className="font-medium">{formatMoney(item.value)}</span></div>)}</div></CardContent></Card>
+          <Card variant="elevated"><CardHeader><CardTitle>Account balance</CardTitle><p className="text-sm text-muted-foreground">Equity for the selected account</p></CardHeader><CardContent><div className="h-[190px]"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={balanceData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={80} paddingAngle={3} stroke="none">{balanceData.map((entry, index) => <Cell key={entry.name} fill={balanceColors[index % balanceColors.length]} />)}</Pie><Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => [formatMoney(value), "Balance"]} /></PieChart></ResponsiveContainer></div><div className="space-y-2">{balanceData.map((item, index) => <div key={item.name} className="flex items-center justify-between text-sm"><span className="flex items-center gap-2 text-muted-foreground"><span className="h-2 w-2 rounded-full" style={{ backgroundColor: balanceColors[index % balanceColors.length] }} />{item.name}</span><span className="font-medium">{formatMoney(item.value)}</span></div>)}</div></CardContent></Card>
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.2fr_1fr]">
-          <Card variant="elevated"><CardHeader><CardTitle>Daily P/L rhythm</CardTitle><p className="text-sm text-muted-foreground">The last 35 trading days</p></CardHeader><CardContent><div className="mb-4 grid grid-cols-7 gap-1.5 sm:gap-2">{calendarData.map((day) => { const intensity = Math.min(Math.abs(day.value) / Math.max(averageWin, averageLoss, 1), 1); return <div key={day.key} title={day.traded ? `${day.label}: ${day.value >= 0 ? "+" : "-"}${formatMoney(Math.abs(day.value))}` : `${day.label}: No trades`} className={cn("flex aspect-square items-center justify-center rounded-sm border border-border/30 text-[10px] font-semibold text-white transition-colors", !day.traded ? "bg-secondary" : day.value >= 0 ? "bg-success" : "bg-destructive")} style={{ opacity: day.traded ? 0.3 + intensity * 0.7 : 1 }}>{day.traded && `${day.value >= 0 ? "+" : "-"}${formatMoney(Math.abs(day.value), true)}`}</div>; })}</div><div className="flex items-center justify-between text-xs text-muted-foreground"><span>Less active</span><div className="flex gap-1"><span className="h-3 w-3 rounded-sm bg-secondary" /><span className="h-3 w-3 rounded-sm bg-success/50" /><span className="h-3 w-3 rounded-sm bg-success" /></div><span>More active</span></div></CardContent></Card>
+          <Card variant="elevated" className="xl:col-span-2"><CardHeader className="flex flex-wrap items-center justify-between gap-4"><div><CardTitle>Trading Calendar</CardTitle><p className={cn("mt-2 text-sm", monthlyPnl >= 0 ? "text-success" : "text-destructive")}>Monthly PnL: {monthlyPnl >= 0 ? "+" : "-"}{formatMoney(Math.abs(monthlyPnl))}</p></div><div className="flex items-center gap-2"><button type="button" aria-label="Previous month" title="Previous month" onClick={() => { const date = new Date(`${calendarMonth}-01T00:00:00`); date.setMonth(date.getMonth() - 1); setCalendarMonth(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`); }} className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground"><ChevronLeft className="h-4 w-4" /></button><span className="min-w-32 text-center text-base font-semibold">{displayedMonth}</span><button type="button" aria-label="Next month" title="Next month" disabled={isCurrentMonth} onClick={() => { const date = new Date(`${calendarMonth}-01T00:00:00`); date.setMonth(date.getMonth() + 1); setCalendarMonth(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`); }} className="rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:pointer-events-none disabled:opacity-30"><ChevronRight className="h-4 w-4" /></button></div><button type="button" onClick={() => { const now = new Date(); setCalendarMonth(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`); }} className="rounded-md border border-primary px-4 py-2 text-sm font-medium text-foreground hover:bg-primary/10">Today</button></CardHeader><CardContent><div className="w-full overflow-hidden"><div className="grid grid-cols-7 border-b border-border/70 text-xs font-medium uppercase tracking-wide text-muted-foreground md:grid-cols-[repeat(7,minmax(0,1fr))_7rem]">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Weeks total"].map((day, index) => <span key={day} className={cn("px-1 pb-3 sm:px-2", index === 7 && "hidden md:block")}>{day}</span>)}</div><div>{calendarWeeks.map((week, weekIndex) => { const weekPnl = week.filter((day) => day.inMonth).reduce((sum, day) => sum + day.value, 0); const weekTrades = week.filter((day) => day.inMonth).reduce((sum, day) => sum + day.trades, 0); return <div key={weekIndex} className="grid grid-cols-7 border-b border-border/70 last:border-b-0 md:grid-cols-[repeat(7,minmax(0,1fr))_7rem]">{week.map((day) => { const intensity = Math.min(Math.abs(day.value) / Math.max(averageWin, averageLoss, 1), 1); return <div key={day.key} role={day.inMonth ? "button" : undefined} tabIndex={day.inMonth ? 0 : undefined} onClick={() => day.inMonth && setSelectedCalendarDay({ label: day.label, value: day.value, trades: day.tradeDetails })} onKeyDown={(event) => { if (day.inMonth && (event.key === "Enter" || event.key === " ")) setSelectedCalendarDay({ label: day.label, value: day.value, trades: day.tradeDetails }); }} title={day.inMonth ? (day.traded ? `${day.label}: ${day.value >= 0 ? "+" : "-"}${formatMoney(Math.abs(day.value))}` : `${day.label}: No trades`) : undefined} className={cn("relative min-h-24 border-r border-border/70 p-1 sm:p-2", day.inMonth && "cursor-pointer hover:bg-secondary/60", !day.inMonth && "opacity-25", day.traded && day.inMonth && (day.value >= 0 ? "bg-success/10" : "bg-destructive/10"))} style={{ backgroundColor: day.traded && day.inMonth ? `${day.value >= 0 ? "hsl(142 76% 36%)" : "hsl(0 72% 51%)"} ${0.06 + intensity * 0.12}` : undefined }}><span className={cn("text-xs sm:text-sm", day.inMonth && day.key === new Date().toISOString().slice(0, 10) && "flex h-6 w-6 items-center justify-center rounded-full bg-foreground text-background")}>{day.day}</span>{day.inMonth && day.traded && <div className={cn("absolute bottom-2 left-1 text-xs font-medium sm:left-2 sm:text-sm", day.value >= 0 ? "text-success" : "text-destructive")}>{day.value >= 0 ? "+" : "-"}{formatMoney(Math.abs(day.value), true)}<div className="text-[10px] font-normal text-muted-foreground">{day.trades} {day.trades === 1 ? "trade" : "trades"}</div></div>}</div>; })}<div className="hidden min-h-24 flex-col justify-center bg-secondary/20 px-2 md:flex"><span className={cn("text-sm font-medium", weekPnl >= 0 ? "text-success" : "text-destructive")}>{weekPnl >= 0 ? "+" : "-"}{formatMoney(Math.abs(weekPnl), true)}</span><span className="text-xs text-muted-foreground">Week {weekIndex + 1}</span><span className="text-xs text-muted-foreground">{weekTrades} {weekTrades === 1 ? "trade" : "trades"}</span></div></div>; })}</div></div></CardContent></Card>
+
+          <Dialog open={!!selectedCalendarDay} onOpenChange={(open) => !open && setSelectedCalendarDay(null)}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>{selectedCalendarDay?.label}</DialogTitle><p className="text-sm text-muted-foreground">{selectedCalendarDay?.trades.length || 0} {selectedCalendarDay?.trades.length === 1 ? "trade" : "trades"} <span className={cn("ml-2 font-semibold", (selectedCalendarDay?.value || 0) >= 0 ? "text-success" : "text-destructive")}>{(selectedCalendarDay?.value || 0) >= 0 ? "+" : "-"}{formatMoney(Math.abs(selectedCalendarDay?.value || 0))}</span></p></DialogHeader><div className="space-y-3">{selectedCalendarDay?.trades.length ? selectedCalendarDay.trades.map((trade, index) => <div key={`${trade.created_at}-${index}`} className={cn("rounded-md border p-4", (trade.profit_loss || 0) >= 0 ? "border-success/60" : "border-destructive/60")}><div className="flex items-center justify-between text-sm font-medium"><span>{trade.symbol}</span><span className={(trade.profit_loss || 0) >= 0 ? "text-success" : "text-destructive"}>P/L {trade.profit_loss && trade.profit_loss >= 0 ? "+" : "-"}{formatMoney(Math.abs(trade.profit_loss || 0))}</span></div><div className="mt-3 grid grid-cols-2 gap-2 text-xs"><span className="text-muted-foreground">Time</span><span className="text-right">{new Date(trade.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</span><span className="text-muted-foreground">Trade duration</span><span className="text-right text-muted-foreground">{formatDuration(positionTimes[trade.position_id || ""]?.opened_at, positionTimes[trade.position_id || ""]?.closed_at || trade.created_at)}</span></div></div>) : <p className="py-6 text-center text-sm text-muted-foreground">No trades on this day.</p>}</div></DialogContent></Dialog>
           <Card variant="elevated"><CardHeader><CardTitle>By instrument</CardTitle><p className="text-sm text-muted-foreground">Where your P/L is coming from</p></CardHeader><CardContent><div className="h-[220px] w-full"><ResponsiveContainer width="100%" height="100%"><BarChart data={instrumentData} layout="vertical" margin={{ top: 0, right: 12, left: 8, bottom: 0 }}><CartesianGrid stroke="hsl(220 15% 18%)" strokeDasharray="4 4" horizontal={false} /><XAxis type="number" hide /><YAxis dataKey="symbol" type="category" tick={{ fill: "hsl(220 10% 70%)", fontSize: 12 }} axisLine={false} tickLine={false} width={56} /><Tooltip contentStyle={chartTooltipStyle} formatter={(value: number) => [formatMoney(value), "P/L"]} /><Bar dataKey="pnl" radius={[0, 4, 4, 0]} fill="#d6a940" /></BarChart></ResponsiveContainer></div>{!instrumentData.length && <p className="pt-4 text-sm text-muted-foreground">Instrument breakdown appears after your first closed trade.</p>}</CardContent></Card>
         </div>
 

@@ -13,7 +13,7 @@ interface MarketStatus {
   reason?: string;
 }
 
-// Crypto-only platform: markets are 24/7
+// Supported markets are available 24/7.
 const SPREAD_PERCENT = 0.0005; // 0.05% total spread
 
 const toPair = (symbol: string) => symbol.toLowerCase();

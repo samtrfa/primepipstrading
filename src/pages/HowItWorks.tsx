@@ -9,7 +9,7 @@ const rules = [
   {
     title: "Trading Rules",
     allowed: [
-      "Trade any forex pair, indices, commodities, or crypto",
+      "Trade across various asset classes",
       "Use any trading style (scalping, swing, day trading)",
       "Hold trades overnight and over weekends",
       "Trade during high-impact news events",

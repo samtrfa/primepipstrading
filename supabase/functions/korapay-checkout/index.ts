@@ -68,9 +68,7 @@ Deno.serve(async (req) => {
     const paymentMethod = body?.paymentMethod === "other" ? "other" : "bank_transfer";
     const couponCode = typeof body?.couponCode === "string"
       ? body.couponCode.trim().toUpperCase().slice(0, 32)
-      : challengeType === "one_step"
-        ? "PRIME50"
-        : null;
+      : null;
     const currency = "NGN";
     const redirectUrl = typeof body?.redirectUrl === "string" ? body.redirectUrl : null;
     const customerName = typeof body?.customerName === "string" && body.customerName.trim()
@@ -156,6 +154,22 @@ Deno.serve(async (req) => {
       return json({ error: "Could not start checkout. Please try again." }, 500);
     }
 
+    const { error: paymentError } = await admin.from("payment_orders").insert({
+      user_id: userId,
+      account_id: account.id,
+      provider: "paystack",
+      provider_reference: reference,
+      amount: localAmount,
+      currency,
+      status: "pending",
+      provider_metadata: { challenge_type: challengeType, account_size: accountSize, price_usd: priceUsd, payment_method: paymentMethod },
+    });
+    if (paymentError) {
+      console.error("Failed to create payment order:", paymentError.message);
+      await admin.from("accounts").delete().eq("id", account.id).eq("status", "pending_payment");
+      return json({ error: "Could not start checkout. Please try again." }, 500);
+    }
+
     const paystackRes = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST",
       headers: {
@@ -183,7 +197,8 @@ Deno.serve(async (req) => {
     const paystackBody = await paystackRes.text();
     if (!paystackRes.ok) {
       console.error(`Paystack initialize failed [${paystackRes.status}]: ${paystackBody}`);
-      await admin.from("accounts").delete().eq("id", account.id).eq("status", "pending_payment");
+      await admin.from("payment_orders").update({ status: "failed", failure_reason: "Paystack initialization failed" }).eq("provider_reference", reference);
+      await admin.from("accounts").update({ status: "failed" }).eq("id", account.id).eq("status", "pending_payment");
       return json(
         { error: "Payment provider request failed", status: paystackRes.status, details: paystackBody },
         paystackRes.status,
@@ -193,7 +208,8 @@ Deno.serve(async (req) => {
     const parsed = JSON.parse(paystackBody);
     if (parsed?.status !== true || !parsed?.data?.authorization_url) {
       console.error("Paystack returned an unsuccessful payload:", paystackBody);
-      await admin.from("accounts").delete().eq("id", account.id).eq("status", "pending_payment");
+      await admin.from("payment_orders").update({ status: "failed", failure_reason: "Paystack returned an invalid initialization response" }).eq("provider_reference", reference);
+      await admin.from("accounts").update({ status: "failed" }).eq("id", account.id).eq("status", "pending_payment");
       return json({ error: parsed?.message || "Payment provider error", details: paystackBody }, 502);
     }
 
