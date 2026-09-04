@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { TrendingUp, Twitter, Linkedin, Instagram, Youtube } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 
 const footerLinks = {
   company: [
@@ -22,13 +22,6 @@ const footerLinks = {
   ],
 };
 
-const socialLinks = [
-  { href: "#", icon: Twitter, label: "Twitter" },
-  { href: "#", icon: Linkedin, label: "LinkedIn" },
-  { href: "#", icon: Instagram, label: "Instagram" },
-  { href: "#", icon: Youtube, label: "YouTube" },
-];
-
 export function Footer() {
   return (
     <footer className="bg-card border-t border-border">
@@ -49,18 +42,6 @@ export function Footer() {
               Empowering traders worldwide with funded accounts up to $200,000. 
               Trade with our capital, keep up to 90% of your profits.
             </p>
-            <div className="flex items-center gap-4">
-              {socialLinks.map((social) => (
-                <a
-                  key={social.label}
-                  href={social.href}
-                  className="w-10 h-10 rounded-lg bg-secondary flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-secondary/80 transition-colors"
-                  aria-label={social.label}
-                >
-                  <social.icon className="w-5 h-5" />
-                </a>
-              ))}
-            </div>
           </div>
 
           {/* Links */}
@@ -120,7 +101,7 @@ export function Footer() {
               © {new Date().getFullYear()} PrimePips Funding. All rights reserved.
             </p>
             <p className="text-xs text-muted-foreground text-center md:text-right max-w-lg">
-              Trading foreign exchange on margin carries a high level of risk and may not be suitable for all investors. 
+              Trading across various asset classes on margin carries a high level of risk and may not be suitable for all investors.
               Past performance is not indicative of future results.
             </p>
           </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,9 +18,8 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { FUNDED_CONSISTENCY_PERCENT } from "@/lib/challengeRules";
+import { FUNDED_CONSISTENCY_PERCENT, isInstantAccount } from "@/lib/challengeRules";
 import { supabase } from "@/integrations/supabase/client";
-import { useToast } from "@/hooks/use-toast";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 
 interface Account {
@@ -32,6 +31,7 @@ interface Account {
   current_balance: number | null;
   profit_loss: number | null;
   current_phase: number | null;
+  drawdown_violated: boolean | null;
   created_at: string;
 }
 
@@ -50,12 +50,13 @@ const statusColors: Record<string, string> = {
   funded: "bg-success/20 text-success",
 };
 
-const PAYMENT_EXPIRY_MS = 10 * 60 * 1000;
+const PAYMENT_EXPIRY_MS = 30 * 60 * 1000;
 
 export default function Dashboard() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     const checkAuthAndFetchData = async () => {
@@ -66,6 +67,20 @@ export default function Dashboard() {
         return;
       }
 
+      const paymentReference = searchParams.get("reference") || searchParams.get("trxref");
+      if (paymentReference) {
+        const { error: verificationError } = await supabase.functions.invoke(
+          "verify-paystack-payment",
+          { body: { reference: paymentReference } },
+        );
+
+        if (verificationError) {
+          console.error("Error verifying Paystack payment:", verificationError);
+        }
+
+        navigate("/dashboard", { replace: true });
+      }
+
       const { data, error } = await supabase
         .from("accounts")
         .select("*")
@@ -74,13 +89,15 @@ export default function Dashboard() {
       if (error) {
         console.error("Error fetching accounts:", error);
       } else {
-        let accountsData = data || [];
+        let accountsData = (data || []).filter(
+          (account) => account.status !== "failed" || account.drawdown_violated === true,
+        );
 
         const stalePendingIds = accountsData
           .filter((account) => {
             if (account.status !== "pending_payment") return false;
             const ageMs = Date.now() - new Date(account.created_at).getTime();
-            return ageMs > PAYMENT_EXPIRY_MS;
+            return ageMs >= PAYMENT_EXPIRY_MS;
           })
           .map((account) => account.id);
 
@@ -88,16 +105,13 @@ export default function Dashboard() {
           const { error: stalePendingError } = await supabase
             .from("accounts")
             .update({ status: "failed" })
-            .in("id", stalePendingIds);
+            .in("id", stalePendingIds)
+            .eq("status", "pending_payment");
 
           if (stalePendingError) {
             console.error("Error expiring stale pending accounts:", stalePendingError);
           } else {
-            accountsData = accountsData.map((account) =>
-              stalePendingIds.includes(account.id)
-                ? { ...account, status: "failed" }
-                : account
-            );
+            accountsData = accountsData.filter((account) => !stalePendingIds.includes(account.id));
           }
         }
 
@@ -116,7 +130,7 @@ export default function Dashboard() {
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, [navigate, searchParams]);
 
   const activeAccounts = accounts.filter(a => a.status === "active" || a.status === "funded");
   const pendingAccounts = accounts.filter(a => a.status === "pending_payment");
@@ -145,11 +159,11 @@ export default function Dashboard() {
                     key={account.id}
                     className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg bg-secondary/50"
                   >
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="font-medium text-foreground">
                         ${account.account_size.toLocaleString()} {challengeLabels[account.challenge_type]}
                       </div>
-                      <div className="text-sm text-muted-foreground">
+                      <div className="text-sm text-muted-foreground break-words">
                         Price: ${account.price} • Created {new Date(account.created_at).toLocaleDateString()}
                       </div>
                     </div>
@@ -170,30 +184,32 @@ export default function Dashboard() {
             activeAccounts.map((account) => (
               <Card key={account.id} variant="gold" className="relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-gold opacity-10" />
-                <CardContent className="p-6 relative z-10">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div>
+                <CardContent className="p-4 sm:p-6 relative z-10">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
+                    <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-2">
                         <Badge className="bg-primary/20 text-primary">
-                          {account.status === "funded" ? "Funded" : `Phase ${account.current_phase}`}
+                          {account.status === "funded" || isInstantAccount(account.challenge_type)
+                            ? "Funded"
+                            : `Phase ${account.current_phase}`}
                         </Badge>
                         <Badge className={statusColors[account.status]}>
                           {account.status.charAt(0).toUpperCase() + account.status.slice(1)}
                         </Badge>
                       </div>
-                      <h2 className="text-3xl font-bold text-foreground">
+                      <h2 className="text-2xl sm:text-3xl font-bold text-foreground break-words">
                         ${account.account_size.toLocaleString()} {challengeLabels[account.challenge_type]}
                       </h2>
                     </div>
-                    <div className="flex min-w-0 flex-wrap items-center gap-6">
-                      <div className="text-right">
+                    <div className="flex min-w-0 w-full flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center md:w-auto md:justify-end">
+                      <div className="sm:text-right">
                         <div className="text-sm text-muted-foreground mb-1">Current Balance</div>
-                        <div className="text-3xl font-bold text-foreground">
+                        <div className="text-2xl sm:text-3xl font-bold text-foreground break-words">
                           ${(account.current_balance || account.account_size).toLocaleString()}
                         </div>
                         {account.profit_loss !== null && account.profit_loss !== 0 && (
                           <div className={cn(
-                            "flex items-center justify-end gap-1",
+                            "flex items-center gap-1 sm:justify-end",
                             account.profit_loss > 0 ? "text-success" : "text-destructive"
                           )}>
                             {account.profit_loss > 0 ? (
@@ -208,8 +224,8 @@ export default function Dashboard() {
                         )}
                       </div>
                       {account.status === "funded" && (
-                        <div className="text-right">
-                          <div className="flex items-center justify-end gap-1 text-sm text-muted-foreground mb-1">
+                        <div className="sm:text-right">
+                          <div className="flex items-center gap-1 text-sm text-muted-foreground mb-1 sm:justify-end">
                             <ShieldCheck className="w-4 h-4 text-primary" />
                             Consistency Score
                           </div>
@@ -221,7 +237,7 @@ export default function Dashboard() {
                         variant="gold"
                         size="lg"
                         onClick={() => navigate(`/trade/${account.id}`)}
-                        className="shrink-0"
+                        className="w-full sm:w-auto shrink-0"
                       >
                         <Activity className="w-4 h-4 mr-2" />
                         Trade
@@ -248,10 +264,10 @@ export default function Dashboard() {
           {activeAccounts.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <Card variant="elevated">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start justify-between gap-3 mb-4">
                     <Target className="w-5 h-5 text-primary" />
-                    <span className="text-sm text-muted-foreground">Total Accounts</span>
+                    <span className="text-sm text-muted-foreground text-right">Total Accounts</span>
                   </div>
                   <div className="text-2xl font-bold text-foreground">
                     {activeAccounts.length}
@@ -260,10 +276,10 @@ export default function Dashboard() {
               </Card>
 
               <Card variant="elevated">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start justify-between gap-3 mb-4">
                     <Wallet className="w-5 h-5 text-primary" />
-                    <span className="text-sm text-muted-foreground">Total Balance</span>
+                    <span className="text-sm text-muted-foreground text-right">Total Balance</span>
                   </div>
                   <div className="text-2xl font-bold text-foreground">
                     ${activeAccounts.reduce((sum, a) => sum + (a.current_balance || a.account_size), 0).toLocaleString()}
@@ -272,10 +288,10 @@ export default function Dashboard() {
               </Card>
 
               <Card variant="elevated">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start justify-between gap-3 mb-4">
                     <TrendingUp className="w-5 h-5 text-success" />
-                    <span className="text-sm text-muted-foreground">Total P/L</span>
+                    <span className="text-sm text-muted-foreground text-right">Total P/L</span>
                   </div>
                   <div className="text-2xl font-bold text-foreground">
                     ${activeAccounts.reduce((sum, a) => sum + (a.profit_loss || 0), 0).toLocaleString()}
@@ -284,10 +300,10 @@ export default function Dashboard() {
               </Card>
 
               <Card variant="elevated">
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
+                <CardContent className="p-4 sm:p-6">
+                  <div className="flex items-start justify-between gap-3 mb-4">
                     <Calendar className="w-5 h-5 text-primary" />
-                    <span className="text-sm text-muted-foreground">Funded Accounts</span>
+                    <span className="text-sm text-muted-foreground text-right">Funded Accounts</span>
                   </div>
                   <div className="text-2xl font-bold text-foreground">
                     {accounts.filter(a => a.status === "funded").length}
@@ -312,11 +328,11 @@ export default function Dashboard() {
                     key={account.id}
                     className="flex flex-wrap items-center justify-between gap-3 p-4 rounded-lg bg-secondary/50 hover:bg-secondary/70 transition-colors"
                   >
-                    <div className="flex-1">
+                    <div className="min-w-0 flex-1">
                       <div className="font-medium text-foreground">
                         ${account.account_size.toLocaleString()} {challengeLabels[account.challenge_type]}
                       </div>
-                      <div className="text-sm text-muted-foreground">
+                        <div className="text-sm text-muted-foreground break-words">
                         Created {new Date(account.created_at).toLocaleDateString()}
                         {account.profit_loss !== null && (
                           <span className="ml-2">
@@ -352,33 +368,38 @@ export default function Dashboard() {
 
   if (!loading && accounts.length === 0) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card variant="glass" className="max-w-lg w-full text-center">
-          <CardContent className="p-8 space-y-6">
-            <div className="w-20 h-20 mx-auto bg-primary/10 rounded-full flex items-center justify-center">
-              <Rocket className="w-10 h-10 text-primary" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-serif font-bold text-foreground mb-2">
-                Welcome to Your Dashboard!
-              </h1>
-              <p className="text-muted-foreground">
-                You don't have any trading accounts yet. Start your funded trading journey by purchasing a challenge account.
-              </p>
-            </div>
-            <div className="space-y-3">
-              <Button
-                variant="gold"
-                size="lg"
-                className="w-full"
-                onClick={() => navigate("/purchase")}
-              >
-                Get Your First Account
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      <DashboardLayout
+        title="Dashboard"
+        subtitle="Welcome back! Here's an overview of your accounts."
+      >
+        <div className="flex min-h-[60vh] items-center justify-center">
+          <Card variant="glass" className="max-w-lg w-full text-center">
+            <CardContent className="p-8 space-y-6">
+              <div className="w-20 h-20 mx-auto bg-primary/10 rounded-full flex items-center justify-center">
+                <Rocket className="w-10 h-10 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-serif font-bold text-foreground mb-2">
+                  Welcome to Your Dashboard!
+                </h1>
+                <p className="text-muted-foreground">
+                  You don't have any trading accounts yet. Start your funded trading journey by purchasing a challenge account.
+                </p>
+              </div>
+              <div className="space-y-3">
+                <Button
+                  variant="gold"
+                  size="lg"
+                  className="w-full"
+                  onClick={() => navigate("/purchase")}
+                >
+                  Get Your First Account
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </DashboardLayout>
     );
   }
 

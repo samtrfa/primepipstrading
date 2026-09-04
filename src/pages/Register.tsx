@@ -20,12 +20,12 @@ export default function Register() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const referralCode = searchParams.get("ref") || localStorage.getItem("primepips_referral_code");
 
   useEffect(() => {
     const redirect = searchParams.get("redirect");
     const challenge = searchParams.get("challenge");
     const size = searchParams.get("size");
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
         // If there's a pending purchase, redirect to purchase page
@@ -77,32 +77,46 @@ export default function Register() {
 
     setIsLoading(true);
 
-    const { error } = await supabase.auth.signUp({
-      email: formData.email,
-      password: formData.password,
-      options: {
-        emailRedirectTo: `${window.location.origin}/`,
-        data: {
-          full_name: formData.fullName,
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.fullName,
+            referral_code: referralCode,
+          },
         },
-      },
-    });
+      });
 
-    setIsLoading(false);
+      if (error) {
+        toast({
+          title: "Registration failed",
+          description: error.message,
+          variant: "destructive",
+        });
+        return;
+      }
 
-    if (error) {
+      if (data.session) {
+        const redirect = searchParams.get("redirect");
+        const challenge = searchParams.get("challenge");
+        const size = searchParams.get("size");
+        navigate(redirect === "purchase" && challenge && size ? `/purchase?challenge=${challenge}&size=${size}` : "/dashboard");
+      }
       toast({
-        title: "Registration failed",
-        description: error.message,
+        title: "Account created!",
+        description: data.session ? "Your account is ready to use." : "Your account was created successfully.",
+      });
+    } catch {
+      toast({
+        title: "Connection problem",
+        description: "We could not reach authentication. Check your connection and try again.",
         variant: "destructive",
       });
-      return;
+    } finally {
+      setIsLoading(false);
     }
-
-    toast({
-      title: "Account created!",
-      description: "You are now logged in.",
-    });
   };
 
   const benefits = [

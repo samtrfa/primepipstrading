@@ -36,26 +36,32 @@ export default function Login() {
     e.preventDefault();
     setIsLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-    setIsLoading(false);
-
-    if (error) {
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) {
+        toast({
+          title: "Login failed",
+          description: error.message,
+          variant: "destructive",
+        });
+        return;
+      }
       toast({
-        title: "Login failed",
-        description: error.message,
+        title: "Welcome back!",
+        description: "You are now logged in.",
+      });
+    } catch {
+      toast({
+        title: "Connection problem",
+        description: "We could not reach authentication. Check your connection and try again.",
         variant: "destructive",
       });
-      return;
+    } finally {
+      setIsLoading(false);
     }
-
-    toast({
-      title: "Welcome back!",
-      description: "You are now logged in.",
-    });
   };
 
   return (

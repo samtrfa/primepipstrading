@@ -9,9 +9,11 @@ import Register from "./pages/Register";
 import Dashboard from "./pages/Dashboard";
 import Analytics from "./pages/Analytics";
 import Payouts from "./pages/Payouts";
+import Certificates from "./pages/Certificates";
 import Referrals from "./pages/Referrals";
 import Billing from "./pages/Billing";
 import Settings from "./pages/Settings";
+import KYC from "./pages/KYC";
 import Pricing from "./pages/Pricing";
 import HowItWorks from "./pages/HowItWorks";
 import FAQ from "./pages/FAQ";
@@ -29,6 +31,10 @@ import {
   RefundPolicy,
 } from "./pages/FooterPages";
 import NotFound from "./pages/NotFound";
+import Admin from "./pages/Admin";
+import AuthCallback from "./pages/AuthCallback";
+import { Navigate } from "react-router-dom";
+import { FaqSupportBot } from "./components/support/FaqSupportBot";
 
 const queryClient = new QueryClient();
 
@@ -43,12 +49,24 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/dashboard/analytics" element={<Analytics />} />
             <Route path="/dashboard/payouts" element={<Payouts />} />
-            <Route path="/dashboard/referrals" element={<Referrals />} />
+            <Route path="/dashboard/certificates" element={<Certificates />} />
+            <Route path="/dashboard/affiliate" element={<Referrals />} />
+            <Route path="/dashboard/referrals" element={<Navigate to="/dashboard/affiliate" replace />} />
             <Route path="/dashboard/billing" element={<Billing />} />
             <Route path="/dashboard/settings" element={<Settings />} />
+            <Route path="/dashboard/kyc" element={<KYC />} />
+            <Route path="/admin" element={<Admin />} />
+            <Route path="/admin/kyc" element={<Admin section="kyc" />} />
+            <Route path="/admin/traders" element={<Admin section="traders" />} />
+            <Route path="/admin/exposure" element={<Admin section="exposure" />} />
+            <Route path="/admin/referrals" element={<Admin section="referrals" />} />
+            <Route path="/admin/affiliates" element={<Admin section="affiliates" />} />
+            <Route path="/admin/activity" element={<Admin section="activity" />} />
+            <Route path="/admin/payments" element={<Admin section="payments" />} />
             <Route path="/purchase" element={<PurchaseAccount />} />
             <Route path="/trade/:accountId" element={<TradingPlatform />} />
             <Route path="/pricing" element={<Pricing />} />
@@ -66,6 +84,7 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
+          <FaqSupportBot />
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>

@@ -7,8 +7,8 @@ const testimonials = [
     role: "Funded Trader",
     country: "Singapore",
     image: "https://api.dicebear.com/7.x/avataaars/svg?seed=michael",
-    content: "PrimePips gave me the opportunity to trade professionally without risking my savings. Already received 3 payouts totaling $12,500!",
-    payout: "$12,500",
+    content: "PrimePips gave me the opportunity to trade professionally without risking my savings. I have already received my first payout.",
+    payout: "$1,250",
   },
   {
     name: "Sarah Williams",
@@ -16,7 +16,7 @@ const testimonials = [
     country: "United Kingdom",
     image: "https://api.dicebear.com/7.x/avataaars/svg?seed=sarah",
     content: "The evaluation process is fair and the support team is incredibly helpful. Best prop firm I've worked with by far.",
-    payout: "$28,000",
+    payout: "$2,800",
   },
   {
     name: "Ahmed Hassan",
@@ -24,7 +24,7 @@ const testimonials = [
     country: "UAE",
     image: "https://api.dicebear.com/7.x/avataaars/svg?seed=ahmed",
     content: "Scaled from a $50K account to $200K in just 6 months. The growth potential here is unlimited if you're disciplined.",
-    payout: "$45,000",
+    payout: "$4,500",
   },
   {
     name: "Elena Rodriguez",
@@ -32,7 +32,7 @@ const testimonials = [
     country: "Spain",
     image: "https://api.dicebear.com/7.x/avataaars/svg?seed=elena",
     content: "Fast payouts and transparent rules. What more could you ask for? Finally found a prop firm I can trust.",
-    payout: "$8,200",
+    payout: "$820",
   },
 ];
 
@@ -48,10 +48,10 @@ export function TestimonialsSection() {
             Testimonials
           </span>
           <h2 className="text-2xl sm:text-3xl md:text-5xl font-serif font-bold text-foreground mt-4 mb-4 sm:mb-6">
-            Trusted by <span className="gold-text">15,000+ Traders</span>
+            Early feedback from <span className="gold-text">funded traders</span>
           </h2>
           <p className="text-muted-foreground text-base sm:text-lg">
-            Join thousands of successful traders who are already trading with our capital.
+            Hear from traders building their track record with our capital.
           </p>
         </div>
 

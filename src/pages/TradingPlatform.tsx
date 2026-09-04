@@ -11,9 +11,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { calculatePositionPL, formatPips, getRequiredMargin } from "@/lib/tradingCalculations";
 import {
+  calculateConsistencyScore,
+  FUNDED_CONSISTENCY_BREACH_PERCENT,
   FUNDED_MAX_RISK_PERCENT,
+  getInitialPhase,
   getPhaseRules,
   getTotalPhases,
+  isInstantAccount,
 } from "@/lib/challengeRules";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
 import { AssetSelector } from "@/components/trading/AssetSelector";
@@ -34,6 +38,8 @@ import {
   WifiOff,
   Lock,
   ShieldAlert,
+  Pencil,
+  Save,
 } from "lucide-react";
 
 interface Account {
@@ -64,7 +70,7 @@ interface Asset {
   lot_size?: number;
 }
 
-// Approximate market-cap ordering for the supported crypto pairs
+// Approximate market-cap ordering for the supported assets
 const MARKET_CAP_ORDER = [
   "BTC", "ETH", "XRP", "BNB", "SOL", "DOGE", "ADA", "LINK", "AVAX", "BCH",
   "XLM", "LTC", "DOT", "UNI", "NEAR", "AAVE", "ETC", "ATOM", "ALGO", "XTZ",
@@ -101,6 +107,7 @@ export default function TradingPlatform() {
   const [account, setAccount] = useState<Account | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
+  const [fundedStartAt, setFundedStartAt] = useState<string | null>(null);
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
   const [lotSize, setLotSize] = useState("0.01");
   const [stopLoss, setStopLoss] = useState("");
@@ -108,6 +115,8 @@ export default function TradingPlatform() {
   const [isLoading, setIsLoading] = useState(true);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [isProceeding, setIsProceeding] = useState(false);
+  const [editingPositionId, setEditingPositionId] = useState<string | null>(null);
+  const [positionDraft, setPositionDraft] = useState({ stopLoss: "", takeProfit: "" });
   const [view, setView] = useState<"trade" | "chart">("trade");
 
   // Get symbols for live prices synced with TradingView
@@ -122,6 +131,10 @@ export default function TradingPlatform() {
       } = await supabase.auth.getSession();
       if (!session) {
         navigate("/login");
+        return;
+      }
+      if (session.user.app_metadata?.role === "admin") {
+        navigate("/admin", { replace: true });
         return;
       }
 
@@ -141,8 +154,7 @@ export default function TradingPlatform() {
 
       if (
         accountData.status !== "active" &&
-        accountData.status !== "funded" &&
-        accountData.status !== "failed"
+        accountData.status !== "funded"
       ) {
         toast({
           title: "Account not active",
@@ -178,6 +190,20 @@ export default function TradingPlatform() {
 
       if (positionsData) {
         setPositions(positionsData);
+      }
+
+      if (accountData.status === "funded" && accountData.challenge_type !== "instant") {
+        const { data: phaseAdvance } = await supabase
+          .from("trade_history")
+          .select("created_at")
+          .eq("account_id", accountData.id)
+          .eq("action", "phase_advance")
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        setFundedStartAt(phaseAdvance?.created_at || null);
+      } else {
+        setFundedStartAt(null);
       }
 
       setIsLoading(false);
@@ -221,10 +247,26 @@ export default function TradingPlatform() {
     return price.toFixed(6);
   };
 
+  const getOrderTargetPreview = (target: string, type: "buy" | "sell") => {
+    if (!selectedAsset || !target) return null;
+    const targetPrice = Number(target);
+    const entryPrice = prices[selectedAsset.symbol]?.[type === "buy" ? "ask" : "bid"];
+    const lots = Number(lotSize);
+    if (!Number.isFinite(targetPrice) || !entryPrice || !Number.isFinite(lots) || lots <= 0) return null;
+    return calculatePositionPL(selectedAsset, type, entryPrice, targetPrice, lots).profitLoss;
+  };
+
+  const targetPreview = (target: string, kind: "loss" | "profit") => {
+    const buy = getOrderTargetPreview(target, "buy");
+    const sell = getOrderTargetPreview(target, "sell");
+    if (buy === null && sell === null) return null;
+    return `${kind === "loss" ? "Risk" : "Reward"} - Buy: ${buy === null ? "-" : `$${Math.abs(buy).toFixed(2)}`} | Sell: ${sell === null ? "-" : `$${Math.abs(sell).toFixed(2)}`}`;
+  };
+
   const isBlocked =
     !!account && (account.status === "failed" || account.drawdown_violated === true);
   const isFundedAccount =
-    account?.status === "funded" || account?.challenge_type === "instant";
+    account?.status === "funded" || (account?.challenge_type === "instant" && account?.status === "active");
 
   // ---- Margin (account balance is the total available margin) ----
   const usedMargin = positions
@@ -245,120 +287,23 @@ export default function TradingPlatform() {
       : 0;
   const insufficientMargin = pendingMargin > freeMargin;
 
-  // ---- Rule breach enforcement: close everything and lock the account ----
   const breachHandledRef = useRef(false);
-
-  const enforceRuleBreach = useCallback(
-    async (violation: "max_drawdown" | "daily_drawdown" | "max_risk") => {
-      if (!account || breachHandledRef.current) return;
-      breachHandledRef.current = true;
-
-      const openNow = positions.filter((p) => p.status === "open");
-      const nowIso = new Date().toISOString();
-      let realized = 0;
-      const closedIds: Record<string, { exit: number; pl: number }> = {};
-
-      for (const position of openNow) {
-        const asset = position.assets;
-        const priceFeed = asset ? prices[asset.symbol] : null;
-        if (!asset || !priceFeed) continue;
-
-        const exitPrice =
-          position.position_type === "buy" ? priceFeed.bid : priceFeed.ask;
-        const { profitLoss } = calculatePositionPL(
-          asset,
-          position.position_type as "buy" | "sell",
-          position.entry_price,
-          exitPrice,
-          position.lot_size
-        );
-        realized += profitLoss;
-        closedIds[position.id] = { exit: exitPrice, pl: profitLoss };
-
-        await supabase
-          .from("positions")
-          .update({
-            status: "closed",
-            exit_price: exitPrice,
-            profit_loss: profitLoss,
-            closed_at: nowIso,
-          })
-          .eq("id", position.id);
-
-        await supabase.from("trade_history").insert({
-          account_id: account.id,
-          position_id: position.id,
-          action: "close",
-          symbol: asset.symbol,
-          lot_size: position.lot_size,
-          price: exitPrice,
-          profit_loss: profitLoss,
-          notes: `Force-closed: ${violation.replace("_", " ")} breach`,
-        });
-      }
-
-      const newBalance = (account.current_balance || account.account_size) + realized;
-      const newPL = (account.profit_loss || 0) + realized;
-      const effectiveHWM = account.high_water_mark || account.account_size;
-      const effectiveDailyStart = account.daily_start_balance || account.account_size;
-      const maxDrawdownPercent =
-        effectiveHWM > 0 ? ((effectiveHWM - newBalance) / effectiveHWM) * 100 : 0;
-      const dailyDrawdownPercent =
-        effectiveDailyStart > 0
-          ? ((effectiveDailyStart - newBalance) / effectiveDailyStart) * 100
-          : 0;
-
-      const accountUpdate = {
-        current_balance: newBalance,
-        profit_loss: newPL,
-        max_drawdown_percent: maxDrawdownPercent,
-        daily_drawdown_percent: dailyDrawdownPercent,
-        drawdown_violated: true,
-        violation_type: violation,
-        phase_passed: false,
-        status: "failed" as const,
-      };
-
-      await supabase.from("accounts").update(accountUpdate).eq("id", account.id);
-
-      await supabase.from("trade_history").insert({
-        account_id: account.id,
-        action: "account_failed",
-        symbol: "-",
-        lot_size: 0,
-        price: 0,
-        notes: `Account failed - ${violation === "max_risk" ? `max risk ${FUNDED_MAX_RISK_PERCENT}%` : violation.replace("_", " ")} limit breached. All positions force-closed.`,
+  const enforceRuleBreach = useCallback(async () => {
+    if (!account || breachHandledRef.current) return;
+    breachHandledRef.current = true;
+    await Promise.all(positions.filter((position) => position.status === "open" && position.assets).map((position) => {
+      const quote = prices[position.assets!.symbol];
+      if (!quote) return Promise.resolve();
+      return supabase.rpc("close_trade", {
+        p_account_id: account.id,
+        p_position_id: position.id,
+        p_exit_price: position.position_type === "buy" ? quote.bid : quote.ask,
+        p_action: "close",
+        p_request_id: crypto.randomUUID(),
       });
-
-      setAccount((prev) => (prev ? { ...prev, ...accountUpdate } : null));
-      setPositions((prev) =>
-        prev.map((p) =>
-          closedIds[p.id]
-            ? {
-                ...p,
-                status: "closed",
-                exit_price: closedIds[p.id].exit,
-                profit_loss: closedIds[p.id].pl,
-                closed_at: nowIso,
-              }
-            : p
-        )
-      );
-
-      toast({
-        title: "Account Failed - Trading Disabled",
-        description:
-          violation === "max_drawdown"
-            ? "Max drawdown limit breached. All open trades were closed and this account is now blocked from trading."
-            : violation === "daily_drawdown"
-              ? "Daily drawdown limit breached. All open trades were closed and this account is now blocked from trading."
-              : `Trade limit reached. Max risk ${FUNDED_MAX_RISK_PERCENT}% breached, all open trades were closed, and this account is now blocked from trading.`,
-        variant: "destructive",
-        duration: 12000,
-      });
-    },
-    [account, positions, prices, toast]
-  );
+    }));
+    toast({ title: "Account risk limit reached", description: "Open positions were sent for server-side closure.", variant: "destructive" });
+  }, [account, positions, prices, toast]);
 
   // Live (equity-based) breach monitoring — reacts instantly to price moves
   useEffect(() => {
@@ -366,16 +311,23 @@ export default function TradingPlatform() {
 
     const unrealized = calculateUnrealizedPL();
     const liveEquity = (account.current_balance || account.account_size) + unrealized;
-    const hwm = account.high_water_mark || account.account_size;
-    const dailyStart = account.daily_start_balance || account.account_size;
+    const storedHWM = account.high_water_mark ?? account.account_size;
+    const hwm = Math.max(storedHWM, liveEquity);
+    const dailyStart = account.daily_start_balance ?? account.account_size;
     const rules = getPhaseRules(account.challenge_type, account.current_phase || 1);
+
+    if (liveEquity > storedHWM) {
+      setAccount((previous) => previous && previous.id === account.id
+        ? { ...previous, high_water_mark: liveEquity }
+        : previous);
+    }
 
     const maxDD = hwm > 0 ? ((hwm - liveEquity) / hwm) * 100 : 0;
     const dailyDD = dailyStart > 0 ? ((dailyStart - liveEquity) / dailyStart) * 100 : 0;
     if (maxDD >= rules.maxDrawdown) {
-      enforceRuleBreach("max_drawdown");
+      void enforceRuleBreach();
     } else if (dailyDD >= rules.dailyDrawdown) {
-      enforceRuleBreach("daily_drawdown");
+      void enforceRuleBreach();
     }
   }, [account, isBlocked, calculateUnrealizedPL, enforceRuleBreach]);
 
@@ -405,6 +357,26 @@ export default function TradingPlatform() {
       return;
     }
 
+    const stopLossPrice = stopLoss.trim() ? Number(stopLoss) : null;
+    const takeProfitPrice = takeProfit.trim() ? Number(takeProfit) : null;
+    const invalidLevels =
+      (stopLossPrice !== null && !Number.isFinite(stopLossPrice)) ||
+      (takeProfitPrice !== null && !Number.isFinite(takeProfitPrice)) ||
+      (stopLossPrice !== null && (type === "buy" ? stopLossPrice >= entryPrice : stopLossPrice <= entryPrice)) ||
+      (takeProfitPrice !== null && (type === "buy" ? takeProfitPrice <= entryPrice : takeProfitPrice >= entryPrice));
+
+    if (invalidLevels) {
+      toast({
+        title: "Invalid stop loss or take profit",
+        description: type === "buy"
+          ? "For a buy, stop loss must be below entry and take profit above entry."
+          : "For a sell, stop loss must be above entry and take profit below entry.",
+        variant: "destructive",
+      });
+      setIsPlacingOrder(false);
+      return;
+    }
+
     // Balance is the total margin available — reject orders it can't cover
     const requiredMargin = getRequiredMargin(selectedAsset, lots, entryPrice);
     if (requiredMargin > freeMargin) {
@@ -417,21 +389,16 @@ export default function TradingPlatform() {
       return;
     }
 
-    // Insert position
-    const { data: positionData, error: positionError } = await supabase
-      .from("positions")
-      .insert({
-        account_id: account.id,
-        asset_id: selectedAsset.id,
-        position_type: type,
-        lot_size: lots,
-        entry_price: entryPrice,
-        stop_loss: stopLoss ? parseFloat(stopLoss) : null,
-        take_profit: takeProfit ? parseFloat(takeProfit) : null,
-        status: "open",
-      })
-      .select("*, assets(*)")
-      .single();
+    const { data: positionData, error: positionError } = await supabase.rpc("place_trade", {
+      p_account_id: account.id,
+      p_asset_id: selectedAsset.id,
+      p_position_type: type,
+      p_lot_size: lots,
+      p_entry_price: entryPrice,
+      p_stop_loss: stopLossPrice,
+      p_take_profit: takeProfitPrice,
+      p_request_id: crypto.randomUUID(),
+    });
 
     if (positionError) {
       toast({
@@ -443,17 +410,8 @@ export default function TradingPlatform() {
       return;
     }
 
-    // Log trade
-    await supabase.from("trade_history").insert({
-      account_id: account.id,
-      position_id: positionData.id,
-      action: "open",
-      symbol: selectedAsset.symbol,
-      lot_size: lots,
-      price: entryPrice,
-    });
-
-    setPositions((prev) => [positionData, ...prev]);
+    const positionWithAsset = { ...(positionData as unknown as Position), assets: selectedAsset };
+    setPositions((prev) => [positionWithAsset, ...prev]);
     toast({
       title: `${type.toUpperCase()} Order Placed`,
       description: `${selectedAsset.symbol} @ ${formatPrice(selectedAsset.symbol, entryPrice)}`,
@@ -464,131 +422,38 @@ export default function TradingPlatform() {
     setIsPlacingOrder(false);
   };
 
-  const handleClosePosition = async (position: Position) => {
+  const handleClosePosition = useCallback(async (
+    position: Position,
+    triggeredPrice?: number,
+    triggerAction: "close" | "sl_hit" | "tp_hit" = "close"
+  ) => {
     if (!account || !position.assets) return;
     if (isBlocked) return;
 
     const currentPrice = prices[position.assets.symbol];
     if (!currentPrice) return;
 
-    const exitPrice =
-      position.position_type === "buy" ? currentPrice.bid : currentPrice.ask;
-
-    // Use proper pip calculation
-    const { profitLoss, pips } = calculatePositionPL(
-      position.assets,
-      position.position_type as 'buy' | 'sell',
-      position.entry_price,
-      exitPrice,
-      position.lot_size
+    const exitPrice = triggeredPrice ?? (
+      position.position_type === "buy" ? currentPrice.bid : currentPrice.ask
     );
 
-    console.log(`Closing position: ${position.assets.symbol}, Entry: ${position.entry_price}, Exit: ${exitPrice}, Lots: ${position.lot_size}, Pips: ${pips}, P/L: $${profitLoss}`);
-
-    // Update position
-    const { error: updateError } = await supabase
-      .from("positions")
-      .update({
-        status: "closed",
-        exit_price: exitPrice,
-        profit_loss: profitLoss,
-        closed_at: new Date().toISOString(),
-      })
-      .eq("id", position.id);
-
-    if (updateError) {
-      toast({ title: "Failed to close position", variant: "destructive" });
-      return;
-    }
-
-    // Update account balance and calculate drawdowns
-    const newBalance =
-      (account.current_balance || account.account_size) + profitLoss;
-    const newPL = (account.profit_loss || 0) + profitLoss;
-    
-    // Calculate drawdowns
-    const effectiveHWM = account.high_water_mark || account.account_size;
-    const effectiveDailyStart = account.daily_start_balance || account.account_size;
-    
-    // Update high water mark if new balance is higher
-    const newHWM = Math.max(effectiveHWM, newBalance);
-    
-    // Calculate drawdown percentages
-    const maxDrawdownPercent = newHWM > 0 ? ((newHWM - newBalance) / newHWM) * 100 : 0;
-    const dailyDrawdownPercent = effectiveDailyStart > 0 
-      ? ((effectiveDailyStart - newBalance) / effectiveDailyStart) * 100 
-      : 0;
-
-    // Check for drawdown violations using the rules of the CURRENT phase
-    const activePhase = account.current_phase || 1;
-    const phaseRules = getPhaseRules(account.challenge_type, activePhase);
-
-    let violationType: string | null = null;
-    if (maxDrawdownPercent >= phaseRules.maxDrawdown) {
-      violationType = 'max_drawdown';
-    } else if (dailyDrawdownPercent >= phaseRules.dailyDrawdown) {
-      violationType = 'daily_drawdown';
-    }
-
-    // Check for phase completion (profit target of the current phase met)
-    const currentPhase = activePhase;
-    const profitTarget = phaseRules.profitTarget;
-    const profitPercent = ((newBalance - account.account_size) / account.account_size) * 100;
-    
-    // Check if profit target is met and no drawdown violation - mark phase as passed
-    let phasePassed = account.phase_passed || false;
-    if (profitTarget > 0 && profitPercent >= profitTarget && !violationType && !phasePassed) {
-      phasePassed = true;
-      
-      toast({
-        title: `🎯 Phase ${currentPhase} Target Achieved!`,
-        description: `Close all positions and click "Proceed" to advance to the next phase.`,
-        duration: 8000,
-      });
-    }
-
-    // Prepare update object
-    const accountUpdate = {
-      current_balance: newBalance,
-      profit_loss: newPL,
-      high_water_mark: newHWM,
-      max_drawdown_percent: maxDrawdownPercent,
-      daily_drawdown_percent: dailyDrawdownPercent,
-      drawdown_violated: violationType !== null,
-      violation_type: violationType,
-      phase_passed: phasePassed,
-    };
-
-    await supabase
-      .from("accounts")
-      .update(accountUpdate)
-      .eq("id", account.id);
-
-    // Log trade
-    await supabase.from("trade_history").insert({
-      account_id: account.id,
-      position_id: position.id,
-      action: "close",
-      symbol: position.assets.symbol,
-      lot_size: position.lot_size,
-      price: exitPrice,
-      profit_loss: profitLoss,
-      notes: phasePassed && !account.phase_passed ? `Phase ${currentPhase} target achieved` : null,
+    const { data: closeData, error: closeError } = await supabase.rpc("close_trade", {
+      p_account_id: account.id,
+      p_position_id: position.id,
+      p_exit_price: exitPrice,
+      p_action: triggerAction,
+      p_request_id: crypto.randomUUID(),
     });
 
-    setAccount((prev) =>
-      prev ? { 
-        ...prev, 
-        current_balance: newBalance,
-        profit_loss: newPL,
-        high_water_mark: newHWM,
-        max_drawdown_percent: maxDrawdownPercent,
-        daily_drawdown_percent: dailyDrawdownPercent,
-        drawdown_violated: violationType !== null,
-        violation_type: violationType,
-        phase_passed: phasePassed,
-      } : null
-    );
+    if (closeError || !closeData) {
+      toast({ title: "Failed to close position", description: closeError?.message, variant: "destructive" });
+      return;
+    }
+    const closeResult = closeData as unknown as { position: Position & { profit_loss: number }; account: Account };
+    const profitLoss = Number(closeResult.position.profit_loss);
+    const updatedAccount = closeResult.account;
+    const closedAt = new Date().toISOString();
+    setAccount(updatedAccount as unknown as Account);
     setPositions((prev) =>
       prev.map((p) =>
         p.id === position.id
@@ -597,29 +462,93 @@ export default function TradingPlatform() {
               status: "closed",
               exit_price: exitPrice,
               profit_loss: profitLoss,
-              closed_at: new Date().toISOString(),
+              closed_at: closedAt,
             }
           : p
       )
     );
 
-    if (!phasePassed || account.phase_passed) {
+    if (updatedAccount.status !== "failed") {
       toast({
-        title: "Position Closed",
+        title: triggerAction === "sl_hit" ? "Stop Loss Hit" : triggerAction === "tp_hit" ? "Take Profit Hit" : "Position Closed",
         description: `${position.assets.symbol} P/L: ${profitLoss >= 0 ? "+" : ""}$${profitLoss.toFixed(2)}`,
         variant: profitLoss >= 0 ? "default" : "destructive",
       });
     }
+
+  }, [account, isBlocked, prices, toast]);
+
+  const handleModifyPosition = async (position: Position) => {
+    if (isBlocked) return;
+
+    const stopLoss = positionDraft.stopLoss.trim() ? Number(positionDraft.stopLoss) : null;
+    const takeProfit = positionDraft.takeProfit.trim() ? Number(positionDraft.takeProfit) : null;
+    if ((stopLoss !== null && !Number.isFinite(stopLoss)) || (takeProfit !== null && !Number.isFinite(takeProfit))) {
+      toast({ title: "Invalid stop loss or take profit", variant: "destructive" });
+      return;
+    }
+
+    const { error } = await supabase.rpc("modify_trade", {
+      p_account_id: account?.id,
+      p_position_id: position.id,
+      p_stop_loss: stopLoss,
+      p_take_profit: takeProfit,
+      p_request_id: crypto.randomUUID(),
+    });
+
+    if (error) {
+      toast({ title: "Failed to modify position", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setPositions((prev) => prev.map((item) => item.id === position.id
+      ? { ...item, stop_loss: stopLoss, take_profit: takeProfit }
+      : item));
+    setEditingPositionId(null);
+    toast({ title: "Position modified" });
   };
+
+  // Execute attached exits from the same live bid/ask prices used for unrealized P/L.
+  const handledTriggersRef = useRef(new Set<string>());
+  useEffect(() => {
+    if (isBlocked) return;
+
+    for (const position of positions) {
+      if (position.status !== "open" || !position.assets) continue;
+      const quote = prices[position.assets.symbol];
+      if (!quote) continue;
+
+      const marketPrice = position.position_type === "buy" ? quote.bid : quote.ask;
+      const stopTriggered = position.stop_loss !== null && (
+        position.position_type === "buy" ? marketPrice <= position.stop_loss : marketPrice >= position.stop_loss
+      );
+      const targetTriggered = position.take_profit !== null && (
+        position.position_type === "buy" ? marketPrice >= position.take_profit : marketPrice <= position.take_profit
+      );
+      const trigger = stopTriggered
+        ? { key: `${position.id}:sl`, price: position.stop_loss as number, action: "sl_hit" as const }
+        : targetTriggered
+          ? { key: `${position.id}:tp`, price: position.take_profit as number, action: "tp_hit" as const }
+          : null;
+
+      if (trigger && !handledTriggersRef.current.has(trigger.key)) {
+        handledTriggersRef.current.add(trigger.key);
+        void handleClosePosition(position, trigger.price, trigger.action);
+      }
+    }
+  }, [handleClosePosition, isBlocked, positions, prices]);
 
   // Handle proceeding to next phase
   const handleProceedToNextPhase = async () => {
     if (!account) return;
 
+    if (isInstantAccount(account.challenge_type)) return;
+    if (!account.phase_passed) return;
+
     setIsProceeding(true);
 
     const totalPhases = getTotalPhases(account.challenge_type);
-    const currentPhase = account.current_phase || 1;
+    const currentPhase = account.current_phase || getInitialPhase(account.challenge_type) || 1;
 
     // A phase must be finished flat — no open positions may carry into the next phase
     const stillOpen = positions.filter((p) => p.status === "open");
@@ -659,26 +588,10 @@ export default function TradingPlatform() {
       });
     }
 
-    // Update account with reset values
-    const accountUpdate = {
-      current_phase: newPhase,
-      status: newStatus,
-      current_balance: resetBalance,
-      profit_loss: 0,
-      high_water_mark: resetBalance,
-      daily_start_balance: resetBalance,
-      daily_start_date: new Date().toISOString().split('T')[0],
-      max_drawdown_percent: 0,
-      daily_drawdown_percent: 0,
-      phase_passed: false, // Reset for next phase
-      drawdown_violated: false,
-      violation_type: null,
-    };
-
-    const { error } = await supabase
-      .from("accounts")
-      .update(accountUpdate)
-      .eq("id", account.id);
+    const { data: updatedAccount, error } = await supabase.rpc("advance_trade_phase", {
+      p_account_id: account.id,
+      p_request_id: crypto.randomUUID(),
+    });
 
     if (error) {
       toast({
@@ -690,24 +603,7 @@ export default function TradingPlatform() {
       return;
     }
 
-    // Log phase advancement
-    await supabase.from("trade_history").insert({
-      account_id: account.id,
-      action: "phase_advance",
-      symbol: "-",
-      lot_size: 0,
-      price: 0,
-      notes: newStatus === 'funded' 
-        ? 'Challenge completed - Account funded!' 
-        : `Advanced from Phase ${currentPhase} to Phase ${newPhase}`,
-    });
-
-    setAccount((prev) =>
-      prev ? { 
-        ...prev, 
-        ...accountUpdate,
-      } : null
-    );
+    setAccount(updatedAccount as unknown as Account);
 
     // Start the new phase with a clean slate in the positions panel
     setPositions([]);
@@ -721,6 +617,9 @@ export default function TradingPlatform() {
     : 0;
   const openPositions = positions.filter((p) => p.status === "open");
   const closedPositions = positions.filter((p) => p.status === "closed");
+  const fundedClosedPositions = closedPositions.filter(
+    (position) => !fundedStartAt || (position.closed_at && position.closed_at > fundedStartAt)
+  );
 
   if (isLoading) {
     return (
@@ -741,7 +640,7 @@ export default function TradingPlatform() {
                 variant="ghost"
                 size="sm"
                 className="px-2 sm:px-3"
-                onClick={() => navigate("/dashboard")}
+                onClick={() => window.location.assign("/dashboard")}
                 aria-label="Return to dashboard"
               >
                 <ArrowLeft className="w-4 h-4 sm:mr-2" />
@@ -981,6 +880,9 @@ export default function TradingPlatform() {
                         disabled={isBlocked}
                         className="mt-1 h-9"
                       />
+                      <p className="mt-1 text-[10px] text-red-500/80">
+                        {targetPreview(stopLoss, "loss") || "Enter a price to see potential loss"}
+                      </p>
                     </div>
                     <div>
                       <Label htmlFor="take-profit" className="text-xs">
@@ -996,6 +898,9 @@ export default function TradingPlatform() {
                         disabled={isBlocked}
                         className="mt-1 h-9"
                       />
+                      <p className="mt-1 text-[10px] text-green-500/80">
+                        {targetPreview(takeProfit, "profit") || "Enter a price to see potential profit"}
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1089,7 +994,7 @@ export default function TradingPlatform() {
                   currentPhase={account.current_phase}
                 />
                 {isFundedAccount && (
-                  <ConsistencyScoreTracker positions={closedPositions} />
+                  <ConsistencyScoreTracker positions={fundedClosedPositions} />
                 )}
               </div>
             )}
@@ -1112,7 +1017,7 @@ export default function TradingPlatform() {
                 <CardContent className="p-0">
                   <TabsContent value="positions" className="m-0">
                     <div className="overflow-x-auto">
-                      <table className="w-full text-xs sm:text-sm min-w-[600px]">
+                      <table className="w-full text-xs sm:text-sm min-w-[760px]">
                         <thead className="bg-muted/50">
                           <tr>
                             <th className="px-2 sm:px-4 py-2 text-left font-medium">
@@ -1131,6 +1036,9 @@ export default function TradingPlatform() {
                               Current
                             </th>
                             <th className="px-2 sm:px-4 py-2 text-right font-medium">
+                              SL / TP
+                            </th>
+                            <th className="px-2 sm:px-4 py-2 text-right font-medium">
                               P/L
                             </th>
                             <th className="px-2 sm:px-4 py-2 text-right font-medium">
@@ -1142,7 +1050,7 @@ export default function TradingPlatform() {
                           {openPositions.length === 0 ? (
                             <tr>
                               <td
-                                colSpan={7}
+                                colSpan={8}
                                 className="px-4 py-6 text-center text-muted-foreground"
                               >
                                 No open positions
@@ -1158,10 +1066,10 @@ export default function TradingPlatform() {
                                 ? position.position_type === "buy"
                                   ? currentPrice.bid
                                   : currentPrice.ask
-                                : 0;
+                                : null;
                               
                               // Use proper pip calculation
-                              const plCalc = asset && priceNow
+                              const plCalc = asset && priceNow !== null
                                 ? calculatePositionPL(
                                     asset,
                                     position.position_type as 'buy' | 'sell',
@@ -1169,8 +1077,9 @@ export default function TradingPlatform() {
                                     priceNow,
                                     position.lot_size
                                   )
-                                : { pips: 0, profitLoss: 0 };
+                                : { pips: 0, profitLoss: null };
                               const { pips, profitLoss: pl } = plCalc;
+                              const isEditing = editingPositionId === position.id;
 
                               return (
                                 <tr
@@ -1178,7 +1087,13 @@ export default function TradingPlatform() {
                                   className="border-b border-border/50 hover:bg-muted/30"
                                 >
                                   <td className="px-2 sm:px-4 py-2 font-medium">
-                                    {asset?.symbol}
+                                    <div>{asset?.symbol}</div>
+                                    <div className={cn(
+                                      "mt-0.5 text-[10px] font-medium sm:hidden",
+                                      pl === null ? "text-muted-foreground" : pl >= 0 ? "text-green-500" : "text-red-500"
+                                    )}>
+                                      Floating P/L: {pl === null ? "Waiting for price" : `${pl >= 0 ? "+" : ""}$${pl.toFixed(2)}`}
+                                    </div>
                                   </td>
                                   <td className="px-2 sm:px-4 py-2">
                                     <Badge
@@ -1201,34 +1116,85 @@ export default function TradingPlatform() {
                                       : position.entry_price}
                                   </td>
                                   <td className="px-2 sm:px-4 py-2 text-right">
-                                    {asset
+                                    {asset && priceNow !== null
                                       ? formatPrice(asset.symbol, priceNow)
-                                      : priceNow}
+                                      : "-"}
+                                  </td>
+                                  <td className="px-2 sm:px-4 py-2 text-right">
+                                    {isEditing ? (
+                                      <div className="flex min-w-[150px] flex-col gap-1">
+                                        <Input
+                                          type="number"
+                                          step="0.0001"
+                                          placeholder="Stop loss"
+                                          value={positionDraft.stopLoss}
+                                          onChange={(event) => setPositionDraft((draft) => ({ ...draft, stopLoss: event.target.value }))}
+                                          className="h-7 text-right text-[11px]"
+                                          disabled={isBlocked}
+                                        />
+                                        <Input
+                                          type="number"
+                                          step="0.0001"
+                                          placeholder="Take profit"
+                                          value={positionDraft.takeProfit}
+                                          onChange={(event) => setPositionDraft((draft) => ({ ...draft, takeProfit: event.target.value }))}
+                                          className="h-7 text-right text-[11px]"
+                                          disabled={isBlocked}
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="flex flex-col text-[10px]">
+                                        <span className="text-red-500">SL: {position.stop_loss === null ? "-" : formatPrice(asset?.symbol || "", position.stop_loss)}</span>
+                                        <span className="text-green-500">TP: {position.take_profit === null ? "-" : formatPrice(asset?.symbol || "", position.take_profit)}</span>
+                                      </div>
+                                    )}
                                   </td>
                                   <td
                                     className={cn(
                                       "px-2 sm:px-4 py-2 text-right font-medium",
-                                      pl >= 0 ? "text-green-500" : "text-red-500"
+                                      pl === null ? "text-muted-foreground" : pl >= 0 ? "text-green-500" : "text-red-500"
                                     )}
                                   >
                                     <div className="flex flex-col items-end">
-                                      <span>{pl >= 0 ? "+" : ""}${pl.toFixed(2)}</span>
+                                      <span>{pl === null ? "Waiting for price" : `${pl >= 0 ? "+" : ""}$${pl.toFixed(2)}`}</span>
                                       <span className="text-[10px] text-muted-foreground">
-                                        {asset ? formatPips(pips, asset) : `${pips.toFixed(1)} pips`}
+                                        {pl === null ? "Live quote unavailable" : asset ? formatPips(pips, asset) : `${pips.toFixed(1)} pips`}
                                       </span>
                                     </div>
                                   </td>
                                   <td className="px-2 sm:px-4 py-2 text-right">
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleClosePosition(position)}
-                                      disabled={isBlocked}
-                                      className="h-7 px-2 text-xs"
-                                    >
-                                      <X className="w-3 h-3 mr-1" />
-                                      Close
-                                    </Button>
+                                    <div className="flex justify-end gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => {
+                                          if (isEditing) {
+                                            void handleModifyPosition(position);
+                                          } else {
+                                            setEditingPositionId(position.id);
+                                            setPositionDraft({
+                                              stopLoss: position.stop_loss?.toString() || "",
+                                              takeProfit: position.take_profit?.toString() || "",
+                                            });
+                                          }
+                                        }}
+                                        disabled={isBlocked}
+                                        className="h-7 px-2 text-xs"
+                                      >
+                                        {isEditing ? <Save className="w-3 h-3 mr-1" /> : <Pencil className="w-3 h-3 mr-1" />}
+                                        {isEditing ? "Save" : "Edit"}
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleClosePosition(position)}
+                                        disabled={isBlocked || isEditing}
+                                        className="h-7 px-2 text-xs"
+                                      >
+                                        <X className="w-3 h-3 mr-1" />
+                                        Close
+                                      </Button>
+                                    </div>
                                   </td>
                                 </tr>
                               );

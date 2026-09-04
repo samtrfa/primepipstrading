@@ -30,7 +30,7 @@ function TradingViewChartComponent({ symbol, positions = [], onFullscreenChange,
     // Clear previous widget
     containerRef.current.innerHTML = "";
 
-    // Crypto-only platform: charts come from Bitstamp, matching the live price feed
+    // Charts come from Bitstamp, matching the live price feed.
     const tvSymbol = `BITSTAMP:${symbol}`;
 
     const script = document.createElement("script");

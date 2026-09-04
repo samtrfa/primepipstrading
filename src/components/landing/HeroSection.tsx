@@ -60,7 +60,7 @@ export function HeroSection() {
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
               <TrendingUp className="w-5 h-5 text-primary" />
-              <span className="text-sm">$10M+ Paid Out</span>
+              <span className="text-sm">$25K+ Paid Out</span>
             </div>
           </div>
         </div>
@@ -68,10 +68,10 @@ export function HeroSection() {
         {/* Stats Bar */}
         <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto animate-fade-in-up delay-500">
           {[
-            { value: "15,000+", label: "Funded Traders" },
-            { value: "$10M+", label: "Total Payouts" },
+            { value: "50+", label: "Funded Traders" },
+            { value: "$25K+", label: "Total Payouts" },
             { value: "90%", label: "Profit Split" },
-            { value: "150+", label: "Countries" },
+            { value: "15+", label: "Countries" },
           ].map((stat, index) => (
             <div
               key={index}

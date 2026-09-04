@@ -2,28 +2,45 @@ import { useState, useEffect, ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import {
+  Activity,
   TrendingUp,
   BarChart3,
   LineChart,
   Wallet,
   Users,
   CreditCard,
-  Bell,
   Settings,
   LogOut,
   Menu,
   Plus,
+  ShieldCheck,
+  FileCheck2,
+  Headphones,
+  Award,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import NotificationsCenter from "@/components/layout/NotificationsCenter";
 
-const sidebarLinks = [
+const sidebarLinks: Array<{ href: string; icon: typeof Activity; label: string; nested?: boolean }> = [
   { href: "/dashboard", icon: BarChart3, label: "Overview" },
   { href: "/dashboard/analytics", icon: LineChart, label: "Analytics", nested: true },
   { href: "/dashboard/payouts", icon: Wallet, label: "Payouts" },
-  { href: "/dashboard/referrals", icon: Users, label: "Referrals" },
+  { href: "/dashboard/certificates", icon: Award, label: "Certificates" },
+  { href: "/dashboard/kyc", icon: FileCheck2, label: "Identity verification" },
   { href: "/dashboard/billing", icon: CreditCard, label: "Billing" },
+];
+
+const adminLinks = [
+  { href: "/admin", icon: ShieldCheck, label: "Platform overview" },
+  { href: "/admin/kyc", icon: FileCheck2, label: "KYC review" },
+  { href: "/admin/traders", icon: Users, label: "Trader activity" },
+  { href: "/admin/exposure", icon: LineChart, label: "Trading exposure" },
+  { href: "/admin/referrals", icon: Users, label: "Referral analytics" },
+  { href: "/admin/affiliates", icon: Users, label: "Affiliate partners" },
+  { href: "/admin/activity", icon: Activity, label: "Trade activity" },
+  { href: "/admin/payments", icon: CreditCard, label: "Payment reconciliation" },
 ];
 
 interface DashboardLayoutProps {
@@ -36,9 +53,15 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userName, setUserName] = useState("");
   const [activeAccounts, setActiveAccounts] = useState(0);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isAffiliate, setIsAffiliate] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+
+  const handleNavigation = (href: string) => {
+    setSidebarOpen(false);
+  };
 
   useEffect(() => {
     const checkAuthAndFetchData = async () => {
@@ -49,16 +72,27 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
         return;
       }
 
-      setUserName(session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || "Trader");
+      const adminSession = session.user.app_metadata?.role === "admin";
+      const affiliateSession = session.user.app_metadata?.affiliate === true;
+      setUserName(session.user.user_metadata?.full_name || session.user.email?.split("@")[0] || (adminSession ? "Admin" : "Trader"));
+      setIsAdmin(adminSession);
+      setIsAffiliate(affiliateSession);
 
-      const { data } = await supabase
-        .from("accounts")
-        .select("*")
-        .order("created_at", { ascending: false });
+      if (adminSession && !location.pathname.startsWith("/admin")) {
+        navigate("/admin", { replace: true });
+        return;
+      }
 
-      if (data) {
-        const active = data.filter(a => a.status === "active" || a.status === "funded").length;
-        setActiveAccounts(active);
+      if (!adminSession) {
+        const { data } = await supabase
+          .from("accounts")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (data) {
+          const active = data.filter(a => a.status === "active" || a.status === "funded").length;
+          setActiveAccounts(active);
+        }
       }
     };
 
@@ -71,7 +105,7 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
     });
 
     return () => subscription.unsubscribe();
-  }, [navigate]);
+  }, [location.pathname, navigate]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -107,14 +141,15 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
 
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-2">
-            {sidebarLinks.map((link) => (
+            {(isAdmin ? adminLinks : [...sidebarLinks, { href: "/dashboard/affiliate", icon: Users, label: isAffiliate ? "Affiliate" : "Become an Affiliate" }]).map((link) => (
               <Link
                 key={link.href}
                 to={link.href}
-                onClick={() => setSidebarOpen(false)}
+                onClick={() => handleNavigation(link.href)}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg py-3 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground",
+                  "flex items-center gap-3 rounded-lg py-3 transition-all duration-300",
                   link.nested ? "ml-4 px-4 text-sm" : "px-4",
+                  link.label === "Become an Affiliate" ? "bg-gradient-to-r from-primary via-gold-light to-primary text-primary-foreground font-bold hover:shadow-gold hover:scale-[1.02] active:scale-[0.98]" : "text-muted-foreground hover:bg-secondary hover:text-foreground",
                   location.pathname === link.href && "bg-primary/10 text-primary"
                 )}
               >
@@ -135,12 +170,12 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
               <div>
                 <div className="font-medium text-foreground">{userName}</div>
                 <div className="text-sm text-muted-foreground">
-                  {activeAccounts > 0 ? "Funded Trader" : "Trader"}
+                  {isAdmin ? "Platform Admin" : activeAccounts > 0 ? "Funded Trader" : "Trader"}
                 </div>
               </div>
             </div>
             <div className="flex gap-2">
-              <Button
+              {!isAdmin && <Button
                 variant="ghost"
                 size="sm"
                 className="flex-1"
@@ -148,6 +183,9 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
                 aria-label="Open settings"
               >
                 <Settings className="w-4 h-4" />
+              </Button>}
+              <Button variant="ghost" size="sm" className="flex-1" onClick={() => window.dispatchEvent(new Event("primepips:open-support"))} aria-label="Open PrimePips support">
+                <Headphones className="w-4 h-4" />
               </Button>
               <Button variant="ghost" size="sm" className="flex-1" onClick={handleLogout}>
                 <LogOut className="w-4 h-4" />
@@ -185,13 +223,11 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2 sm:gap-4">
-              <Button variant="ghost" size="icon">
-                <Bell className="w-5 h-5" />
-              </Button>
-              <Button variant="gold" size="sm" onClick={() => navigate("/purchase")}>
+              {!isAdmin && <NotificationsCenter />}
+              {!isAdmin && <Button variant="gold" size="sm" onClick={() => navigate("/purchase")}>
                 <Plus className="h-4 w-4 sm:mr-2" />
                 <span className="hidden sm:inline">New Account</span>
-              </Button>
+              </Button>}
             </div>
           </div>
         </header>

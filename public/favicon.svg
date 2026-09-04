@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="PrimePips Funding">
+  <rect width="64" height="64" rx="12" fill="#0b0b0b"/>
+  <path d="M16 45V19h15c8 0 13 4 13 11s-5 11-13 11h-7v4H16Zm8-11h6c4 0 6-1 6-4s-2-4-6-4h-6v8Z" fill="#d4af37"/>
+  <path d="m43 16 5 5-15 15-7-7 4-4 3 3 11-12Z" fill="#fff"/>
+</svg>

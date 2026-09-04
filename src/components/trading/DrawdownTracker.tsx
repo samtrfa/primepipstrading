@@ -34,17 +34,17 @@ export function DrawdownTracker({
   const equity = currentBalance + unrealizedPL;
   
   // High water mark for max drawdown calculation (highest equity ever reached)
-  const effectiveHWM = highWaterMark || accountSize;
+  const effectiveHWM = highWaterMark ?? accountSize;
   
   // Daily start balance for daily drawdown calculation
-  const effectiveDailyStart = dailyStartBalance || accountSize;
+  const effectiveDailyStart = dailyStartBalance ?? accountSize;
 
   // Calculate max drawdown from high water mark
-  const maxDrawdownAmount = effectiveHWM - equity;
+  const maxDrawdownAmount = Math.max(0, effectiveHWM - equity);
   const maxDrawdownPercent = effectiveHWM > 0 ? (maxDrawdownAmount / effectiveHWM) * 100 : 0;
 
   // Calculate daily drawdown from daily start balance
-  const dailyDrawdownAmount = effectiveDailyStart - equity;
+  const dailyDrawdownAmount = Math.max(0, effectiveDailyStart - equity);
   const dailyDrawdownPercent = effectiveDailyStart > 0 ? (dailyDrawdownAmount / effectiveDailyStart) * 100 : 0;
 
   // Progress towards limits (for progress bars)
@@ -135,7 +135,7 @@ export function DrawdownTracker({
               </div>
               <div className="flex items-center gap-2">
                 <span className={cn("text-sm font-bold", levelColors[dailyLevel])}>
-                  {dailyDrawdownPercent > 0 ? dailyDrawdownPercent.toFixed(2) : "0.00"}%
+                  {dailyDrawdownPercent.toFixed(2)}%
                 </span>
                 <Badge 
                   variant="outline" 
@@ -160,7 +160,7 @@ export function DrawdownTracker({
             </div>
             <div className="flex justify-between text-[10px] text-muted-foreground">
               <span>Start: ${effectiveDailyStart.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-              <span>Loss: ${Math.max(0, dailyDrawdownAmount).toFixed(2)}</span>
+                  <span>Loss: ${dailyDrawdownAmount.toFixed(2)}</span>
             </div>
           </div>
 
@@ -173,7 +173,7 @@ export function DrawdownTracker({
               </div>
               <div className="flex items-center gap-2">
                 <span className={cn("text-sm font-bold", levelColors[maxLevel])}>
-                  {maxDrawdownPercent > 0 ? maxDrawdownPercent.toFixed(2) : "0.00"}%
+                  {maxDrawdownPercent.toFixed(2)}%
                 </span>
                 <Badge 
                   variant="outline" 
@@ -198,7 +198,7 @@ export function DrawdownTracker({
             </div>
             <div className="flex justify-between text-[10px] text-muted-foreground">
               <span>HWM: ${effectiveHWM.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-              <span>Loss: ${Math.max(0, maxDrawdownAmount).toFixed(2)}</span>
+                  <span>Loss: ${maxDrawdownAmount.toFixed(2)}</span>
             </div>
           </div>
 

@@ -13,8 +13,8 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 // The wallet address to check for incoming payments
 const WALLET_ADDRESS = "0x66aeC4645A4d204653d2e62FCA26968Ce1B5db1a";
 
-// Payment expiry time in minutes (accounts pending for longer will be marked failed)
-const PAYMENT_EXPIRY_MINUTES = 10;
+// Payment expiry time in minutes for unvalidated purchases.
+const PAYMENT_EXPIRY_MINUTES = 30;
 
 // Token contract addresses on BSC
 const TOKEN_CONTRACTS: Record<string, { address: string; decimals: number }> = {
@@ -36,6 +36,7 @@ interface Transaction {
 interface Account {
   id: string;
   user_id: string;
+  challenge_type: string;
   price: number;
   status: string;
   created_at: string;
@@ -169,14 +170,15 @@ serve(async (req) => {
     for (const account of pendingAccounts as Account[]) {
       const accountAgeMinutes = (Date.now() - new Date(account.created_at).getTime()) / (1000 * 60);
       
-      // Check if payment has expired
-      if (accountAgeMinutes > PAYMENT_EXPIRY_MINUTES) {
+      // Remove purchases that were not validated within the checkout window.
+      if (accountAgeMinutes >= PAYMENT_EXPIRY_MINUTES) {
         console.log(`Account ${account.id} payment expired after ${accountAgeMinutes.toFixed(0)} minutes`);
         
         const { error: expireError } = await supabase
           .from("accounts")
           .update({ status: "failed" })
-          .eq("id", account.id);
+          .eq("id", account.id)
+          .eq("status", "pending_payment");
         
         if (expireError) {
           console.error(`Failed to expire account ${account.id}:`, expireError);
@@ -207,7 +209,8 @@ serve(async (req) => {
         const { error: activateError } = await supabase
           .from("accounts")
           .update({ 
-            status: "active",
+            status: account.challenge_type === "instant" ? "funded" : "active",
+            current_phase: account.challenge_type === "instant" ? null : 1,
             payment_tx_hash: matchingTx.hash 
           })
           .eq("id", account.id);

@@ -1,4 +1,4 @@
-project_id = "aqgflcdsaprvwlkeqdrq"
+project_id = "wnbynyymqhkestmkcenj"
 
 [functions.verify-bsc-payment]
 verify_jwt = false
@@ -7,4 +7,16 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.korapay-webhook]
+verify_jwt = false
+
+[functions.admin-snapshot]
+verify_jwt = false
+
+[functions.admin-affiliate]
+verify_jwt = false
+
+[functions.admin-account]
+verify_jwt = false
+
+[functions.send-transactional-email]
 verify_jwt = false

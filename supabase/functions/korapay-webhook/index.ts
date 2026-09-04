@@ -47,54 +47,23 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const { data: account, error: fetchError } = await admin
-      .from("accounts")
-      .select("id, status, price, payment_amount_local")
-      .eq("payment_reference", reference)
-      .maybeSingle();
-
-    if (fetchError) {
-      console.error("Failed to look up account:", fetchError.message);
-      return json({ error: "Lookup failed" }, 500);
-    }
-    if (!account) {
-      console.warn(`No account found for reference ${reference}`);
-      return json({ received: true });
-    }
-
-    if (event === "charge.success") {
-      const paidAmount = Number(payload?.data?.amount ?? 0) / 100;
-      const expectedAmount = Number(account.payment_amount_local ?? 0);
-      // Allow a small rounding tolerance on the collected amount
-      if (expectedAmount > 0 && paidAmount < expectedAmount * 0.98) {
-        console.error(`Underpayment for ${reference}: paid ${paidAmount}, expected ${expectedAmount}`);
-        await admin.from("accounts").update({ status: "failed" }).eq("id", account.id);
-        return json({ received: true, activated: false });
-      }
-
-      if (account.status === "pending_payment") {
-        const { error: updateError } = await admin
-          .from("accounts")
-          .update({ status: "active" })
-          .eq("id", account.id);
-        if (updateError) {
-          console.error("Failed to activate account:", updateError.message);
-          return json({ error: "Activation failed" }, 500);
-        }
-        console.log(`Activated account ${account.id} via Paystack reference ${reference}`);
-      }
-      return json({ received: true, activated: true });
-    }
-
-    if (event === "charge.failed") {
-      if (account.status === "pending_payment") {
-        await admin.from("accounts").update({ status: "failed" }).eq("id", account.id);
-      }
-      return json({ received: true, activated: false });
-    }
-
-    console.log(`Ignoring Paystack event: ${event}`);
-    return json({ received: true });
+    const eventStatus = event === "charge.success" ? "success" : event === "charge.failed" ? "failed" : event === "refund.processed" ? "refunded" : "pending";
+    const providerUserId = typeof payload?.data?.metadata?.user_id === "string" && /^[0-9a-f-]{36}$/i.test(payload.data.metadata.user_id)
+      ? payload.data.metadata.user_id
+      : null;
+    const { data: result, error: reconcileError } = await admin.rpc("reconcile_paystack_payment", {
+      p_reference: reference,
+      p_status: eventStatus,
+      p_amount: event === "refund.processed" ? null : Number(payload?.data?.amount ?? 0) / 100,
+      p_currency: payload?.data?.currency || null,
+      p_provider_user_id: providerUserId,
+      p_metadata: { event, status: payload?.data?.status, gateway_response: payload?.data?.gateway_response, customer_code: payload?.data?.customer?.customer_code },
+      p_source: "webhook",
+      p_refund_amount: event === "refund.processed" ? Number(payload?.data?.amount ?? 0) / 100 : null,
+      p_refund_reference: event === "refund.processed" ? String(payload?.data?.id || "") : null,
+    });
+    if (reconcileError) throw reconcileError;
+    return json({ received: true, ...result });
   } catch (error) {
     console.error("paystack-webhook error:", error);
     return json({ error: error instanceof Error ? error.message : "Unexpected error" }, 500);

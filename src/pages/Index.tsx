@@ -7,8 +7,17 @@ import { HowItWorksSection } from "@/components/landing/HowItWorksSection";
 import { TestimonialsSection } from "@/components/landing/TestimonialsSection";
 import { FAQSection } from "@/components/landing/FAQSection";
 import { CTASection } from "@/components/landing/CTASection";
+import { useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 
 const Index = () => {
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const referralCode = searchParams.get("ref");
+    if (referralCode) localStorage.setItem("primepips_referral_code", referralCode);
+  }, [searchParams]);
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />

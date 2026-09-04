@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { FUNDED_CONSISTENCY_PERCENT } from "@/lib/challengeRules";
+import { calculateConsistencyScore, FUNDED_CONSISTENCY_PERCENT } from "@/lib/challengeRules";
 
 interface ClosedPosition {
   profit_loss: number;
@@ -15,17 +15,15 @@ interface ConsistencyScoreTrackerProps {
 }
 
 export function ConsistencyScoreTracker({ positions }: ConsistencyScoreTrackerProps) {
+  const totalProfit = positions.reduce((total, position) => total + position.profit_loss, 0);
   const dailyProfits = positions.reduce<Record<string, number>>((totals, position) => {
     if (!position.closed_at || position.profit_loss <= 0) return totals;
-
     const day = position.closed_at.split("T")[0];
     totals[day] = (totals[day] || 0) + position.profit_loss;
     return totals;
   }, {});
-
-  const totalProfit = positions.reduce((total, position) => total + position.profit_loss, 0);
   const bestDayProfit = Math.max(0, ...Object.values(dailyProfits));
-  const score = totalProfit > 0 ? (bestDayProfit / totalProfit) * 100 : 0;
+  const score = calculateConsistencyScore(positions);
   const progress = Math.min((score / FUNDED_CONSISTENCY_PERCENT) * 100, 100);
   const isWithinLimit = totalProfit > 0 && score <= FUNDED_CONSISTENCY_PERCENT;
 

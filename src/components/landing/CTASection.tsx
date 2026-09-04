@@ -29,7 +29,7 @@ export function CTASection() {
 
           {/* Subheadline */}
           <p className="text-base sm:text-lg md:text-xl text-muted-foreground mb-8 sm:mb-10 max-w-2xl mx-auto">
-            Join 15,000+ traders who are already funded. Start your evaluation today 
+            Join 50+ traders who are already funded. Start your evaluation today 
             and trade with up to $200,000 of our capital.
           </p>
 
