@@ -18,7 +18,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { FUNDED_CONSISTENCY_PERCENT, isInstantAccount } from "@/lib/challengeRules";
+import { FUNDED_CONSISTENCY_PERCENT, hasConsistencyRule, isInstantAccount } from "@/lib/challengeRules";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 
@@ -223,7 +223,8 @@ export default function Dashboard() {
                           </div>
                         )}
                       </div>
-                      {account.status === "funded" && (
+                      {(account.status === "funded" || account.status === "active") &&
+                        hasConsistencyRule(account.challenge_type) && (
                         <div className="sm:text-right">
                           <div className="flex items-center gap-1 text-sm text-muted-foreground mb-1 sm:justify-end">
                             <ShieldCheck className="w-4 h-4 text-primary" />

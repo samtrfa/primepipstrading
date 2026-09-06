@@ -33,6 +33,9 @@ import {
 import NotFound from "./pages/NotFound";
 import Admin from "./pages/Admin";
 import AuthCallback from "./pages/AuthCallback";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import VerifyEmail from "./pages/VerifyEmail";
 import { Navigate } from "react-router-dom";
 import { FaqSupportBot } from "./components/support/FaqSupportBot";
 
@@ -50,6 +53,9 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/dashboard/analytics" element={<Analytics />} />
             <Route path="/dashboard/payouts" element={<Payouts />} />
@@ -66,7 +72,9 @@ const App = () => (
             <Route path="/admin/referrals" element={<Admin section="referrals" />} />
             <Route path="/admin/affiliates" element={<Admin section="affiliates" />} />
             <Route path="/admin/activity" element={<Admin section="activity" />} />
+            <Route path="/admin/payouts" element={<Admin section="payouts" />} />
             <Route path="/admin/payments" element={<Admin section="payments" />} />
+            <Route path="/admin/coupons" element={<Admin section="coupons" />} />
             <Route path="/purchase" element={<PurchaseAccount />} />
             <Route path="/trade/:accountId" element={<TradingPlatform />} />
             <Route path="/pricing" element={<Pricing />} />

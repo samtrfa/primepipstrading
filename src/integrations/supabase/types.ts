@@ -136,6 +136,7 @@ export type Database = {
       }
       affiliate_applications: {
         Row: {
+          desired_code: string
           id: string
           user_id: string
           phone: string
@@ -157,6 +158,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          desired_code: string
           id?: string
           user_id: string
           phone: string
@@ -178,6 +180,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          desired_code?: string
           id?: string
           user_id?: string
           phone?: string
@@ -197,6 +200,33 @@ export type Database = {
           reviewed_by?: string | null
           created_at?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      affiliate_codes: {
+        Row: {
+          id: string
+          user_id: string
+          code: string
+          discount_percent: number
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          code: string
+          discount_percent?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          code?: string
+          discount_percent?: number
+          is_active?: boolean
+          created_at?: string
         }
         Relationships: []
       }
@@ -317,6 +347,39 @@ export type Database = {
           updated_at?: string
           user_id?: string
           violation_type?: string | null
+        }
+        Relationships: []
+      }
+      certificates: {
+        Row: {
+          id: string
+          user_id: string
+          account_id: string
+          challenge_type: Database["public"]["Enums"]["challenge_type"]
+          account_size: number
+          phase_number: number
+          phase_name: string
+          awarded_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          account_id: string
+          challenge_type: Database["public"]["Enums"]["challenge_type"]
+          account_size: number
+          phase_number: number
+          phase_name: string
+          awarded_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          account_id?: string
+          challenge_type?: Database["public"]["Enums"]["challenge_type"]
+          account_size?: number
+          phase_number?: number
+          phase_name?: string
+          awarded_at?: string
         }
         Relationships: []
       }
@@ -690,6 +753,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      submit_affiliate_application: {
+        Args: {
+          p_phone: string
+          p_country: string
+          p_website: string
+          p_instagram: string
+          p_tiktok: string
+          p_youtube: string
+          p_x_handle: string
+          p_audience_size: string
+          p_promotion_channels: string
+          p_affiliate_experience: string
+          p_promotion_plan: string
+          p_desired_code: string
+        }
+        Returns: Database["public"]["Tables"]["affiliate_applications"]["Row"]
+      }
       reconcile_paystack_payment: {
         Args: {
           p_reference: string
@@ -728,6 +808,16 @@ export type Database = {
         Returns: Json
       }
       modify_trade: {
+        Args: {
+          p_account_id: string
+          p_position_id: string
+          p_stop_loss: number | null
+          p_take_profit: number | null
+          p_request_id?: string
+        }
+        Returns: Json
+      }
+      modify_trades_by_asset: {
         Args: {
           p_account_id: string
           p_position_id: string

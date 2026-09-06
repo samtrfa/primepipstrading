@@ -15,17 +15,17 @@ interface ConsistencyScoreTrackerProps {
 }
 
 export function ConsistencyScoreTracker({ positions }: ConsistencyScoreTrackerProps) {
-  const totalProfit = positions.reduce((total, position) => total + position.profit_loss, 0);
+  const totalProfit = positions.reduce((total, position) => total + Math.max(0, position.profit_loss), 0);
   const dailyProfits = positions.reduce<Record<string, number>>((totals, position) => {
     if (!position.closed_at || position.profit_loss <= 0) return totals;
-    const day = position.closed_at.split("T")[0];
+    const day = new Date(position.closed_at).toISOString().slice(0, 10);
     totals[day] = (totals[day] || 0) + position.profit_loss;
     return totals;
   }, {});
   const bestDayProfit = Math.max(0, ...Object.values(dailyProfits));
   const score = calculateConsistencyScore(positions);
   const progress = Math.min((score / FUNDED_CONSISTENCY_PERCENT) * 100, 100);
-  const isWithinLimit = totalProfit > 0 && score <= FUNDED_CONSISTENCY_PERCENT;
+  const isWithinLimit = totalProfit > 0 && score < FUNDED_CONSISTENCY_PERCENT;
 
   return (
     <Card className={cn(isWithinLimit && "border-green-500/30 bg-green-500/5")}>
@@ -65,7 +65,7 @@ export function ConsistencyScoreTracker({ positions }: ConsistencyScoreTrackerPr
           <span>Total profit: ${Math.max(0, totalProfit).toFixed(2)}</span>
         </div>
         <p className="text-[10px] text-muted-foreground">
-          Your best trading day must not exceed {FUNDED_CONSISTENCY_PERCENT}% of total funded-account profit.
+          Your best trading day must stay below {FUNDED_CONSISTENCY_PERCENT}% of total account profit.
         </p>
       </CardContent>
     </Card>

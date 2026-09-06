@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,6 +18,7 @@ import {
   getInitialPhase,
   getPhaseRules,
   getTotalPhases,
+  hasConsistencyRule,
   isInstantAccount,
 } from "@/lib/challengeRules";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
@@ -117,6 +119,7 @@ export default function TradingPlatform() {
   const [isProceeding, setIsProceeding] = useState(false);
   const [editingPositionId, setEditingPositionId] = useState<string | null>(null);
   const [positionDraft, setPositionDraft] = useState({ stopLoss: "", takeProfit: "" });
+  const [applyPositionToAsset, setApplyPositionToAsset] = useState(false);
   const [view, setView] = useState<"trade" | "chart">("trade");
 
   // Get symbols for live prices synced with TradingView
@@ -428,7 +431,6 @@ export default function TradingPlatform() {
     triggerAction: "close" | "sl_hit" | "tp_hit" = "close"
   ) => {
     if (!account || !position.assets) return;
-    if (isBlocked) return;
 
     const currentPrice = prices[position.assets.symbol];
     if (!currentPrice) return;
@@ -446,6 +448,14 @@ export default function TradingPlatform() {
     });
 
     if (closeError || !closeData) {
+      console.error("close_trade failed", {
+        message: closeError?.message,
+        details: closeError?.details,
+        hint: closeError?.hint,
+        positionId: position.id,
+        accountId: account.id,
+        exitPrice,
+      });
       toast({ title: "Failed to close position", description: closeError?.message, variant: "destructive" });
       return;
     }
@@ -476,7 +486,7 @@ export default function TradingPlatform() {
       });
     }
 
-  }, [account, isBlocked, prices, toast]);
+  }, [account, prices, toast]);
 
   const handleModifyPosition = async (position: Position) => {
     if (isBlocked) return;
@@ -488,31 +498,40 @@ export default function TradingPlatform() {
       return;
     }
 
-    const { error } = await supabase.rpc("modify_trade", {
-      p_account_id: account?.id,
-      p_position_id: position.id,
-      p_stop_loss: stopLoss,
-      p_take_profit: takeProfit,
-      p_request_id: crypto.randomUUID(),
-    });
+    const { error } = applyPositionToAsset
+      ? await supabase.rpc("modify_trades_by_asset", {
+          p_account_id: account?.id,
+          p_position_id: position.id,
+          p_stop_loss: stopLoss,
+          p_take_profit: takeProfit,
+          p_request_id: crypto.randomUUID(),
+        })
+      : await supabase.rpc("modify_trade", {
+          p_account_id: account?.id,
+          p_position_id: position.id,
+          p_stop_loss: stopLoss,
+          p_take_profit: takeProfit,
+          p_request_id: crypto.randomUUID(),
+        });
 
     if (error) {
       toast({ title: "Failed to modify position", description: error.message, variant: "destructive" });
       return;
     }
 
-    setPositions((prev) => prev.map((item) => item.id === position.id
-      ? { ...item, stop_loss: stopLoss, take_profit: takeProfit }
-      : item));
+    setPositions((prev) => prev.map((item) => (
+      (applyPositionToAsset && item.status === "open" && item.asset_id === position.asset_id) || item.id === position.id
+        ? { ...item, stop_loss: stopLoss, take_profit: takeProfit }
+        : item
+    )));
     setEditingPositionId(null);
-    toast({ title: "Position modified" });
+    setApplyPositionToAsset(false);
+    toast({ title: applyPositionToAsset ? "Positions modified" : "Position modified" });
   };
 
   // Execute attached exits from the same live bid/ask prices used for unrealized P/L.
   const handledTriggersRef = useRef(new Set<string>());
   useEffect(() => {
-    if (isBlocked) return;
-
     for (const position of positions) {
       if (position.status !== "open" || !position.assets) continue;
       const quote = prices[position.assets.symbol];
@@ -526,9 +545,9 @@ export default function TradingPlatform() {
         position.position_type === "buy" ? marketPrice >= position.take_profit : marketPrice <= position.take_profit
       );
       const trigger = stopTriggered
-        ? { key: `${position.id}:sl`, price: position.stop_loss as number, action: "sl_hit" as const }
+        ? { key: `${position.id}:sl`, price: marketPrice, action: "sl_hit" as const }
         : targetTriggered
-          ? { key: `${position.id}:tp`, price: position.take_profit as number, action: "tp_hit" as const }
+          ? { key: `${position.id}:tp`, price: marketPrice, action: "tp_hit" as const }
           : null;
 
       if (trigger && !handledTriggersRef.current.has(trigger.key)) {
@@ -536,7 +555,7 @@ export default function TradingPlatform() {
         void handleClosePosition(position, trigger.price, trigger.action);
       }
     }
-  }, [handleClosePosition, isBlocked, positions, prices]);
+  }, [handleClosePosition, positions, prices]);
 
   // Handle proceeding to next phase
   const handleProceedToNextPhase = async () => {
@@ -993,7 +1012,7 @@ export default function TradingPlatform() {
                   challengeType={account.challenge_type}
                   currentPhase={account.current_phase}
                 />
-                {isFundedAccount && (
+                {account && (hasConsistencyRule(account.challenge_type) || isFundedAccount) && (
                   <ConsistencyScoreTracker positions={fundedClosedPositions} />
                 )}
               </div>
@@ -1141,6 +1160,15 @@ export default function TradingPlatform() {
                                           className="h-7 text-right text-[11px]"
                                           disabled={isBlocked}
                                         />
+                                        <label className="flex items-center justify-end gap-2 text-[10px] text-muted-foreground">
+                                          <Checkbox
+                                            checked={applyPositionToAsset}
+                                            onCheckedChange={(checked) => setApplyPositionToAsset(checked === true)}
+                                            disabled={isBlocked}
+                                            aria-label={`Apply stop loss and take profit to all open ${asset?.symbol || "asset"} positions`}
+                                          />
+                                          Apply to all {asset?.symbol || "asset"} positions
+                                        </label>
                                       </div>
                                     ) : (
                                       <div className="flex flex-col text-[10px]">
@@ -1176,6 +1204,7 @@ export default function TradingPlatform() {
                                               stopLoss: position.stop_loss?.toString() || "",
                                               takeProfit: position.take_profit?.toString() || "",
                                             });
+                                            setApplyPositionToAsset(false);
                                           }
                                         }}
                                         disabled={isBlocked}
@@ -1188,7 +1217,7 @@ export default function TradingPlatform() {
                                         variant="ghost"
                                         size="sm"
                                         onClick={() => handleClosePosition(position)}
-                                        disabled={isBlocked || isEditing}
+                                        disabled={isEditing}
                                         className="h-7 px-2 text-xs"
                                       >
                                         <X className="w-3 h-3 mr-1" />

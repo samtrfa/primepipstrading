@@ -9,6 +9,7 @@ import {
   Wallet,
   Users,
   CreditCard,
+  Tag,
   Settings,
   LogOut,
   Menu,
@@ -40,7 +41,9 @@ const adminLinks = [
   { href: "/admin/referrals", icon: Users, label: "Referral analytics" },
   { href: "/admin/affiliates", icon: Users, label: "Affiliate partners" },
   { href: "/admin/activity", icon: Activity, label: "Trade activity" },
+  { href: "/admin/payouts", icon: Wallet, label: "Payout requests" },
   { href: "/admin/payments", icon: CreditCard, label: "Payment reconciliation" },
+  { href: "/admin/coupons", icon: Tag, label: "Purchase coupons" },
 ];
 
 interface DashboardLayoutProps {
@@ -121,11 +124,11 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 bg-card border-r border-border transform transition-transform lg:translate-x-0 lg:static",
+          "fixed inset-y-0 left-0 z-50 w-[min(18rem,calc(100vw-1rem))] overflow-y-auto bg-card border-r border-border transform transition-transform lg:translate-x-0 lg:static",
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
-        <div className="flex flex-col h-full">
+        <div className="flex min-h-full flex-col">
           {/* Logo */}
           <div className="p-6 border-b border-border">
             <Link to="/" className="flex items-center gap-2">

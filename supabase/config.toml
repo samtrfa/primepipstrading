@@ -1,5 +1,17 @@
 project_id = "wnbynyymqhkestmkcenj"
 
+[auth.email.template.magic_link]
+subject = "Your secure PrimePips sign-in link"
+content_path = "./supabase/templates/magic_link.html"
+
+[auth.email.template.confirmation]
+subject = "Confirm your PrimePips email"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Reset your PrimePips password"
+content_path = "./supabase/templates/recovery.html"
+
 [functions.verify-bsc-payment]
 verify_jwt = false
 
@@ -16,6 +28,12 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.admin-account]
+verify_jwt = false
+
+[functions.admin-coupon]
+verify_jwt = false
+
+[functions.admin-payout]
 verify_jwt = false
 
 [functions.send-transactional-email]

@@ -46,6 +46,7 @@ interface AffiliateApplication {
   status: "pending" | "approved" | "rejected";
   rejection_reason: string | null;
   created_at: string;
+  desired_code: string;
 }
 
 interface PaymentMethod {
@@ -56,6 +57,7 @@ interface PaymentMethod {
 }
 
 const emptyApplication = {
+  desired_code: "",
   phone: "",
   country: "",
   website: "",
@@ -68,6 +70,15 @@ const emptyApplication = {
   affiliate_experience: "",
   promotion_plan: "",
 };
+
+const countryOptions = [
+  "Argentina", "Australia", "Austria", "Belgium", "Brazil", "Canada", "China", "Colombia", "Denmark", "Egypt",
+  "Finland", "France", "Germany", "Ghana", "Greece", "India", "Indonesia", "Ireland", "Israel", "Italy",
+  "Japan", "Kenya", "Malaysia", "Mexico", "Morocco", "Netherlands", "New Zealand", "Nigeria", "Norway", "Pakistan",
+  "Philippines", "Poland", "Portugal", "Qatar", "Romania", "Russia", "Saudi Arabia", "Singapore", "South Africa", "South Korea",
+  "Spain", "Sweden", "Switzerland", "Tanzania", "Thailand", "Turkey", "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom",
+  "United States", "Vietnam", "Zambia", "Zimbabwe",
+];
 
 export default function ReferralsPage() {
   const navigate = useNavigate();
@@ -104,7 +115,7 @@ export default function ReferralsPage() {
       if (!affiliate) {
         const { data, error } = await supabase
           .from("affiliate_applications")
-          .select("id, status, rejection_reason, created_at")
+          .select("id, status, rejection_reason, created_at, desired_code")
           .maybeSingle();
         if (error) toast({ title: "Unable to load affiliate application", description: "Please refresh the page and try again.", variant: "destructive" });
         else setApplication(data as AffiliateApplication | null);
@@ -113,7 +124,8 @@ export default function ReferralsPage() {
       }
 
       // The first eight characters are the public referral code stored at signup.
-      setReferralLink(`${window.location.origin}/?ref=${session.user.id.slice(0, 8)}`);
+      const { data: codeData } = await supabase.from("affiliate_codes").select("code").maybeSingle();
+      setReferralLink(`${window.location.origin}/?ref=${codeData?.code || session.user.id.slice(0, 8)}`);
 
       const { data, error } = await supabase
         .from("referrals")
@@ -160,14 +172,29 @@ export default function ReferralsPage() {
     event.preventDefault();
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { navigate("/login"); return; }
+    const requestedCode = applicationForm.desired_code.trim().toUpperCase();
+    if (!/^[A-Z0-9]{6,8}$/.test(requestedCode)) {
+      toast({ title: "Choose a valid affiliate code", description: "Use 6-8 letters or numbers.", variant: "destructive" });
+      return;
+    }
     setSubmittingApplication(true);
-    const { data, error } = await supabase
-      .from("affiliate_applications")
-      .insert({ user_id: session.user.id, ...applicationForm })
-      .select("id, status, rejection_reason, created_at")
-      .single();
+    const { data, error } = await supabase.rpc("submit_affiliate_application", {
+      p_phone: applicationForm.phone,
+      p_country: applicationForm.country,
+      p_website: applicationForm.website,
+      p_instagram: applicationForm.instagram,
+      p_tiktok: applicationForm.tiktok,
+      p_youtube: applicationForm.youtube,
+      p_x_handle: applicationForm.x_handle,
+      p_audience_size: applicationForm.audience_size,
+      p_promotion_channels: applicationForm.promotion_channels,
+      p_affiliate_experience: applicationForm.affiliate_experience,
+      p_promotion_plan: applicationForm.promotion_plan,
+      p_desired_code: requestedCode,
+    });
     if (error) {
-      toast({ title: "Application could not be submitted", description: error.code === "23505" ? "You already have an affiliate application under review." : "Please check your details and try again.", variant: "destructive" });
+      const codeInUse = error.message.toLowerCase().includes("already in use");
+      toast({ title: codeInUse ? "Choose a different code" : "Application could not be submitted", description: codeInUse ? "That code is already in use." : error.message, variant: "destructive" });
     } else {
       setApplication(data as AffiliateApplication);
       toast({ title: "Application submitted", description: "Our team will review your affiliate application." });
@@ -236,7 +263,8 @@ export default function ReferralsPage() {
             <Card variant="gold"><CardHeader><CardTitle>Partner with PrimePips</CardTitle></CardHeader><CardContent><p className="text-sm text-muted-foreground">Tell us about your audience and how you plan to introduce traders to PrimePips. Applications are reviewed by our team before affiliate access is granted.</p></CardContent></Card>
           )}
           {!application && <Card><CardHeader><CardTitle>Affiliate application</CardTitle></CardHeader><CardContent><form onSubmit={submitApplication} className="space-y-6">
-            <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="phone">Phone number</Label><Input id="phone" required value={applicationForm.phone} onChange={(event) => updateApplicationField("phone", event.target.value)} /></div><div className="space-y-2"><Label htmlFor="country">Country</Label><Input id="country" required value={applicationForm.country} onChange={(event) => updateApplicationField("country", event.target.value)} /></div></div>
+            <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="phone">Phone number</Label><Input id="phone" required value={applicationForm.phone} onChange={(event) => updateApplicationField("phone", event.target.value)} /></div><div className="space-y-2"><Label htmlFor="country">Country</Label><Select required value={applicationForm.country} onValueChange={(value) => updateApplicationField("country", value)}><SelectTrigger id="country"><SelectValue placeholder="Select your country" /></SelectTrigger><SelectContent>{countryOptions.map((country) => <SelectItem key={country} value={country}>{country}</SelectItem>)}</SelectContent></Select></div></div>
+            <div className="space-y-2"><Label htmlFor="desired_code">Personal affiliate code</Label><Input id="desired_code" required minLength={6} maxLength={8} pattern="[A-Za-z0-9]{6,8}" placeholder="6-8 letters or numbers" value={applicationForm.desired_code} onChange={(event) => updateApplicationField("desired_code", event.target.value.toUpperCase())} /><p className="text-xs text-muted-foreground">Use 6-8 letters or numbers. The code must be available and will be assigned after approval.</p></div>
             <div className="grid gap-4 sm:grid-cols-2"><div className="space-y-2"><Label htmlFor="website">Website or profile link</Label><Input id="website" type="url" placeholder="https://" value={applicationForm.website} onChange={(event) => updateApplicationField("website", event.target.value)} /></div><div className="space-y-2"><Label htmlFor="audience_size">Audience size</Label><Input id="audience_size" required placeholder="e.g. 10,000 followers" value={applicationForm.audience_size} onChange={(event) => updateApplicationField("audience_size", event.target.value)} /></div></div>
             <div className="space-y-3"><Label>Social media handles</Label><div className="grid gap-4 sm:grid-cols-2"><Input aria-label="Instagram handle" placeholder="Instagram" value={applicationForm.instagram} onChange={(event) => updateApplicationField("instagram", event.target.value)} /><Input aria-label="TikTok handle" placeholder="TikTok" value={applicationForm.tiktok} onChange={(event) => updateApplicationField("tiktok", event.target.value)} /><Input aria-label="YouTube channel" placeholder="YouTube" value={applicationForm.youtube} onChange={(event) => updateApplicationField("youtube", event.target.value)} /><Input aria-label="X handle" placeholder="X / Twitter" value={applicationForm.x_handle} onChange={(event) => updateApplicationField("x_handle", event.target.value)} /></div></div>
             <div className="space-y-2"><Label htmlFor="promotion_channels">Where will you promote PrimePips?</Label><Input id="promotion_channels" required placeholder="e.g. YouTube, Telegram, email newsletter" value={applicationForm.promotion_channels} onChange={(event) => updateApplicationField("promotion_channels", event.target.value)} /></div>

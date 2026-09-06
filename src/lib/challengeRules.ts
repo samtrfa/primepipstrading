@@ -21,12 +21,12 @@ export function calculateConsistencyScore(positions: ConsistencyPosition[]): num
   const dailyProfits = positions.reduce<Record<string, number>>((totals, position) => {
     if (!position.closed_at || position.profit_loss <= 0) return totals;
 
-    const day = position.closed_at.split("T")[0];
+    const day = new Date(position.closed_at).toISOString().slice(0, 10);
     totals[day] = (totals[day] || 0) + position.profit_loss;
     return totals;
   }, {});
 
-  const totalProfit = positions.reduce((total, position) => total + position.profit_loss, 0);
+  const totalProfit = positions.reduce((total, position) => total + Math.max(0, position.profit_loss), 0);
   const bestDayProfit = Math.max(0, ...Object.values(dailyProfits));
   return totalProfit > 0 ? (bestDayProfit / totalProfit) * 100 : 0;
 }
@@ -63,6 +63,10 @@ export function getInitialPhase(challengeType: string): number | null {
 
 export function isInstantAccount(challengeType: string): boolean {
   return challengeType === "instant";
+}
+
+export function hasConsistencyRule(challengeType: string): boolean {
+  return challengeType === "one_step" || challengeType === "instant";
 }
 
 /** Rules for the given (1-based) phase, clamped to valid range. */
