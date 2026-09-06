@@ -29,12 +29,14 @@ const ruleExplanations: Record<string, string> = {
   dailyDrawdown: "Maximum loss allowed in a single trading day.",
   maxDrawdown: "Maximum total loss from your highest balance. Trailing follows your peak.",
   profitTarget: "Profit percentage needed to pass the evaluation phase.",
-  consistencyRule: "No consistency rule means you can trade freely.",
+  consistencyRule: "Funded accounts require the best trading day to stay within 30% of total profit.",
   minTradingDays: "Minimum days you must actively trade.",
   weekendTrading: "Whether you can hold trades over the weekend.",
   maxTradingDays: "Maximum time to complete the challenge.",
   payouts: "How often you can withdraw profits.",
 };
+
+const noConsistencyRuleExplanation = "No consistency rule means you can trade freely.";
 
 const challengeRules: Record<ChallengeType, ChallengeRules> = {
   three_step: {
@@ -68,7 +70,7 @@ const challengeRules: Record<ChallengeType, ChallengeRules> = {
     dailyDrawdown: "6%",
     maxDrawdown: "10%",
     profitTarget: "N/A",
-    consistencyRule: "Best trading day must not exceed 30% of total profit.",
+    consistencyRule: "30%",
     minTradingDays: "None",
     weekendTrading: "Allowed",
     maxTradingDays: "Unlimited",
@@ -93,6 +95,11 @@ const accountSizes = [
 ];
 
 function RuleItem({ label, value, ruleKey }: { label: string; value: string; ruleKey: string }) {
+  const explanation =
+    ruleKey === "consistencyRule" && value === "None"
+      ? noConsistencyRuleExplanation
+      : ruleExplanations[ruleKey];
+
   return (
     <div className="flex justify-between items-center py-1">
       <div className="flex items-center gap-1">
@@ -104,7 +111,7 @@ function RuleItem({ label, value, ruleKey }: { label: string; value: string; rul
             </button>
           </PopoverTrigger>
           <PopoverContent side="top" className="max-w-xs text-xs">
-            {ruleExplanations[ruleKey]}
+            {explanation}
           </PopoverContent>
         </Popover>
       </div>

@@ -2,24 +2,13 @@ import { useEffect, useRef, memo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Maximize2, Minimize2 } from "lucide-react";
 
-interface Position {
-  id: string;
-  position_type: string;
-  entry_price: number;
-  stop_loss: number | null;
-  take_profit: number | null;
-  lot_size: number;
-  profit_loss?: number;
-}
-
 interface TradingViewChartProps {
   symbol: string;
-  positions?: Position[];
   onFullscreenChange?: (isFullscreen: boolean) => void;
   onPriceUpdate?: (price: number) => void;
 }
 
-function TradingViewChartComponent({ symbol, positions = [], onFullscreenChange, onPriceUpdate }: TradingViewChartProps) {
+function TradingViewChartComponent({ symbol, onFullscreenChange, onPriceUpdate }: TradingViewChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -93,8 +82,6 @@ function TradingViewChartComponent({ symbol, positions = [], onFullscreenChange,
     }
   };
 
-  const openPositions = positions.filter(p => p.position_type);
-
   return (
     <div 
       ref={wrapperRef} 
@@ -113,40 +100,6 @@ function TradingViewChartComponent({ symbol, positions = [], onFullscreenChange,
           <Maximize2 className="h-4 w-4" />
         )}
       </Button>
-
-      {/* Positions Overlay - Shows active positions on chart */}
-      {openPositions.length > 0 && (
-        <div className="absolute top-2 left-2 z-20 space-y-1 max-w-[200px]">
-          {openPositions.slice(0, 5).map((position) => (
-            <div
-              key={position.id}
-              className={`text-[10px] px-2 py-1 rounded backdrop-blur-sm border ${
-                position.position_type === "buy"
-                  ? "bg-green-500/20 border-green-500/40 text-green-400"
-                  : "bg-red-500/20 border-red-500/40 text-red-400"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold uppercase">
-                  {position.position_type} {position.lot_size}
-                </span>
-                <span>@ {position.entry_price.toFixed(5)}</span>
-              </div>
-              {(position.stop_loss || position.take_profit) && (
-                <div className="flex gap-2 text-[9px] opacity-80">
-                  {position.stop_loss && <span>SL: {position.stop_loss}</span>}
-                  {position.take_profit && <span>TP: {position.take_profit}</span>}
-                </div>
-              )}
-            </div>
-          ))}
-          {openPositions.length > 5 && (
-            <div className="text-[10px] px-2 py-1 text-muted-foreground">
-              +{openPositions.length - 5} more positions
-            </div>
-          )}
-        </div>
-      )}
 
       {/* TradingView Chart Container */}
       <div className="tradingview-widget-container h-full w-full" ref={containerRef}>
