@@ -25,7 +25,15 @@ Deno.serve(async (req) => {
       .select("id")
       .or(`identity_document_path.eq.${body.path},address_document_path.eq.${body.path}`)
       .maybeSingle();
-    if (applicationError || !application) return json({ error: "Document is not registered to a KYC application" }, 404);
+    if (applicationError) return json({ error: "Document is not registered to a KYC application" }, 404);
+    if (!application) {
+      const { data: archivedDocument, error: archiveError } = await admin
+        .from("kyc_documents")
+        .select("id")
+        .eq("storage_path", body.path)
+        .maybeSingle();
+      if (archiveError || !archivedDocument) return json({ error: "Document is not registered to a KYC application" }, 404);
+    }
     const { data, error } = await admin.storage.from("kyc-documents").createSignedUrl(body.path, 300);
     if (error || !data?.signedUrl) return json({ error: "Document preview unavailable" }, 404);
     return json({ signedUrl: data.signedUrl, expiresIn: 300 });

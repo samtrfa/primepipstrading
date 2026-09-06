@@ -18,6 +18,10 @@ export default function AuthCallback() {
         setStatus("error");
         return;
       }
+      if (new URLSearchParams(window.location.search).get("next") === "/reset-password") {
+        navigate("/reset-password", { replace: true });
+        return;
+      }
       setStatus("success");
       window.setTimeout(() => navigate("/dashboard", { replace: true }), 900);
     };

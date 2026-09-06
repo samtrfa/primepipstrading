@@ -82,6 +82,7 @@ export default function Register() {
         email: formData.email,
         password: formData.password,
         options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
             full_name: formData.fullName,
             referral_code: referralCode,
@@ -103,6 +104,8 @@ export default function Register() {
         const challenge = searchParams.get("challenge");
         const size = searchParams.get("size");
         navigate(redirect === "purchase" && challenge && size ? `/purchase?challenge=${challenge}&size=${size}` : "/dashboard");
+      } else {
+        navigate(`/verify-email?email=${encodeURIComponent(formData.email)}`);
       }
       toast({
         title: "Account created!",

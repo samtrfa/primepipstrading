@@ -71,6 +71,20 @@ Deno.serve(async (req) => {
       return json({ deleted: true, accountId: body.accountId });
     }
 
+    if (body.action === "reset") {
+      if (typeof body.accountId !== "string" || typeof body.userId !== "string") return json({ error: "Invalid account details" }, 400);
+
+      const { data: account, error: resetError } = await admin.rpc("admin_reset_account", {
+        p_account_id: body.accountId,
+        p_user_id: body.userId,
+      });
+      if (resetError) {
+        console.error("Could not reset account:", resetError.message);
+        return json({ error: resetError.message === "Account not found" ? resetError.message : "Could not reset account" }, resetError.message === "Account not found" ? 404 : 500);
+      }
+      return json({ account });
+    }
+
     if (body.action === "update") {
       if (typeof body.accountId !== "string" || typeof body.userId !== "string" ||
         !challengeTypes.includes(body.challengeType as ChallengeType) ||

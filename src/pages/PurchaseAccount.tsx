@@ -195,16 +195,25 @@ export default function PurchaseAccount() {
     setCouponLoading(true);
     setCouponError(null);
 
-    const { data, error } = await supabase
-      .from("coupons")
-      .select("code, discount_percent, challenge_types, expires_at, max_uses, times_used")
-      .eq("code", code)
-      .eq("is_active", true)
-      .maybeSingle();
+    const [{ data: couponData, error }, { data: affiliateData }] = await Promise.all([
+      supabase
+        .from("coupons")
+        .select("code, discount_percent, challenge_types, expires_at, max_uses, times_used")
+        .eq("code", code)
+        .eq("is_active", true)
+        .maybeSingle(),
+      supabase
+        .from("affiliate_codes")
+        .select("code, discount_percent, is_active")
+        .eq("code", code)
+        .eq("is_active", true)
+        .maybeSingle(),
+    ]);
+    const data = couponData || (affiliateData ? { ...affiliateData, challenge_types: null, expires_at: null, max_uses: null, times_used: 0 } : null);
 
     setCouponLoading(false);
 
-    if (error || !data) {
+    if ((error && !affiliateData) || !data) {
       setAppliedCoupon(null);
       setCouponError("This coupon code isn't valid.");
       return;

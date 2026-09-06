@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Headphones, Send, X } from "lucide-react";
+import { Send, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FAQ_FALLBACK, FAQ_PRIVATE_REDIRECT, findFaqMatch, isPrivateFaqQuestion } from "@/lib/faq";
 
@@ -64,9 +64,8 @@ export function FaqSupportBot() {
     }, 350);
   };
 
-  return (
+  return open ? (
     <div className="fixed bottom-5 right-4 z-[60] sm:bottom-6 sm:right-6">
-      {open && (
         <section aria-label="PrimePips FAQ support" className="mb-3 flex h-[min(560px,calc(100vh-7rem))] w-[calc(100vw-2rem)] max-w-[380px] flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl">
           <header className="flex items-center justify-between bg-[#111820] px-4 py-3 text-white">
             <div className="flex items-center gap-3">
@@ -82,8 +81,6 @@ export function FaqSupportBot() {
           </div>
           <div className="border-t border-border bg-card p-3"><form onSubmit={submitQuestion} className="flex gap-2"><label htmlFor="faq-support-question" className="sr-only">Ask a PrimePips FAQ question</label><input ref={inputRef} id="faq-support-question" value={question} onChange={(event) => setQuestion(event.target.value)} maxLength={300} placeholder="Ask about the FAQ..." className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-2 focus:ring-primary" /><button type="submit" disabled={!question.trim() || loading} aria-label="Send question" className="rounded-md bg-primary px-3 text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-primary"><Send className="h-4 w-4" /></button></form><div className="mt-2 flex items-center justify-between gap-2 text-xs text-muted-foreground"><Link to="/faq" onClick={() => setOpen(false)} className="hover:text-primary">Browse all FAQ</Link><a href="mailto:support@primepips.com" className="hover:text-primary">Contact support</a></div></div>
         </section>
-      )}
-      <button type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} aria-label={open ? "Close PrimePips support" : "Open PrimePips support"} className="ml-auto flex h-14 w-14 items-center justify-center rounded-full border-2 border-primary bg-[#111820] text-primary shadow-lg transition hover:scale-105 hover:bg-[#1c2730] focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"><span className="sr-only">PrimePips support</span>{open ? <X className="h-6 w-6" /> : <Headphones className="h-6 w-6" />}</button>
     </div>
-  );
+  ) : null;
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -25,8 +25,6 @@ export function DrawdownTracker({
   challengeType,
   currentPhase = 1,
 }: DrawdownTrackerProps) {
-  const [violations, setViolations] = useState<string[]>([]);
-
   const rules = getPhaseRules(challengeType, currentPhase);
   const limits = { daily: rules.dailyDrawdown, max: rules.maxDrawdown };
   
@@ -51,8 +49,7 @@ export function DrawdownTracker({
   const maxDrawdownProgress = Math.min((maxDrawdownPercent / limits.max) * 100, 100);
   const dailyDrawdownProgress = Math.min((dailyDrawdownPercent / limits.daily) * 100, 100);
 
-  // Check for violations
-  useEffect(() => {
+  const violations = useMemo(() => {
     const newViolations: string[] = [];
     
     if (maxDrawdownPercent >= limits.max) {
@@ -63,8 +60,8 @@ export function DrawdownTracker({
       newViolations.push(`Daily Drawdown Limit Breached (${limits.daily}%)`);
     }
     
-    setViolations(newViolations);
-  }, [maxDrawdownPercent, dailyDrawdownPercent, limits]);
+    return newViolations;
+  }, [dailyDrawdownPercent, limits.daily, limits.max, maxDrawdownPercent]);
 
   // Determine warning levels
   const getWarningLevel = (current: number, limit: number) => {

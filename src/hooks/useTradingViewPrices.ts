@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface PriceData {
   bid: number;
@@ -26,28 +27,24 @@ export function useTradingViewPrices(symbols: string[]) {
   const livePricesRef = useRef<Record<string, number>>({});
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const symbolsKey = symbols.join(",");
+  const stableSymbols = useMemo(() => symbolsKey ? symbolsKey.split(",") : [], [symbolsKey]);
 
-  // Initial + periodic REST snapshot from Bitstamp
+  // Initial + periodic REST snapshot through Supabase to avoid browser CORS restrictions.
   useEffect(() => {
-    if (symbols.length === 0) return;
+    if (stableSymbols.length === 0) return;
     let cancelled = false;
 
     const fetchSnapshot = async () => {
-      await Promise.all(
-        symbols.map(async (symbol) => {
-          try {
-            const res = await fetch(`https://www.bitstamp.net/api/v2/ticker/${toPair(symbol)}/`);
-            if (!res.ok) return;
-            const data = await res.json();
-            const last = parseFloat(data.last);
-            if (!cancelled && Number.isFinite(last) && last > 0) {
-              livePricesRef.current[symbol] = last;
-            }
-          } catch {
-            // ignore network errors, WebSocket will fill in
+      const { data, error } = await supabase.functions.invoke("crypto-prices", {
+        body: { symbols: stableSymbols },
+      });
+      if (!error && data?.prices && !cancelled) {
+        for (const [symbol, priceData] of Object.entries(data.prices as Record<string, { price: number }>)) {
+          if (Number.isFinite(priceData.price) && priceData.price > 0) {
+            livePricesRef.current[symbol] = priceData.price;
           }
-        })
-      );
+        }
+      }
       if (!cancelled && Object.keys(livePricesRef.current).length > 0) {
         setIsConnected(true);
       }
@@ -59,11 +56,11 @@ export function useTradingViewPrices(symbols: string[]) {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [symbolsKey]);
+  }, [stableSymbols, symbolsKey]);
 
   // Live trades via Bitstamp WebSocket
   useEffect(() => {
-    if (symbols.length === 0) return;
+    if (stableSymbols.length === 0) return;
 
     const connectWebSocket = () => {
       try {
@@ -72,7 +69,7 @@ export function useTradingViewPrices(symbols: string[]) {
 
         ws.onopen = () => {
           setIsConnected(true);
-          symbols.forEach((symbol) => {
+          stableSymbols.forEach((symbol) => {
             ws.send(
               JSON.stringify({
                 event: "bts:subscribe",
@@ -112,17 +109,17 @@ export function useTradingViewPrices(symbols: string[]) {
       wsRef.current?.close();
       if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
     };
-  }, [symbolsKey]);
+  }, [stableSymbols, symbolsKey]);
 
   // Publish prices to state
   useEffect(() => {
-    if (symbols.length === 0) return;
+    if (stableSymbols.length === 0) return;
 
     const updatePrices = () => {
       const timestamp = Date.now();
       const next: Record<string, PriceData> = {};
 
-      for (const symbol of symbols) {
+      for (const symbol of stableSymbols) {
         const last = livePricesRef.current[symbol];
         if (!last) continue;
         const half = last * (SPREAD_PERCENT / 2);
@@ -141,7 +138,7 @@ export function useTradingViewPrices(symbols: string[]) {
     updatePrices();
     const interval = setInterval(updatePrices, 500);
     return () => clearInterval(interval);
-  }, [symbolsKey]);
+  }, [stableSymbols, symbolsKey]);
 
   const getPrice = useCallback((symbol: string): PriceData | null => prices[symbol] || null, [prices]);
 

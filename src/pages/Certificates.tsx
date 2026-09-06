@@ -6,11 +6,14 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
 import html2canvas from "html2canvas";
 
-interface FundedAccount {
+interface Certificate {
   id: string;
+  account_id: string;
   challenge_type: string;
   account_size: number;
-  created_at: string;
+  phase_number: number;
+  phase_name: string;
+  awarded_at: string;
 }
 
 const challengeLabels: Record<string, string> = {
@@ -21,7 +24,7 @@ const challengeLabels: Record<string, string> = {
 };
 
 export default function Certificates() {
-  const [accounts, setAccounts] = useState<FundedAccount[]>([]);
+  const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const certificateRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -35,30 +38,29 @@ export default function Certificates() {
       }
 
       const { data, error } = await supabase
-        .from("accounts")
-        .select("id, challenge_type, account_size, created_at")
-        .or("status.eq.funded,and(status.eq.active,challenge_type.eq.instant)")
-        .order("created_at", { ascending: false });
+        .from("certificates")
+        .select("id, account_id, challenge_type, account_size, phase_number, phase_name, awarded_at")
+        .order("awarded_at", { ascending: false });
 
-      if (error) console.error("Error fetching funded accounts:", error);
-      setAccounts(data || []);
+      if (error) console.error("Error fetching certificates:", error);
+      setCertificates(data || []);
       setLoading(false);
     };
 
     loadFundedAccounts();
   }, []);
 
-  const downloadCertificate = async (account: FundedAccount) => {
-    const certificate = certificateRefs.current[account.id];
+  const downloadCertificate = async (certificateRecord: Certificate) => {
+    const certificate = certificateRefs.current[certificateRecord.id];
     if (!certificate || downloadingId) return;
-    setDownloadingId(account.id);
+    setDownloadingId(certificateRecord.id);
     try {
       const canvas = await html2canvas(certificate, { backgroundColor: "#e9e4d8", scale: 2, useCORS: true, logging: false });
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) return;
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = `primepips-certificate-${account.id.slice(0, 8)}.png`;
+      link.download = `primepips-certificate-${certificateRecord.id.slice(0, 8)}.png`;
       link.click();
       URL.revokeObjectURL(link.href);
     } finally {
@@ -80,7 +82,7 @@ export default function Certificates() {
 
         {loading && <Card variant="elevated"><CardContent className="p-8 text-center text-sm text-muted-foreground">Loading certificates...</CardContent></Card>}
 
-        {!loading && accounts.length === 0 && (
+        {!loading && certificates.length === 0 && (
           <Card variant="elevated">
             <CardContent className="flex flex-col items-center p-10 text-center">
               <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary"><Award className="h-7 w-7" /></div>
@@ -90,9 +92,9 @@ export default function Certificates() {
           </Card>
         )}
 
-        {!loading && accounts.length > 0 && <div className="grid gap-8 xl:grid-cols-2">{accounts.map((account) => (
-          <article key={account.id} className="relative overflow-hidden border-8 border-[#b9a36a] bg-[#e9e4d8] text-[#20272d] shadow-2xl ring-1 ring-[#8b6b28]/60 print:shadow-none">
-            <div ref={(element) => { certificateRefs.current[account.id] = element; }} className="relative">
+        {!loading && certificates.length > 0 && <div className="grid gap-8 xl:grid-cols-2">{certificates.map((certificateRecord) => (
+          <article key={certificateRecord.id} className="relative overflow-hidden border-8 border-[#b9a36a] bg-[#e9e4d8] text-[#20272d] shadow-2xl ring-1 ring-[#8b6b28]/60 print:shadow-none">
+            <div ref={(element) => { certificateRefs.current[certificateRecord.id] = element; }} className="relative">
               <div className="pointer-events-none absolute inset-2 border border-[#b99a4b]/70" />
             <header className="relative flex items-center justify-between gap-4 bg-[#111820] px-5 py-5 text-white sm:px-8">
               <div className="flex min-w-0 items-center gap-3">
@@ -103,19 +105,19 @@ export default function Certificates() {
             </header>
             <div className="relative px-6 py-9 text-center sm:px-12 sm:py-12">
               <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-[#b99a4b] bg-[#f3ead0] text-[#8b6b28]"><ShieldCheck className="h-8 w-8" /></div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#8b6b28]">Certificate of funded status</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#8b6b28]">Certificate of passing</p>
               <h3 className="mt-4 font-serif text-3xl font-bold tracking-tight text-[#20272d] sm:text-4xl">PrimePips <span className="text-[#8b6b28]">Achievement</span></h3>
               <div className="mx-auto my-6 h-px max-w-xs bg-[#b99a4b]" />
-              <p className="mx-auto max-w-lg text-sm leading-7 text-[#59636b]">This certificate recognizes that the PrimePips account identified below has reached funded status within the PrimePips platform.</p>
+              <p className="mx-auto max-w-lg text-sm leading-7 text-[#59636b]">This certificate recognizes that the trader successfully completed the {certificateRecord.phase_name} of the PrimePips program.</p>
               <div className="mx-auto mt-8 grid max-w-lg grid-cols-2 border-y border-[#d8c58a] text-left">
-                <div className="border-r border-[#d8c58a] px-4 py-4"><p className="text-[10px] font-bold uppercase tracking-wider text-[#8b6b28]">Program</p><p className="mt-1 font-serif text-base font-bold">{challengeLabels[account.challenge_type] || account.challenge_type}</p></div>
-                <div className="px-4 py-4"><p className="text-[10px] font-bold uppercase tracking-wider text-[#8b6b28]">Account size</p><p className="mt-1 font-serif text-base font-bold">${Number(account.account_size).toLocaleString()}</p></div>
+                <div className="border-r border-[#d8c58a] px-4 py-4"><p className="text-[10px] font-bold uppercase tracking-wider text-[#8b6b28]">Program</p><p className="mt-1 font-serif text-base font-bold">{challengeLabels[certificateRecord.challenge_type] || certificateRecord.challenge_type}</p></div>
+                <div className="px-4 py-4"><p className="text-[10px] font-bold uppercase tracking-wider text-[#8b6b28]">Passed</p><p className="mt-1 font-serif text-base font-bold">{certificateRecord.phase_name}</p></div>
               </div>
-              <div className="mt-7 flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-[11px] text-[#59636b]"><span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5 text-[#8b6b28]" /> Account record {new Date(account.created_at).toLocaleDateString()}</span><span className="font-mono">Ref #{account.id.slice(0, 8)}</span></div>
+              <div className="mt-7 flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-[11px] text-[#59636b]"><span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5 text-[#8b6b28]" /> Awarded {new Date(certificateRecord.awarded_at).toLocaleDateString()}</span><span className="font-mono">Ref #{certificateRecord.id.slice(0, 8)}</span></div>
             </div>
             <footer className="relative flex items-center justify-between gap-4 border-t border-[#c8b98e] bg-[#dcd3bd]/75 px-6 py-4 text-[10px] uppercase tracking-wider text-[#59636b] sm:px-8"><span>PrimePips Funding</span><span>Platform verified</span></footer>
             </div>
-            <div className="relative bg-background px-5 py-4 print:hidden"><Button type="button" variant="outline" className="w-full" disabled={downloadingId !== null} onClick={() => downloadCertificate(account)}><Download className="mr-2 h-4 w-4" />{downloadingId === account.id ? "Preparing PNG..." : "Download Certificate"}</Button></div>
+            <div className="relative bg-background px-5 py-4 print:hidden"><Button type="button" variant="outline" className="w-full" disabled={downloadingId !== null} onClick={() => downloadCertificate(certificateRecord)}><Download className="mr-2 h-4 w-4" />{downloadingId === certificateRecord.id ? "Preparing PNG..." : "Download Certificate"}</Button></div>
           </article>
         ))}</div>}
       </div>

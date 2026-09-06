@@ -11,6 +11,55 @@ npx supabase db push --project-ref wnbynyymqhkestmkcenj
 ```
 # PrimePips Platform
 
+## Transactional email setup
+
+The platform queues mandatory account emails in `public.email_events`. Database triggers cover signup welcome messages, payment/account activation, phase results, rule breaches, drawdown warnings, payouts, and KYC status changes. The `send-transactional-email` Edge Function delivers them through Resend with retries and idempotency.
+
+Configure the provider once in Supabase:
+
+```bash
+npx supabase secrets set RESEND_API_KEY='re_xxx' EMAIL_FROM='PrimePips <notifications@your-domain.com>' EMAIL_LOGO_URL='https://your-domain.com/primepips-email-logo.svg' APP_URL='https://your-domain.com' SUPPORT_EMAIL='support@your-domain.com' --project-ref wnbynyymqhkestmkcenj
+npx supabase functions deploy send-transactional-email --project-ref wnbynyymqhkestmkcenj
+```
+
+`EMAIL_LOGO_URL` must be a public HTTPS image. It defaults to `${APP_URL}/primepips-email-logo.svg`, using the repository asset at `public/primepips-email-logo.svg`, so deploy that asset at the same domain as `APP_URL` or set `EMAIL_LOGO_URL` to its public HTTPS location. The sender domain must be verified in Resend. The scheduled worker migration uses Vault secrets named `supabase_url` and `supabase_service_role_key`; create those in Supabase Vault before applying the migration. Never put either value in `VITE_*` variables.
+
+Supabase Auth uses the branded templates in `supabase/templates/`. Login uses a magic link, signup verification uses a six-digit code, and password recovery uses a secure reset link. Enable **Confirm email**, configure Auth SMTP with the verified Resend domain, and apply the Auth configuration from a machine authenticated with Supabase CLI:
+
+```bash
+npx supabase config push --project-ref wnbynyymqhkestmkcenj
+```
+
+If the hosted project still shows the default Supabase email, paste the matching file contents into Dashboard → Authentication → Email Templates, or run the config push again. The logo URL resolves to `{{ .SiteURL }}/primepips-email-logo.svg`, so the SVG must be publicly available at that path.
+
+On Supabase free-tier projects using the default email provider, template updates are blocked. Configure custom SMTP first in Dashboard → Project Settings → Authentication → SMTP Settings, using the verified Resend domain:
+
+```text
+SMTP host: smtp.resend.com
+SMTP port: 465
+SMTP user: resend
+SMTP password: your Resend API key
+Sender email: notifications@your-domain.com
+Sender name: PrimePips Funding
+```
+
+Keep the Resend API key in the Supabase dashboard only. After custom SMTP is enabled, run `npx supabase config push --project-ref wnbynyymqhkestmkcenj --yes` again. If custom SMTP is unavailable on the current project plan, upgrade the project or paste the templates into the dashboard after enabling a supported SMTP provider.
+
+The signup template uses `{{ .Token }}` rather than `{{ .ConfirmationURL }}`:
+
+```html
+<h2>Your PrimePips verification code</h2>
+<p>Enter this code in the PrimePips app:</p>
+<p style="font-size: 28px; font-weight: 700; letter-spacing: 6px;">{{ .Token }}</p>
+<p>This code expires soon. If you did not request it, you can ignore this email.</p>
+```
+
+The app supports signup verification at `/verify-email`, magic-link login at `/login`, and recovery at `/reset-password`. Add these URLs to Auth redirect URLs: `https://your-domain.com/auth/callback`, `https://your-domain.com/reset-password`, and the local development equivalents.
+
+After deploying, test the queue by creating a signup and checking `email_events` for `pending`, then inspect the Edge Function logs and Resend delivery logs.
+
+The branded Auth templates and transactional email worker are intentionally reserved in this repository while the app uses password login. When the Supabase Pro plan or custom SMTP is available, say `integrate the emailing system`, configure SMTP, push `supabase/config.toml`, and deploy the email worker.
+
 # 🚀 Full Trading Prop Firm Website — One‑Prompt Build for Lovable
 
 Copy and paste this entire file into **Lovable** and it will generate a complete, fully functional, market‑ready site with payment integration, dashboard, backend, admin controls, and branding.

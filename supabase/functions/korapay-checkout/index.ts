@@ -101,7 +101,18 @@ Deno.serve(async (req) => {
         .eq("is_active", true)
         .maybeSingle();
 
-      const row = couponQuery.data;
+      let row = couponQuery.data;
+      if (!row) {
+        const affiliateQuery = await admin
+          .from("affiliate_codes")
+          .select("code, discount_percent, is_active")
+          .eq("code", couponCode)
+          .eq("is_active", true)
+          .maybeSingle();
+        if (affiliateQuery.data) {
+          row = { ...affiliateQuery.data, challenge_types: null, expires_at: null, max_uses: null, times_used: 0 };
+        }
+      }
       const invalidCoupon = json(
         { error: { couponCode: "This coupon code is not valid for this purchase." } },
         400,
