@@ -142,6 +142,12 @@ type AffiliateCode = {
   is_active: boolean;
   created_at: string;
 };
+type AffiliateBalance = {
+  user_id: string;
+  available: number;
+  reserved: number;
+  paid: number;
+};
 type History = {
   id: string;
   account_id: string;
@@ -226,6 +232,7 @@ type Snapshot = {
   referrals: Referral[];
   affiliateApplications: AffiliateApplication[];
   affiliateCodes: AffiliateCode[];
+  affiliateBalances: AffiliateBalance[];
   history: History[];
   kyc: Kyc[];
   kycDocuments: KycDocument[];
@@ -255,6 +262,7 @@ const normalizeSnapshot = (data: Partial<Snapshot>): Snapshot => ({
   referrals: data.referrals ?? [],
   affiliateApplications: data.affiliateApplications ?? [],
   affiliateCodes: data.affiliateCodes ?? [],
+  affiliateBalances: data.affiliateBalances ?? [],
   history: data.history ?? [],
   kyc: data.kyc ?? [],
   kycDocuments: data.kycDocuments ?? [],
@@ -2587,6 +2595,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                             <th className="px-6 py-3">Trader</th>
                             <th className="px-4 py-3">Joined</th>
                             <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3 text-right">Commission</th>
                             <th className="px-6 py-3 text-right">Action</th>
                           </tr>
                         </thead>
@@ -2619,6 +2628,10 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                       ? "Partnered affiliate"
                                       : "Normal account"}
                                   </Badge>
+                                </td>
+                                <td className="px-4 py-4 text-right">
+                                  <div className="font-medium">{money(snapshot.referrals.filter((referral) => referral.referrer_id === user.id).reduce((total, referral) => total + Number(referral.commission_earned || 0), 0))}</div>
+                                  <div className="text-xs text-muted-foreground">{money(Number(snapshot.affiliateBalances.find((balance) => balance.user_id === user.id)?.available || 0))} available</div>
                                 </td>
                                 <td className="px-6 py-4 text-right">
                                   <Button

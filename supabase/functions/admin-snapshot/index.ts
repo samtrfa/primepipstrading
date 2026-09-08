@@ -32,13 +32,14 @@ Deno.serve(async (req) => {
     }
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const [{ data: usersData, error: usersError }, accounts, positions, referrals, applications, affiliateCodes, history, kyc, kycDocuments, payments, payouts, coupons] = await Promise.all([
+    const [{ data: usersData, error: usersError }, accounts, positions, referrals, applications, affiliateCodes, affiliateBalances, history, kyc, kycDocuments, payments, payouts, coupons] = await Promise.all([
       admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
       admin.from("accounts").select("id, user_id, account_size, challenge_type, status, current_balance, profit_loss, current_phase, high_water_mark, daily_start_balance, daily_start_date, max_drawdown_percent, daily_drawdown_percent, consistency_score, best_trading_day_profit, closed_profit_total, drawdown_violated, violation_type, phase_passed, archived_at, archive_expires_at, updated_at, created_at"),
       admin.from("positions").select("id, account_id, asset_id, position_type, lot_size, profit_loss, status, opened_at, closed_at, entry_price, exit_price, stop_loss, take_profit, assets(symbol, pip_value, asset_type, quote_currency, lot_size)"),
       admin.from("referrals").select("referrer_id, referred_user_id, status, commission_earned, referred_at, account_purchased"),
       admin.from("affiliate_applications").select("id, user_id, desired_code, phone, country, website, instagram, tiktok, youtube, x_handle, audience_size, promotion_channels, affiliate_experience, promotion_plan, status, rejection_reason, created_at, updated_at").order("created_at", { ascending: false }),
       admin.from("affiliate_codes").select("id, user_id, code, discount_percent, is_active, created_at").order("created_at", { ascending: false }),
+      admin.from("affiliate_balances").select("user_id, available, reserved, paid"),
       admin.from("trade_history").select("id, account_id, symbol, action, lot_size, profit_loss, created_at, price, notes").order("created_at", { ascending: false }),
       admin.from("kyc_verifications").select("id, user_id, identity_document_type, identity_document_path, identity_submitted_at, address_document_type, address_document_path, address_submitted_at, status, rejection_reason, reviewed_at, reviewed_by, created_at, updated_at").order("created_at", { ascending: false }),
       admin.from("kyc_documents").select("id, kyc_id, document_kind, document_type, storage_path, submitted_at").order("submitted_at", { ascending: false }),
@@ -51,7 +52,7 @@ Deno.serve(async (req) => {
       console.error("Could not load users:", usersError.message);
       return json({ error: "Could not load users" }, 500);
     }
-    const failed = [accounts, positions, referrals, applications, affiliateCodes, history, kyc, kycDocuments, payments, payouts, coupons].find((result) => result.error);
+    const failed = [accounts, positions, referrals, applications, affiliateCodes, affiliateBalances, history, kyc, kycDocuments, payments, payouts, coupons].find((result) => result.error);
     if (failed?.error) {
       console.error("Could not load platform data:", failed.error.message);
       return json({ error: "Could not load platform data" }, 500);
@@ -94,6 +95,7 @@ Deno.serve(async (req) => {
       referrals: referrals.data ?? [],
       affiliateApplications: applications.data ?? [],
       affiliateCodes: affiliateCodes.data ?? [],
+      affiliateBalances: affiliateBalances.data ?? [],
       history: history.data ?? [],
       kyc: kyc.data ?? [],
       kycDocuments: kycDocuments.data ?? [],
