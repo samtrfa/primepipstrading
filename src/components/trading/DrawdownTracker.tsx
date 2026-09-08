@@ -11,12 +11,15 @@ interface DrawdownTrackerProps {
   currentBalance: number;
   highWaterMark: number | null;
   dailyStartBalance: number | null;
-  dailyStartDate: string | null;
+  dailyStartDate?: string | null;
   unrealizedPL: number;
   challengeType: string;
   currentPhase?: number | null;
+  serverMaxDrawdownPercent?: number | null;
+  serverDailyDrawdownPercent?: number | null;
   serverDrawdownViolated?: boolean | null;
   serverViolationType?: string | null;
+  liveRiskDataAvailable?: boolean;
 }
 
 export function DrawdownTracker({
@@ -41,7 +44,7 @@ export function DrawdownTracker({
   const effectiveHWM = highWaterMark ?? accountSize;
   
   // Daily start balance for daily drawdown calculation
-  const isNewTradingDay = dailyStartDate !== new Date().toISOString().slice(0, 10);
+  const isNewTradingDay = Boolean(dailyStartDate) && dailyStartDate !== new Date().toISOString().slice(0, 10);
   const effectiveDailyStart = isNewTradingDay
     ? currentBalance
     : Number.isFinite(dailyStartBalance) && (dailyStartBalance ?? 0) > 0
