@@ -573,10 +573,6 @@ export default function TradingPlatform() {
     ? (account.current_balance || account.account_size) + unrealizedPL
     : 0;
   const openPositions = positions.filter((p) => p.status === "open");
-  const liveRiskDataAvailable =
-    openPositions.length > 0 && openPositions.every((position) =>
-      Boolean(position.assets && prices[position.assets.symbol])
-    );
   const closedPositions = positions.filter((p) => p.status === "closed");
   const fundedClosedPositions = closedPositions.filter(
     (position) => !fundedStartAt || (position.closed_at && position.closed_at > fundedStartAt)
@@ -940,13 +936,12 @@ export default function TradingPlatform() {
                   currentBalance={account.current_balance || account.account_size}
                   highWaterMark={account.high_water_mark}
                   dailyStartBalance={account.daily_start_balance}
+                  dailyStartDate={account.daily_start_date}
                   unrealizedPL={unrealizedPL}
                   challengeType={account.challenge_type}
                   currentPhase={account.current_phase}
-                  serverMaxDrawdownPercent={account.max_drawdown_percent}
-                  serverDailyDrawdownPercent={account.daily_drawdown_percent}
                   serverDrawdownViolated={account.drawdown_violated}
-                  liveRiskDataAvailable={liveRiskDataAvailable}
+                  serverViolationType={account.violation_type}
                 />
                 {account && (
                   <ConsistencyScoreTracker positions={fundedClosedPositions} serverScore={account.consistency_score} serverBestDayProfit={account.best_trading_day_profit} serverTotalProfit={account.closed_profit_total} />

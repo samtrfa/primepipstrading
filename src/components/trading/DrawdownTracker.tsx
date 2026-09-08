@@ -11,13 +11,12 @@ interface DrawdownTrackerProps {
   currentBalance: number;
   highWaterMark: number | null;
   dailyStartBalance: number | null;
+  dailyStartDate: string | null;
   unrealizedPL: number;
   challengeType: string;
   currentPhase?: number | null;
-  serverMaxDrawdownPercent: number | null;
-  serverDailyDrawdownPercent: number | null;
   serverDrawdownViolated?: boolean | null;
-  liveRiskDataAvailable?: boolean;
+  serverViolationType?: string | null;
 }
 
 export function DrawdownTracker({
@@ -25,13 +24,12 @@ export function DrawdownTracker({
   currentBalance,
   highWaterMark,
   dailyStartBalance,
+  dailyStartDate,
   unrealizedPL,
   challengeType,
   currentPhase = 1,
-  serverMaxDrawdownPercent,
-  serverDailyDrawdownPercent,
   serverDrawdownViolated = false,
-  liveRiskDataAvailable = false,
+  serverViolationType,
 }: DrawdownTrackerProps) {
   const rules = getPhaseRules(challengeType, currentPhase);
   const limits = { daily: rules.dailyDrawdown, max: rules.maxDrawdown };
@@ -43,9 +41,12 @@ export function DrawdownTracker({
   const effectiveHWM = highWaterMark ?? accountSize;
   
   // Daily start balance for daily drawdown calculation
-  const effectiveDailyStart = Number.isFinite(dailyStartBalance) && (dailyStartBalance ?? 0) > 0
-    ? dailyStartBalance as number
-    : accountSize;
+  const isNewTradingDay = dailyStartDate !== new Date().toISOString().slice(0, 10);
+  const effectiveDailyStart = isNewTradingDay
+    ? currentBalance
+    : Number.isFinite(dailyStartBalance) && (dailyStartBalance ?? 0) > 0
+      ? dailyStartBalance as number
+      : accountSize;
 
   // Calculate max drawdown from high water mark
   const maxDrawdownAmount = Math.max(0, effectiveHWM - equity);
@@ -54,12 +55,8 @@ export function DrawdownTracker({
   // Calculate daily drawdown from daily start balance
   const dailyDrawdownAmount = Math.max(0, effectiveDailyStart - equity);
   const calculatedDailyDrawdownPercent = effectiveDailyStart > 0 ? (dailyDrawdownAmount / effectiveDailyStart) * 100 : 0;
-  const maxDrawdownPercent = liveRiskDataAvailable
-    ? calculatedMaxDrawdownPercent
-    : (serverMaxDrawdownPercent ?? calculatedMaxDrawdownPercent);
-  const dailyDrawdownPercent = liveRiskDataAvailable
-    ? calculatedDailyDrawdownPercent
-    : (serverDailyDrawdownPercent ?? calculatedDailyDrawdownPercent);
+  const maxDrawdownPercent = calculatedMaxDrawdownPercent;
+  const dailyDrawdownPercent = calculatedDailyDrawdownPercent;
 
   // Progress towards limits (for progress bars)
   const maxDrawdownProgress = Math.min((maxDrawdownPercent / limits.max) * 100, 100);
@@ -68,16 +65,16 @@ export function DrawdownTracker({
   const violations = useMemo(() => {
     const newViolations: string[] = [];
     
-    if (serverDrawdownViolated || maxDrawdownPercent >= limits.max) {
+    if (maxDrawdownPercent >= limits.max || (serverDrawdownViolated && serverViolationType === "max_drawdown")) {
       newViolations.push(`Max Drawdown Limit Breached (${limits.max}%)`);
     }
     
-    if (dailyDrawdownPercent >= limits.daily) {
+    if (dailyDrawdownPercent >= limits.daily || (serverDrawdownViolated && serverViolationType === "daily_drawdown")) {
       newViolations.push(`Daily Drawdown Limit Breached (${limits.daily}%)`);
     }
     
     return newViolations;
-  }, [dailyDrawdownPercent, limits.daily, limits.max, maxDrawdownPercent, serverDrawdownViolated]);
+  }, [dailyDrawdownPercent, limits.daily, limits.max, maxDrawdownPercent, serverDrawdownViolated, serverViolationType]);
 
   // Determine warning levels
   const getWarningLevel = (current: number, limit: number) => {
