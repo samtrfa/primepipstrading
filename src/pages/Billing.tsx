@@ -27,7 +27,7 @@ import jsPDF from "jspdf";
 interface Invoice {
   id: string;
   amount: number;
-  status: "pending" | "paid" | "failed" | "overdue" | "refunded" | "unmatched" | "granted";
+  status: "pending" | "earned" | "paid" | "failed" | "overdue" | "refunded" | "unmatched" | "granted";
   date: string;
   due_date: string;
   description: string;
@@ -67,6 +67,11 @@ const statusConfig: Record<string, { icon: typeof Clock; color: string; label: s
     icon: CheckCircle2,
     color: "bg-success/20 text-success",
     label: "Paid",
+  },
+  earned: {
+    icon: Gift,
+    color: "bg-primary/20 text-primary",
+    label: "Earned",
   },
   overdue: {
     icon: AlertCircle,
@@ -277,7 +282,7 @@ export default function BillingPage() {
       const commissionEntries: Invoice[] = (commissionData as CommissionEntry[] || []).map((entry) => ({
         id: `COM-${entry.id.slice(0, 8).toUpperCase()}`,
         amount: entry.commission_earned,
-        status: "paid",
+        status: "earned",
         date: entry.referred_at,
         due_date: entry.referred_at,
         description: "Referral commission earned",

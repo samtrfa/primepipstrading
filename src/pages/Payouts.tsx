@@ -52,6 +52,7 @@ const statusConfig: Record<string, { label: string; className: string; icon: typ
 };
 
 const MIN_PAYOUT_PROFIT = 100;
+const MIN_COMMISSION_PAYOUT = 50;
 
 export default function PayoutsPage() {
   const navigate = useNavigate();
@@ -209,8 +210,9 @@ export default function PayoutsPage() {
       toast({ title: "KYC approval required", description: "Complete identity verification before requesting a funded-account payout.", variant: "destructive" });
       return;
     }
-    if ((!isCommissionPayout && !selectedAccount) || requestAmount < MIN_PAYOUT_PROFIT || requestAmount > sourceBalance || !payoutDestination || (isCommissionPayout && method !== "crypto")) {
-      toast({ title: "Check your request", description: isCommissionPayout ? "Enter at least $100 within your available commission balance and select a crypto wallet." : "Choose a funded account with at least $100 in profit, enter an amount within its available profit, and provide payout details.", variant: "destructive" });
+    const minimumAmount = isCommissionPayout ? MIN_COMMISSION_PAYOUT : MIN_PAYOUT_PROFIT;
+    if ((!isCommissionPayout && !selectedAccount) || requestAmount < minimumAmount || requestAmount > sourceBalance || !payoutDestination || (isCommissionPayout && method !== "crypto")) {
+      toast({ title: "Check your request", description: isCommissionPayout ? `Enter at least $${MIN_COMMISSION_PAYOUT} within your available commission balance and select a crypto wallet.` : `Choose a funded account with at least $${MIN_PAYOUT_PROFIT} in profit, enter an amount within its available profit, and provide payout details.`, variant: "destructive" });
       return;
     }
 
@@ -298,7 +300,7 @@ export default function PayoutsPage() {
           <CardHeader className="pb-3">
             <CardTitle className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <span>Request a Payout</span>
-              <Button variant="gold" size="sm" onClick={openRequestDialog} disabled={availableForWithdrawal < 100}>
+              <Button variant="gold" size="sm" onClick={openRequestDialog} disabled={availableForWithdrawal < MIN_COMMISSION_PAYOUT}>
                 <ArrowDownRight className="w-4 h-4 mr-2" />
                 Request payout
               </Button>
@@ -307,7 +309,7 @@ export default function PayoutsPage() {
           <CardContent className="text-sm text-muted-foreground">
             Request a withdrawal from funded-account profit or accumulated referral commissions. Requests are reviewed within 2-5 business days.
             {accounts.length > 0 && kycStatus !== "approved" && <p className="mt-2 text-warning">Funded-account payouts require approved identity verification. <button type="button" className="font-medium text-primary underline" onClick={() => navigate("/dashboard/kyc")}>{kycStatus === "rejected" ? "Resubmit KYC" : "Complete KYC"}</button></p>}
-            {availableForWithdrawal < MIN_PAYOUT_PROFIT && <p className="mt-2 text-warning">You need at least $100 in available commission or profit from a funded account.</p>}
+            {availableForWithdrawal < MIN_COMMISSION_PAYOUT && <p className="mt-2 text-warning">You need at least ${MIN_COMMISSION_PAYOUT} in available commission or profit from a funded account.</p>}
           </CardContent>
         </Card>
 
@@ -408,7 +410,8 @@ export default function PayoutsPage() {
             <h3 className="font-semibold text-foreground mb-3">Payout Information</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>• Payouts are processed within 2-5 business days</li>
-              <li>• Minimum payout amount: $100</li>
+              <li>• Minimum trading-profit payout: $100</li>
+              <li>• Minimum commission payout: $50</li>
               <li>• No fees on withdrawals</li>
               <li>• Only available when your account is in "Funded" status</li>
             </ul>
@@ -441,7 +444,7 @@ export default function PayoutsPage() {
             </div>}
             <div className="space-y-2">
               <Label htmlFor="payout-amount">Amount (USD)</Label>
-              <Input id="payout-amount" type="number" min={MIN_PAYOUT_PROFIT} max={payoutSource === "referral_commission" ? commissionAvailable : Math.max(0, selectedAccount?.funded_profit_loss || 0)} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={String(MIN_PAYOUT_PROFIT)} />
+              <Input id="payout-amount" type="number" min={payoutSource === "referral_commission" ? MIN_COMMISSION_PAYOUT : MIN_PAYOUT_PROFIT} max={payoutSource === "referral_commission" ? commissionAvailable : Math.max(0, selectedAccount?.funded_profit_loss || 0)} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={String(payoutSource === "referral_commission" ? MIN_COMMISSION_PAYOUT : MIN_PAYOUT_PROFIT)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="payout-method">Payout method</Label>

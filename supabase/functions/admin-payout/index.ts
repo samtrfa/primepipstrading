@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
     if (claimsError || claimsData?.claims?.app_metadata?.role !== "admin") return json({ error: "Forbidden" }, 403);
 
     const body = await req.json();
-    if (typeof body.payoutId !== "string" || !["approved", "rejected"].includes(body.status)) return json({ error: "Invalid payout review request" }, 400);
+    if (typeof body.payoutId !== "string" || !["approved", "rejected", "paid"].includes(body.status)) return json({ error: "Invalid payout review request" }, 400);
     const rejectionReason = typeof body.rejectionReason === "string" ? body.rejectionReason.trim() : "";
     if (body.status === "rejected" && rejectionReason.length < 3) return json({ error: "A rejection reason is required" }, 422);
 
@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
       .from("payout_requests")
       .select("id, account_id, amount, source, status")
       .eq("id", body.payoutId)
-      .eq("status", "pending")
+      .eq("status", body.status === "paid" ? "approved" : "pending")
       .maybeSingle();
     if (payoutLookupError) return json({ error: "Could not load payout request" }, 500);
     if (!requestedPayout) return json({ error: "Payout request was not found or has already been reviewed" }, 409);
@@ -57,7 +57,7 @@ Deno.serve(async (req) => {
       .from("payout_requests")
       .update({ status: body.status, rejection_reason: body.status === "rejected" ? rejectionReason : null, reviewed_by: reviewerId, reviewed_at: reviewedAt })
       .eq("id", body.payoutId)
-      .eq("status", "pending")
+      .eq("status", body.status === "paid" ? "approved" : "pending")
       .select("id, user_id, account_id, amount, method, source, status, rejection_reason, updated_at, reviewed_by, reviewed_at")
       .maybeSingle();
     if (error) return json({ error: "Could not update payout request" }, 500);

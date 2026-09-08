@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Activity,
+  BarChart3,
   ArrowDownRight,
   ArrowUpRight,
   ChevronDown,
@@ -80,6 +81,7 @@ type Account = {
   phase_passed: boolean | null;
   archived_at: string | null;
   archive_expires_at: string | null;
+  coupon_code: string | null;
   updated_at: string;
   created_at: string;
 };
@@ -796,7 +798,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
     setReviewingKyc(null);
   };
 
-  const reviewPayout = async (payout: Payout, status: "approved" | "rejected", rejectionReason = "") => {
+  const reviewPayout = async (payout: Payout, status: "approved" | "rejected" | "paid", rejectionReason = "") => {
     if (status === "rejected" && rejectionReason.trim().length < 3) {
       setError("A rejection reason is required before declining a payout.");
       return;
@@ -1849,6 +1851,9 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                     </Button>
                                     <Button size="sm" variant="destructive" onClick={() => { setSelectedPayout(payout); setPayoutRejectionReason(""); }} disabled={reviewingPayout === payout.id}>Decline</Button>
                                   </>}
+                                  {payout.status === "approved" && <Button size="sm" variant="gold" onClick={() => void reviewPayout(payout, "paid")} disabled={reviewingPayout === payout.id}>
+                                    <Check className="mr-1.5 h-3.5 w-3.5" />Mark paid
+                                  </Button>}
                                 </div>
                               </td>
                             </tr>
@@ -1882,13 +1887,14 @@ export default function Admin({ section }: { section?: AdminSection }) {
                     <div><p className="text-xs font-medium text-muted-foreground">Reviewed at</p><p>{date(selectedPayout.reviewed_at)}</p></div>
                     {selectedPayout.rejection_reason && <div className="sm:col-span-2"><p className="text-xs font-medium text-muted-foreground">Rejection reason</p><p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">{selectedPayout.rejection_reason}</p></div>}
                   </div>}
-                  {selectedPayout?.status === "pending" && <DialogFooter>
+                  {selectedPayout && (selectedPayout.status === "pending" || selectedPayout.status === "approved") && <DialogFooter>
                     <div className="w-full space-y-2">
-                      <Label htmlFor="payout-rejection-reason">Reason for rejection</Label>
-                      <textarea id="payout-rejection-reason" value={payoutRejectionReason} onChange={(event) => setPayoutRejectionReason(event.target.value)} placeholder="Explain why this payout is being rejected" className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                      {selectedPayout.status === "pending" && <><Label htmlFor="payout-rejection-reason">Reason for rejection</Label>
+                      <textarea id="payout-rejection-reason" value={payoutRejectionReason} onChange={(event) => setPayoutRejectionReason(event.target.value)} placeholder="Explain why this payout is being rejected" className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" /></>}
                       <div className="flex justify-end gap-2">
-                        <Button variant="destructive" onClick={() => void reviewPayout(selectedPayout, "rejected", payoutRejectionReason)} disabled={reviewingPayout === selectedPayout.id || payoutRejectionReason.trim().length < 3}>Decline payout</Button>
-                        <Button variant="gold" onClick={() => void reviewPayout(selectedPayout, "approved")} disabled={reviewingPayout === selectedPayout.id}><Check className="mr-2 h-4 w-4" />Approve payout</Button>
+                        {selectedPayout.status === "pending" && <Button variant="destructive" onClick={() => void reviewPayout(selectedPayout, "rejected", payoutRejectionReason)} disabled={reviewingPayout === selectedPayout.id || payoutRejectionReason.trim().length < 3}>Decline payout</Button>}
+                        {selectedPayout.status === "pending" && <Button variant="gold" onClick={() => void reviewPayout(selectedPayout, "approved")} disabled={reviewingPayout === selectedPayout.id}><Check className="mr-2 h-4 w-4" />Approve payout</Button>}
+                        {selectedPayout.status === "approved" && <Button variant="gold" onClick={() => void reviewPayout(selectedPayout, "paid")} disabled={reviewingPayout === selectedPayout.id}><Check className="mr-2 h-4 w-4" />Mark paid</Button>}
                       </div>
                     </div>
                   </DialogFooter>}
@@ -2595,7 +2601,10 @@ export default function Admin({ section }: { section?: AdminSection }) {
                             <th className="px-6 py-3">Trader</th>
                             <th className="px-4 py-3">Joined</th>
                             <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3 text-right">Code uses</th>
+                            <th className="px-4 py-3 text-right">Conversions</th>
                             <th className="px-4 py-3 text-right">Commission</th>
+                            <th className="px-4 py-3 text-right">Analytics</th>
                             <th className="px-6 py-3 text-right">Action</th>
                           </tr>
                         </thead>
@@ -2630,8 +2639,26 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                   </Badge>
                                 </td>
                                 <td className="px-4 py-4 text-right">
+                                  <div className="font-medium">{(() => { const code = snapshot.affiliateCodes.find((affiliateCode) => affiliateCode.user_id === user.id)?.code; return code ? snapshot.accounts.filter((account) => account.coupon_code?.toUpperCase() === code.toUpperCase()).length : 0; })()}</div>
+                                  <div className="text-xs text-muted-foreground">purchases</div>
+                                </td>
+                                <td className="px-4 py-4 text-right">
+                                  <div className="font-medium">{snapshot.referrals.filter((referral) => referral.referrer_id === user.id && referral.account_purchased).length}</div>
+                                  <div className="text-xs text-muted-foreground">converted</div>
+                                </td>
+                                <td className="px-4 py-4 text-right">
                                   <div className="font-medium">{money(snapshot.referrals.filter((referral) => referral.referrer_id === user.id).reduce((total, referral) => total + Number(referral.commission_earned || 0), 0))}</div>
                                   <div className="text-xs text-muted-foreground">{money(Number(snapshot.affiliateBalances.find((balance) => balance.user_id === user.id)?.available || 0))} available</div>
+                                </td>
+                                <td className="px-4 py-4 text-right">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => navigate(`/admin/affiliates/${user.id}`)}
+                                  >
+                                    <BarChart3 className="mr-2 h-3.5 w-3.5" />
+                                    View analytics
+                                  </Button>
                                 </td>
                                 <td className="px-6 py-4 text-right">
                                   <Button
