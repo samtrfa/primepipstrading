@@ -17,10 +17,12 @@ import {
   FileCheck2,
   ExternalLink,
   Gift,
+  Award,
   Plus,
   Pencil,
   Trash2,
   XCircle,
+  Archive,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -65,6 +67,19 @@ type Account = {
   current_balance: number | null;
   profit_loss: number | null;
   current_phase: number | null;
+  consistency_score: number | null;
+  best_trading_day_profit: number | null;
+  closed_profit_total: number | null;
+  high_water_mark: number | null;
+  daily_start_balance: number | null;
+  daily_start_date: string | null;
+  max_drawdown_percent: number | null;
+  daily_drawdown_percent: number | null;
+  drawdown_violated: boolean | null;
+  violation_type: string | null;
+  phase_passed: boolean | null;
+  archived_at: string | null;
+  archive_expires_at: string | null;
   updated_at: string;
   created_at: string;
 };
@@ -84,7 +99,9 @@ type Position = {
   profit_loss: number | null;
   status: string;
   opened_at: string;
+  closed_at: string | null;
   entry_price: number;
+  exit_price: number | null;
   stop_loss: number | null;
   take_profit: number | null;
   assets?: Asset;
@@ -134,6 +151,7 @@ type History = {
   profit_loss: number | null;
   created_at: string;
   price: number;
+  notes: string | null;
 };
 type Payment = {
   id: string;
@@ -158,12 +176,14 @@ type Payout = {
   amount: number;
   method: string;
   destination: string;
-  source: "trading_profit" | "referral_commission";
+  source: "trading_profit" | "referral_commission" | "manual_award";
   status: string;
   created_at: string;
   updated_at: string;
   reviewed_by: string | null;
   reviewed_at: string | null;
+  rejection_reason: string | null;
+  auditFlag?: "legacy_or_pre_funded" | null;
 };
 type AdminSection =
   | "traders"
@@ -316,9 +336,19 @@ export default function Admin({ section }: { section?: AdminSection }) {
   const [affiliateCodeDrafts, setAffiliateCodeDrafts] = useState<Record<string, { discount: string; isActive: boolean }>>({});
   const [reviewingPayout, setReviewingPayout] = useState<string | null>(null);
   const [selectedPayout, setSelectedPayout] = useState<Payout | null>(null);
+  const [payoutRejectionReason, setPayoutRejectionReason] = useState("");
+  const [manualAwardOpen, setManualAwardOpen] = useState(false);
+  const [manualAwardUserId, setManualAwardUserId] = useState("");
+  const [manualAwardChallenge, setManualAwardChallenge] = useState<GrantChallenge>("instant");
+  const [manualAwardSize, setManualAwardSize] = useState("10000");
+  const [manualAwardAmount, setManualAwardAmount] = useState("");
+  const [manualAwardDate, setManualAwardDate] = useState(new Date().toISOString().slice(0, 10));
+  const [manualAwardMethod, setManualAwardMethod] = useState("bank_transfer");
+  const [manualAwardDestination, setManualAwardDestination] = useState("");
+  const [awardingPayout, setAwardingPayout] = useState(false);
 
-  const loadSnapshot = async () => {
-    setLoading(true);
+  const loadSnapshot = async (background = false) => {
+    if (!background) setLoading(true);
     setError("");
     const {
       data: { session },
@@ -356,9 +386,9 @@ export default function Admin({ section }: { section?: AdminSection }) {
     void loadSnapshot();
 
     const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") void loadSnapshot();
+      if (document.visibilityState === "visible") void loadSnapshot(true);
     };
-    const refreshInterval = window.setInterval(refreshWhenVisible, 15000);
+    const refreshInterval = window.setInterval(refreshWhenVisible, 5000);
     window.addEventListener("focus", refreshWhenVisible);
 
     return () => {
@@ -521,7 +551,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
   const deleteAccount = async (account: Account) => {
     if (
       !window.confirm(
-        `Delete account ${account.id.slice(0, 8)}? This cannot be undone.`,
+        `Archive account ${account.id.slice(0, 8)}? It can be restored by an admin for 30 days.`,
       )
     )
       return;
@@ -538,7 +568,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
       },
     );
     if (deleteError || !data?.deleted)
-      setError(deleteError?.message || "The account could not be deleted.");
+      setError(deleteError?.message || "The account could not be archived.");
     else {
       setSnapshot((current) =>
         current
@@ -555,6 +585,28 @@ export default function Admin({ section }: { section?: AdminSection }) {
     setDeletingAccount(null);
   };
 
+  const restoreAccount = async (account: Account) => {
+    setDeletingAccount(account.id);
+    setError("");
+    const { data, error: restoreError } = await supabase.functions.invoke(
+      "admin-account",
+      { body: { action: "restore", accountId: account.id, userId: account.user_id } },
+    );
+    if (restoreError || !data?.restored) {
+      setError(restoreError?.message || "The account could not be restored.");
+    } else {
+      setSnapshot((current) => current ? {
+        ...current,
+        accounts: current.accounts.map((candidate) =>
+          candidate.id === account.id
+            ? { ...candidate, archived_at: null, archive_expires_at: null }
+            : candidate,
+        ),
+      } : current);
+    }
+    setDeletingAccount(null);
+  };
+
   const deleteTrader = async () => {
     const user = snapshot?.users.find(
       (candidate) => candidate.id === deleteUserId,
@@ -565,7 +617,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
     }
     if (
       !window.confirm(
-        `Delete ${user.email || user.name || "this trader"}? This cannot be undone.`,
+        `Archive all accounts for ${user.email || user.name || "this trader"}? They can be restored by an admin for 30 days.`,
       )
     )
       return;
@@ -577,8 +629,8 @@ export default function Admin({ section }: { section?: AdminSection }) {
         body: { action: "delete-user", userId: user.id },
       },
     );
-    if (deleteError || !data?.deleted)
-      setError(deleteError?.message || "The trader could not be deleted.");
+    if (deleteError || !data?.archived)
+      setError(deleteError?.message || "The trader accounts could not be archived.");
     else {
       setSnapshot((current) =>
         current
@@ -736,22 +788,56 @@ export default function Admin({ section }: { section?: AdminSection }) {
     setReviewingKyc(null);
   };
 
-  const reviewPayout = async (payout: Payout, status: "approved" | "rejected") => {
+  const reviewPayout = async (payout: Payout, status: "approved" | "rejected", rejectionReason = "") => {
+    if (status === "rejected" && rejectionReason.trim().length < 3) {
+      setError("A rejection reason is required before declining a payout.");
+      return;
+    }
     setReviewingPayout(payout.id);
     setError("");
     const { data, error: reviewError } = await supabase.functions.invoke("admin-payout", {
-      body: { payoutId: payout.id, status },
+      body: { payoutId: payout.id, status, rejectionReason: rejectionReason.trim() },
     });
     if (reviewError || !data?.payout) {
       setError(reviewError?.message || "The payout request could not be reviewed.");
     } else {
       setSnapshot((current) => current ? {
         ...current,
-        payouts: current.payouts.map((item) => item.id === payout.id ? { ...item, status, updated_at: data.payout.updated_at, reviewed_by: data.payout.reviewed_by, reviewed_at: data.payout.reviewed_at } : item),
+        payouts: current.payouts.map((item) => item.id === payout.id ? { ...item, status, rejection_reason: data.payout.rejection_reason ?? null, updated_at: data.payout.updated_at, reviewed_by: data.payout.reviewed_by, reviewed_at: data.payout.reviewed_at } : item),
       } : current);
       setSelectedPayout(null);
+      setPayoutRejectionReason("");
     }
     setReviewingPayout(null);
+  };
+
+  const awardManualPayout = async () => {
+    if (!manualAwardUserId || !manualAwardAmount || !manualAwardDate || !manualAwardDestination.trim()) {
+      setError("Select a trader and provide the payout date, payout amount, and destination.");
+      return;
+    }
+    setAwardingPayout(true);
+    setError("");
+    const { data, error: awardError } = await supabase.functions.invoke("admin-award-payout", {
+      body: {
+        userId: manualAwardUserId,
+        accountSize: Number(manualAwardSize),
+        challengeType: manualAwardChallenge,
+        amount: Number(manualAwardAmount),
+        payoutDate: new Date(`${manualAwardDate}T12:00:00`).toISOString(),
+        method: manualAwardMethod,
+        destination: manualAwardDestination,
+      },
+    });
+    if (awardError || !data?.payout) {
+      setError(data?.error || awardError?.message || "The manual payout could not be awarded.");
+    } else {
+      setSnapshot((current) => current ? { ...current, payouts: [data.payout as Payout, ...current.payouts] } : current);
+      setManualAwardOpen(false);
+      setManualAwardAmount("");
+      setManualAwardDestination("");
+    }
+    setAwardingPayout(false);
   };
 
   const previewDocument = async (path: string | null) => {
@@ -821,7 +907,10 @@ export default function Admin({ section }: { section?: AdminSection }) {
     isPurchasedAccount,
   );
   const failedAccounts = (snapshot?.accounts ?? []).filter(
-    (account) => account.status === "failed",
+    (account) => account.status === "failed" && !account.archived_at,
+  );
+  const archivedAccounts = (snapshot?.accounts ?? []).filter(
+    (account) => Boolean(account.archived_at),
   );
   const userMap = useMemo(
     () => new Map((snapshot?.users ?? []).map((user) => [user.id, user])),
@@ -915,7 +1004,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
 
   const pageTitle =
     section === "traders"
-      ? "Trader activity"
+      ? "Traders"
       : section === "exposure"
         ? "Trading exposure"
         : section === "referrals"
@@ -1120,7 +1209,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                 ) : (
                                   <>
                                     <Trash2 className="mr-2 h-3.5 w-3.5" />
-                                    Delete account
+                                    Archive account
                                   </>
                                 )}
                               </Button>
@@ -1131,6 +1220,46 @@ export default function Admin({ section }: { section?: AdminSection }) {
                     </CardContent>
                   </Card>
                 )}
+
+              {(!section || section === "traders") && archivedAccounts.length > 0 && (
+                <Card className="border-amber-500/40">
+                  <CardHeader>
+                    <CardTitle className="flex items-center justify-between gap-3 text-xl">
+                      <span className="flex items-center gap-2">
+                        <Archive className="h-5 w-5 text-amber-600" />
+                        Archived accounts
+                      </span>
+                      <Badge variant="outline">{archivedAccounts.length}</Badge>
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Archived accounts are hidden from traders and permanently removed after 30 days.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {archivedAccounts.map((account) => {
+                      const user = userMap.get(account.user_id);
+                      return (
+                        <div key={account.id} className="flex flex-col gap-4 rounded-lg border border-border p-4 md:flex-row md:items-center md:justify-between">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="font-medium">{user?.name || user?.email || "Unnamed trader"}</p>
+                              <Badge variant="outline">Archived</Badge>
+                            </div>
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {account.challenge_type.replace("_", " ")} · ${money(account.account_size)} ·
+                              {account.archive_expires_at ? ` permanently deleted ${date(account.archive_expires_at)}` : " pending deletion"}
+                            </p>
+                          </div>
+                          <Button size="sm" variant="outline" onClick={() => void restoreAccount(account)} disabled={deletingAccount === account.id}>
+                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                            {deletingAccount === account.id ? "Restoring..." : "Restore account"}
+                          </Button>
+                        </div>
+                      );
+                    })}
+                  </CardContent>
+                </Card>
+              )}
 
               {(!section || section === "traders") && (
                 <Card>
@@ -1656,13 +1785,20 @@ export default function Admin({ section }: { section?: AdminSection }) {
               {(!section || section === "payouts") && (
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-xl">
-                      <WalletCards className="h-5 w-5 text-primary" />
-                      Payout requests
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                      Review funded-account profit and referral commission withdrawals.
-                    </p>
+                    <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-xl">
+                          <WalletCards className="h-5 w-5 text-primary" />
+                          Payout requests
+                        </CardTitle>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Review withdrawals or issue a payout certificate manually.
+                        </p>
+                      </div>
+                      <Button variant="gold" onClick={() => setManualAwardOpen(true)}>
+                        <Award className="mr-2 h-4 w-4" />Award payout
+                      </Button>
+                    </div>
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="overflow-x-auto">
@@ -1686,9 +1822,10 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                 {userMap.get(payout.user_id)?.email || payout.user_id.slice(0, 8)}
                               </td>
                               <td className="px-4 py-4">
-                                <Badge variant="outline">
-                                  {payout.source === "referral_commission" ? "Commission" : "Funded account"}
+                                <Badge variant={payout.auditFlag ? "destructive" : "outline"}>
+                                  {payout.source === "referral_commission" ? "Commission" : payout.source === "manual_award" ? "Manual award" : "Funded account"}
                                 </Badge>
+                                {payout.auditFlag && <p className="mt-1 text-[10px] font-medium text-destructive">Pre-funded or legacy</p>}
                               </td>
                               <td className="px-4 py-4 font-medium">{money(Number(payout.amount))}</td>
                               <td className="px-4 py-4 capitalize">{payout.method.replace("_", " ")}</td>
@@ -1702,7 +1839,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                     <Button size="sm" variant="outline" onClick={() => void reviewPayout(payout, "approved")} disabled={reviewingPayout === payout.id}>
                                       <Check className="mr-1.5 h-3.5 w-3.5" />Approve
                                     </Button>
-                                    <Button size="sm" variant="destructive" onClick={() => void reviewPayout(payout, "rejected")} disabled={reviewingPayout === payout.id}>Decline</Button>
+                                    <Button size="sm" variant="destructive" onClick={() => { setSelectedPayout(payout); setPayoutRejectionReason(""); }} disabled={reviewingPayout === payout.id}>Decline</Button>
                                   </>}
                                 </div>
                               </td>
@@ -1735,11 +1872,38 @@ export default function Admin({ section }: { section?: AdminSection }) {
                     <div><p className="text-xs font-medium text-muted-foreground">Last updated</p><p>{date(selectedPayout.updated_at)}</p></div>
                     <div><p className="text-xs font-medium text-muted-foreground">Reviewed by</p><p>{selectedPayout.reviewed_by ? (userMap.get(selectedPayout.reviewed_by)?.email || selectedPayout.reviewed_by) : "Awaiting review"}</p></div>
                     <div><p className="text-xs font-medium text-muted-foreground">Reviewed at</p><p>{date(selectedPayout.reviewed_at)}</p></div>
+                    {selectedPayout.rejection_reason && <div className="sm:col-span-2"><p className="text-xs font-medium text-muted-foreground">Rejection reason</p><p className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm">{selectedPayout.rejection_reason}</p></div>}
                   </div>}
                   {selectedPayout?.status === "pending" && <DialogFooter>
-                    <Button variant="destructive" onClick={() => void reviewPayout(selectedPayout, "rejected")} disabled={reviewingPayout === selectedPayout.id}>Decline payout</Button>
-                    <Button variant="gold" onClick={() => void reviewPayout(selectedPayout, "approved")} disabled={reviewingPayout === selectedPayout.id}><Check className="mr-2 h-4 w-4" />Approve payout</Button>
+                    <div className="w-full space-y-2">
+                      <Label htmlFor="payout-rejection-reason">Reason for rejection</Label>
+                      <textarea id="payout-rejection-reason" value={payoutRejectionReason} onChange={(event) => setPayoutRejectionReason(event.target.value)} placeholder="Explain why this payout is being rejected" className="min-h-20 w-full rounded-md border border-input bg-background px-3 py-2 text-sm" />
+                      <div className="flex justify-end gap-2">
+                        <Button variant="destructive" onClick={() => void reviewPayout(selectedPayout, "rejected", payoutRejectionReason)} disabled={reviewingPayout === selectedPayout.id || payoutRejectionReason.trim().length < 3}>Decline payout</Button>
+                        <Button variant="gold" onClick={() => void reviewPayout(selectedPayout, "approved")} disabled={reviewingPayout === selectedPayout.id}><Check className="mr-2 h-4 w-4" />Approve payout</Button>
+                      </div>
+                    </div>
                   </DialogFooter>}
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={manualAwardOpen} onOpenChange={setManualAwardOpen}>
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2"><Award className="h-5 w-5 text-primary" />Award payout certificate</DialogTitle>
+                    <DialogDescription>Issue a verified payout and certificate directly to a selected trader.</DialogDescription>
+                  </DialogHeader>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2 sm:col-span-2"><Label>Trader</Label><Select value={manualAwardUserId} onValueChange={setManualAwardUserId}><SelectTrigger><SelectValue placeholder="Choose a trader" /></SelectTrigger><SelectContent>{snapshot.users.filter((user) => !user.isAdmin).map((user) => <SelectItem key={user.id} value={user.id}>{user.name || user.email || "Unnamed trader"}</SelectItem>)}</SelectContent></Select></div>
+                    <div className="space-y-2"><Label>Account size</Label><Select value={manualAwardSize} onValueChange={setManualAwardSize}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{[5000, 10000, 25000, 50000, 100000, 200000].map((size) => <SelectItem key={size} value={String(size)}>${size.toLocaleString()}</SelectItem>)}</SelectContent></Select></div>
+                    <div className="space-y-2"><Label>Challenge</Label><Select value={manualAwardChallenge} onValueChange={(value) => setManualAwardChallenge(value as GrantChallenge)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="three_step">3-Step Challenge</SelectItem><SelectItem value="two_step">2-Step Challenge</SelectItem><SelectItem value="one_step">1-Step Challenge</SelectItem><SelectItem value="instant">Instant Funding</SelectItem></SelectContent></Select></div>
+                    <div className="space-y-2"><Label htmlFor="manual-award-amount">Payout amount</Label><Input id="manual-award-amount" type="number" min="0.01" step="0.01" placeholder="2500.00" value={manualAwardAmount} onChange={(event) => setManualAwardAmount(event.target.value)} /></div>
+                    <div className="space-y-2"><Label htmlFor="manual-award-date">Payout date</Label><Input id="manual-award-date" type="date" value={manualAwardDate} onChange={(event) => setManualAwardDate(event.target.value)} /></div>
+                    <div className="space-y-2"><Label>Method</Label><Select value={manualAwardMethod} onValueChange={setManualAwardMethod}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="bank_transfer">Bank transfer</SelectItem><SelectItem value="crypto">Crypto</SelectItem></SelectContent></Select></div>
+                    <div className="space-y-2 sm:col-span-2"><Label htmlFor="manual-award-destination">Payout destination</Label><Input id="manual-award-destination" placeholder={manualAwardMethod === "crypto" ? "Wallet address" : "Bank details or recipient reference"} value={manualAwardDestination} onChange={(event) => setManualAwardDestination(event.target.value)} /></div>
+                  </div>
+                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-4 text-sm text-muted-foreground">This award is approved immediately and creates a dark, downloadable payout certificate in the trader's dashboard.</div>
+                  <DialogFooter><Button variant="outline" onClick={() => setManualAwardOpen(false)}>Cancel</Button><Button variant="gold" onClick={() => void awardManualPayout()} disabled={awardingPayout}>{awardingPayout ? "Awarding..." : "Award payout"}</Button></DialogFooter>
                 </DialogContent>
               </Dialog>
 
@@ -1777,7 +1941,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                     ) : (
                       <>
                         <Trash2 className="mr-2 h-3.5 w-3.5" />
-                        Delete selected account
+                        Archive selected account
                       </>
                     )}
                   </Button>
@@ -1789,7 +1953,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-xl">
                       <Trash2 className="h-5 w-5 text-primary" />
-                      Delete trader
+                      Archive trader accounts
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
                       Remove a trader and their accounts. Traders with payout
@@ -1823,7 +1987,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                         onClick={() => void deleteTrader()}
                         disabled={deletingUser || !deleteUserId}
                       >
-                        {deletingUser ? "Deleting..." : "Delete trader"}
+                        {deletingUser ? "Archiving..." : "Archive trader accounts"}
                       </Button>
                     </div>
                   </CardContent>
@@ -2131,15 +2295,15 @@ export default function Admin({ section }: { section?: AdminSection }) {
                   <Card>
                     <CardHeader>
                       <CardTitle className="flex items-center justify-between text-xl">
-                        <span>Trader activity</span>
+                        <span>Traders</span>
                         <Badge variant="outline">
-                          {activeUsers.length} signed in recently
+                          {new Set(snapshot.accounts.filter((account) => account.status !== "pending_payment").map((account) => account.user_id)).size} with accounts
                         </Badge>
                       </CardTitle>
                     </CardHeader>
                     <CardContent className="p-0">
                       <div className="divide-y divide-border/60">
-                        {sortedUsers.map((user) => {
+                        {sortedUsers.filter((user) => snapshot.accounts.some((account) => account.user_id === user.id && account.status !== "pending_payment")).map((user) => {
                           const group = traderGroups.find(
                             (candidate) => candidate.user.id === user.id,
                           );
@@ -2153,7 +2317,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                           return (
                             <Collapsible key={user.id}>
                               <CollapsibleTrigger asChild>
-                                <button className="flex w-full flex-wrap items-center justify-between gap-4 px-6 py-4 text-left hover:bg-secondary/30">
+                                <button onClick={() => navigate(`/admin/traders/${user.id}`)} className="flex w-full flex-wrap items-center justify-between gap-4 px-6 py-4 text-left hover:bg-secondary/30">
                                   <span className="min-w-0">
                                     <span className="flex items-center gap-2 font-medium">
                                       <span
@@ -2196,6 +2360,10 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                       <p className={cn("mt-2 text-sm font-medium", (account.profit_loss ?? 0) >= 0 ? "text-success" : "text-destructive")}>
                                         {money(account.profit_loss ?? 0)} P/L
                                       </p>
+                                      <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+                                        <span>Daily DD: <strong className={cn((account.daily_drawdown_percent ?? 0) >= 80 ? "text-warning" : "text-foreground")}>{(account.daily_drawdown_percent ?? 0).toFixed(2)}%</strong></span>
+                                        <span>Max DD: <strong className={cn((account.max_drawdown_percent ?? 0) >= 80 ? "text-warning" : "text-foreground")}>{(account.max_drawdown_percent ?? 0).toFixed(2)}%</strong></span>
+                                      </div>
                                     </div>
                                   ))}
                                 </div>

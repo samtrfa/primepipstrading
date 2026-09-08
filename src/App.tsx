@@ -32,6 +32,7 @@ import {
 } from "./pages/FooterPages";
 import NotFound from "./pages/NotFound";
 import Admin from "./pages/Admin";
+import TraderDetails from "./pages/TraderDetails";
 import AuthCallback from "./pages/AuthCallback";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
@@ -68,6 +69,7 @@ const App = () => (
             <Route path="/admin" element={<Admin />} />
             <Route path="/admin/kyc" element={<Admin section="kyc" />} />
             <Route path="/admin/traders" element={<Admin section="traders" />} />
+            <Route path="/admin/traders/:userId" element={<TraderDetails />} />
             <Route path="/admin/exposure" element={<Admin section="exposure" />} />
             <Route path="/admin/referrals" element={<Admin section="referrals" />} />
             <Route path="/admin/affiliates" element={<Admin section="affiliates" />} />

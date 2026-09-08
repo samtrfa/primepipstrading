@@ -34,16 +34,16 @@ Deno.serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const [{ data: usersData, error: usersError }, accounts, positions, referrals, applications, affiliateCodes, history, kyc, kycDocuments, payments, payouts, coupons] = await Promise.all([
       admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-      admin.from("accounts").select("id, user_id, account_size, challenge_type, status, current_balance, profit_loss, current_phase, updated_at, created_at"),
-      admin.from("positions").select("id, account_id, asset_id, position_type, lot_size, profit_loss, status, opened_at, entry_price, stop_loss, take_profit, assets(symbol, pip_value, asset_type, quote_currency, lot_size)"),
+      admin.from("accounts").select("id, user_id, account_size, challenge_type, status, current_balance, profit_loss, current_phase, high_water_mark, daily_start_balance, daily_start_date, max_drawdown_percent, daily_drawdown_percent, consistency_score, best_trading_day_profit, closed_profit_total, drawdown_violated, violation_type, phase_passed, archived_at, archive_expires_at, updated_at, created_at"),
+      admin.from("positions").select("id, account_id, asset_id, position_type, lot_size, profit_loss, status, opened_at, closed_at, entry_price, exit_price, stop_loss, take_profit, assets(symbol, pip_value, asset_type, quote_currency, lot_size)"),
       admin.from("referrals").select("referrer_id, referred_user_id, status, commission_earned, referred_at, account_purchased"),
       admin.from("affiliate_applications").select("id, user_id, desired_code, phone, country, website, instagram, tiktok, youtube, x_handle, audience_size, promotion_channels, affiliate_experience, promotion_plan, status, rejection_reason, created_at, updated_at").order("created_at", { ascending: false }),
       admin.from("affiliate_codes").select("id, user_id, code, discount_percent, is_active, created_at").order("created_at", { ascending: false }),
-      admin.from("trade_history").select("id, account_id, symbol, action, lot_size, profit_loss, created_at, price").order("created_at", { ascending: false }).limit(200),
+      admin.from("trade_history").select("id, account_id, symbol, action, lot_size, profit_loss, created_at, price, notes").order("created_at", { ascending: false }),
       admin.from("kyc_verifications").select("id, user_id, identity_document_type, identity_document_path, identity_submitted_at, address_document_type, address_document_path, address_submitted_at, status, rejection_reason, reviewed_at, reviewed_by, created_at, updated_at").order("created_at", { ascending: false }),
       admin.from("kyc_documents").select("id, kyc_id, document_kind, document_type, storage_path, submitted_at").order("submitted_at", { ascending: false }),
       admin.from("payment_orders").select("id, user_id, account_id, provider, provider_reference, amount, currency, status, checkout_at, verified_at, webhook_at, failure_reason, refund_amount, refunded_at").order("checkout_at", { ascending: false }).limit(200),
-      admin.from("payout_requests").select("id, user_id, account_id, amount, method, destination, source, status, created_at, updated_at, reviewed_by, reviewed_at").order("created_at", { ascending: false }).limit(200),
+      admin.from("payout_requests").select("id, user_id, account_id, amount, method, destination, source, status, rejection_reason, created_at, updated_at, reviewed_by, reviewed_at").order("created_at", { ascending: false }).limit(200),
       admin.from("coupons").select("id, code, discount_percent, challenge_types, is_active, expires_at, max_uses, times_used, created_at, updated_at").order("created_at", { ascending: false }),
     ]);
 
@@ -60,6 +60,24 @@ Deno.serve(async (req) => {
     const users = usersData?.users ?? [];
     const adminUserIds = new Set(users.filter((user) => user.app_metadata?.role === "admin").map((user) => user.id));
     const visibleAccounts = (accounts.data ?? []).filter((account) => !adminUserIds.has(account.user_id));
+    const accountById = new Map(visibleAccounts.map((account) => [account.id, account]));
+    const fundedStartByAccount = new Map<string, string>();
+    for (const trade of history.data ?? []) {
+      if (trade.action !== "phase_advance" || !trade.notes?.toLowerCase().includes("funded")) continue;
+      const current = fundedStartByAccount.get(trade.account_id);
+      if (!current || new Date(trade.created_at) > new Date(current)) fundedStartByAccount.set(trade.account_id, trade.created_at);
+    }
+    const auditedPayouts = (payouts.data ?? []).map((payout) => {
+      if (payout.source !== "trading_profit") return { ...payout, auditFlag: null };
+      const account = payout.account_id ? accountById.get(payout.account_id) : null;
+      const fundedStart = account && (fundedStartByAccount.get(account.id) ?? account.funded_started_at);
+      const submittedBeforeFunded = !fundedStart || new Date(payout.created_at) < new Date(fundedStart);
+      const accountNotFunded = account?.status !== "funded";
+      return {
+        ...payout,
+        auditFlag: submittedBeforeFunded || accountNotFunded ? "legacy_or_pre_funded" : null,
+      };
+    });
 
     return json({
       users: (users ?? []).filter((user) => user.app_metadata?.role !== "admin").map((user) => ({
@@ -80,7 +98,7 @@ Deno.serve(async (req) => {
       kyc: kyc.data ?? [],
       kycDocuments: kycDocuments.data ?? [],
       payments: payments.data ?? [],
-      payouts: payouts.data ?? [],
+      payouts: auditedPayouts,
       coupons: coupons.data ?? [],
       generatedAt: new Date().toISOString(),
     });

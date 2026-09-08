@@ -14,6 +14,9 @@ interface DrawdownTrackerProps {
   unrealizedPL: number;
   challengeType: string;
   currentPhase?: number | null;
+  serverMaxDrawdownPercent: number | null;
+  serverDailyDrawdownPercent: number | null;
+  serverDrawdownViolated?: boolean | null;
 }
 
 export function DrawdownTracker({
@@ -24,6 +27,9 @@ export function DrawdownTracker({
   unrealizedPL,
   challengeType,
   currentPhase = 1,
+  serverMaxDrawdownPercent,
+  serverDailyDrawdownPercent,
+  serverDrawdownViolated = false,
 }: DrawdownTrackerProps) {
   const rules = getPhaseRules(challengeType, currentPhase);
   const limits = { daily: rules.dailyDrawdown, max: rules.maxDrawdown };
@@ -39,11 +45,13 @@ export function DrawdownTracker({
 
   // Calculate max drawdown from high water mark
   const maxDrawdownAmount = Math.max(0, effectiveHWM - equity);
-  const maxDrawdownPercent = effectiveHWM > 0 ? (maxDrawdownAmount / effectiveHWM) * 100 : 0;
+  const calculatedMaxDrawdownPercent = effectiveHWM > 0 ? (maxDrawdownAmount / effectiveHWM) * 100 : 0;
 
   // Calculate daily drawdown from daily start balance
   const dailyDrawdownAmount = Math.max(0, effectiveDailyStart - equity);
-  const dailyDrawdownPercent = effectiveDailyStart > 0 ? (dailyDrawdownAmount / effectiveDailyStart) * 100 : 0;
+  const calculatedDailyDrawdownPercent = effectiveDailyStart > 0 ? (dailyDrawdownAmount / effectiveDailyStart) * 100 : 0;
+  const maxDrawdownPercent = serverMaxDrawdownPercent ?? calculatedMaxDrawdownPercent;
+  const dailyDrawdownPercent = serverDailyDrawdownPercent ?? calculatedDailyDrawdownPercent;
 
   // Progress towards limits (for progress bars)
   const maxDrawdownProgress = Math.min((maxDrawdownPercent / limits.max) * 100, 100);
@@ -52,7 +60,7 @@ export function DrawdownTracker({
   const violations = useMemo(() => {
     const newViolations: string[] = [];
     
-    if (maxDrawdownPercent >= limits.max) {
+    if (serverDrawdownViolated || maxDrawdownPercent >= limits.max) {
       newViolations.push(`Max Drawdown Limit Breached (${limits.max}%)`);
     }
     

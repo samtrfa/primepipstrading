@@ -36,5 +36,8 @@ verify_jwt = false
 [functions.admin-payout]
 verify_jwt = false
 
+[functions.admin-award-payout]
+verify_jwt = false
+
 [functions.send-transactional-email]
 verify_jwt = false

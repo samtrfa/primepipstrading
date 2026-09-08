@@ -104,7 +104,7 @@ BEGIN
   WHERE id = payment.id;
 
   IF reason IS NULL AND next_status = 'success' AND payment.status NOT IN ('success', 'refunded') AND account.status = 'pending_payment' THEN
-    UPDATE public.accounts SET status = CASE WHEN challenge_type = 'instant' THEN 'funded' ELSE 'active' END,
+    UPDATE public.accounts SET status = CASE WHEN challenge_type = 'instant' THEN 'funded'::account_status ELSE 'active'::account_status END,
       current_phase = CASE WHEN challenge_type = 'instant' THEN NULL ELSE 1 END,
       payment_tx_hash = coalesce(payment_tx_hash, p_reference)
     WHERE id = account.id AND status = 'pending_payment';

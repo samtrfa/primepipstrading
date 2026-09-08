@@ -264,10 +264,15 @@ export type Database = {
         Row: {
           account_size: number
           challenge_type: Database["public"]["Enums"]["challenge_type"]
+          best_trading_day_profit: number | null
+          closed_profit_total: number | null
+          consistency_score: number | null
           coupon_code: string | null
           created_at: string
           current_balance: number | null
           current_phase: number | null
+          funded_started_at: string | null
+          funded_profit_loss: number
           daily_drawdown_percent: number | null
           daily_start_balance: number | null
           daily_start_date: string | null
@@ -293,10 +298,15 @@ export type Database = {
         Insert: {
           account_size: number
           challenge_type: Database["public"]["Enums"]["challenge_type"]
+          best_trading_day_profit?: number | null
+          closed_profit_total?: number | null
+          consistency_score?: number | null
           coupon_code?: string | null
           created_at?: string
           current_balance?: number | null
           current_phase?: number | null
+          funded_started_at?: string | null
+          funded_profit_loss?: number
           daily_drawdown_percent?: number | null
           daily_start_balance?: number | null
           daily_start_date?: string | null
@@ -322,10 +332,15 @@ export type Database = {
         Update: {
           account_size?: number
           challenge_type?: Database["public"]["Enums"]["challenge_type"]
+          best_trading_day_profit?: number | null
+          closed_profit_total?: number | null
+          consistency_score?: number | null
           coupon_code?: string | null
           created_at?: string
           current_balance?: number | null
           current_phase?: number | null
+          funded_started_at?: string | null
+          funded_profit_loss?: number
           daily_drawdown_percent?: number | null
           daily_start_balance?: number | null
           daily_start_date?: string | null
@@ -354,31 +369,43 @@ export type Database = {
         Row: {
           id: string
           user_id: string
-          account_id: string
-          challenge_type: Database["public"]["Enums"]["challenge_type"]
-          account_size: number
-          phase_number: number
-          phase_name: string
+          account_id: string | null
+          challenge_type: Database["public"]["Enums"]["challenge_type"] | null
+          account_size: number | null
+          phase_number: number | null
+          phase_name: string | null
+          payout_id: string | null
+          payout_amount: number | null
+          payout_method: string | null
+          recipient_name: string | null
           awarded_at: string
         }
         Insert: {
           id?: string
           user_id: string
-          account_id: string
-          challenge_type: Database["public"]["Enums"]["challenge_type"]
-          account_size: number
-          phase_number: number
-          phase_name: string
+          account_id?: string | null
+          challenge_type?: Database["public"]["Enums"]["challenge_type"] | null
+          account_size?: number | null
+          phase_number?: number | null
+          phase_name?: string | null
+          payout_id?: string | null
+          payout_amount?: number | null
+          payout_method?: string | null
+          recipient_name?: string | null
           awarded_at?: string
         }
         Update: {
           id?: string
           user_id?: string
-          account_id?: string
-          challenge_type?: Database["public"]["Enums"]["challenge_type"]
-          account_size?: number
-          phase_number?: number
-          phase_name?: string
+          account_id?: string | null
+          challenge_type?: Database["public"]["Enums"]["challenge_type"] | null
+          account_size?: number | null
+          phase_number?: number | null
+          phase_name?: string | null
+          payout_id?: string | null
+          payout_amount?: number | null
+          payout_method?: string | null
+          recipient_name?: string | null
           awarded_at?: string
         }
         Relationships: []
@@ -590,8 +617,12 @@ export type Database = {
           account_id: string | null
           created_at: string
           destination: string
+          certificate_account_size: number | null
+          certificate_challenge_type: Database["public"]["Enums"]["challenge_type"] | null
+          payout_date: string | null
           id: string
           method: string
+          rejection_reason: string | null
           source: string
           status: string
           updated_at: string
@@ -602,8 +633,12 @@ export type Database = {
           account_id?: string | null
           created_at?: string
           destination: string
+          certificate_account_size?: number | null
+          certificate_challenge_type?: Database["public"]["Enums"]["challenge_type"] | null
+          payout_date?: string | null
           id?: string
           method: string
+          rejection_reason?: string | null
           source?: string
           status?: string
           updated_at?: string
@@ -614,8 +649,12 @@ export type Database = {
           account_id?: string
           created_at?: string
           destination?: string
+          certificate_account_size?: number | null
+          certificate_challenge_type?: Database["public"]["Enums"]["challenge_type"] | null
+          payout_date?: string | null
           id?: string
           method?: string
+          rejection_reason?: string | null
           source?: string
           status?: string
           updated_at?: string

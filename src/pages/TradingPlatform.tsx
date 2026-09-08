@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,13 +12,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { calculatePositionPL, formatPips, getRequiredMargin } from "@/lib/tradingCalculations";
 import {
-  calculateConsistencyScore,
-  FUNDED_CONSISTENCY_BREACH_PERCENT,
-  FUNDED_MAX_RISK_PERCENT,
   getInitialPhase,
   getPhaseRules,
   getTotalPhases,
-  hasConsistencyRule,
   isInstantAccount,
 } from "@/lib/challengeRules";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
@@ -52,6 +48,9 @@ interface Account {
   challenge_type: string;
   status: string;
   current_phase: number | null;
+  consistency_score: number | null;
+  best_trading_day_profit: number | null;
+  closed_profit_total: number | null;
   high_water_mark: number | null;
   daily_start_balance: number | null;
   daily_start_date: string | null;
@@ -215,6 +214,20 @@ export default function TradingPlatform() {
     fetchData();
   }, [accountId, navigate, toast]);
 
+  useEffect(() => {
+    if (!accountId) return;
+    const refreshServerState = async () => {
+      const [{ data: accountData }, { data: positionsData }] = await Promise.all([
+        supabase.from("accounts").select("*").eq("id", accountId).maybeSingle(),
+        supabase.from("positions").select("*, assets(*)").eq("account_id", accountId).order("opened_at", { ascending: false }),
+      ]);
+      if (accountData) setAccount(accountData as Account);
+      if (positionsData) setPositions(positionsData as Position[]);
+    };
+    const interval = window.setInterval(() => void refreshServerState(), 5000);
+    return () => window.clearInterval(interval);
+  }, [accountId]);
+
   // Calculate unrealized P/L for open positions using proper pip calculations
   const calculateUnrealizedPL = useCallback(() => {
     return positions
@@ -268,9 +281,6 @@ export default function TradingPlatform() {
 
   const isBlocked =
     !!account && (account.status === "failed" || account.drawdown_violated === true);
-  const isFundedAccount =
-    account?.status === "funded" || (account?.challenge_type === "instant" && account?.status === "active");
-
   // ---- Margin (account balance is the total available margin) ----
   const usedMargin = positions
     .filter((p) => p.status === "open")
@@ -289,50 +299,6 @@ export default function TradingPlatform() {
       ? getRequiredMargin(selectedAsset, pendingLots, pendingPrice)
       : 0;
   const insufficientMargin = pendingMargin > freeMargin;
-
-  const breachHandledRef = useRef(false);
-  const enforceRuleBreach = useCallback(async () => {
-    if (!account || breachHandledRef.current) return;
-    breachHandledRef.current = true;
-    await Promise.all(positions.filter((position) => position.status === "open" && position.assets).map((position) => {
-      const quote = prices[position.assets!.symbol];
-      if (!quote) return Promise.resolve();
-      return supabase.rpc("close_trade", {
-        p_account_id: account.id,
-        p_position_id: position.id,
-        p_exit_price: position.position_type === "buy" ? quote.bid : quote.ask,
-        p_action: "close",
-        p_request_id: crypto.randomUUID(),
-      });
-    }));
-    toast({ title: "Account risk limit reached", description: "Open positions were sent for server-side closure.", variant: "destructive" });
-  }, [account, positions, prices, toast]);
-
-  // Live (equity-based) breach monitoring — reacts instantly to price moves
-  useEffect(() => {
-    if (!account || isBlocked || breachHandledRef.current) return;
-
-    const unrealized = calculateUnrealizedPL();
-    const liveEquity = (account.current_balance || account.account_size) + unrealized;
-    const storedHWM = account.high_water_mark ?? account.account_size;
-    const hwm = Math.max(storedHWM, liveEquity);
-    const dailyStart = account.daily_start_balance ?? account.account_size;
-    const rules = getPhaseRules(account.challenge_type, account.current_phase || 1);
-
-    if (liveEquity > storedHWM) {
-      setAccount((previous) => previous && previous.id === account.id
-        ? { ...previous, high_water_mark: liveEquity }
-        : previous);
-    }
-
-    const maxDD = hwm > 0 ? ((hwm - liveEquity) / hwm) * 100 : 0;
-    const dailyDD = dailyStart > 0 ? ((dailyStart - liveEquity) / dailyStart) * 100 : 0;
-    if (maxDD >= rules.maxDrawdown) {
-      void enforceRuleBreach();
-    } else if (dailyDD >= rules.dailyDrawdown) {
-      void enforceRuleBreach();
-    }
-  }, [account, isBlocked, calculateUnrealizedPL, enforceRuleBreach]);
 
   const handlePlaceOrder = async (type: "buy" | "sell") => {
     if (!selectedAsset || !account) return;
@@ -528,34 +494,6 @@ export default function TradingPlatform() {
     setApplyPositionToAsset(false);
     toast({ title: applyPositionToAsset ? "Positions modified" : "Position modified" });
   };
-
-  // Execute attached exits from the same live bid/ask prices used for unrealized P/L.
-  const handledTriggersRef = useRef(new Set<string>());
-  useEffect(() => {
-    for (const position of positions) {
-      if (position.status !== "open" || !position.assets) continue;
-      const quote = prices[position.assets.symbol];
-      if (!quote) continue;
-
-      const marketPrice = position.position_type === "buy" ? quote.bid : quote.ask;
-      const stopTriggered = position.stop_loss !== null && (
-        position.position_type === "buy" ? marketPrice <= position.stop_loss : marketPrice >= position.stop_loss
-      );
-      const targetTriggered = position.take_profit !== null && (
-        position.position_type === "buy" ? marketPrice >= position.take_profit : marketPrice <= position.take_profit
-      );
-      const trigger = stopTriggered
-        ? { key: `${position.id}:sl`, price: marketPrice, action: "sl_hit" as const }
-        : targetTriggered
-          ? { key: `${position.id}:tp`, price: marketPrice, action: "tp_hit" as const }
-          : null;
-
-      if (trigger && !handledTriggersRef.current.has(trigger.key)) {
-        handledTriggersRef.current.add(trigger.key);
-        void handleClosePosition(position, trigger.price, trigger.action);
-      }
-    }
-  }, [handleClosePosition, positions, prices]);
 
   // Handle proceeding to next phase
   const handleProceedToNextPhase = async () => {
@@ -989,7 +927,7 @@ export default function TradingPlatform() {
                   unrealizedPL={unrealizedPL}
                   challengeType={account.challenge_type}
                   currentPhase={account.current_phase}
-                  phasePassed={!isBlocked && (account.phase_passed || false)}
+                  phasePassed={!isBlocked && (account.phase_passed || false) && (account.consistency_score ?? 0) < 30}
                   onProceedToNextPhase={handleProceedToNextPhase}
                   isProceeding={isProceeding}
                 />
@@ -1001,9 +939,12 @@ export default function TradingPlatform() {
                   unrealizedPL={unrealizedPL}
                   challengeType={account.challenge_type}
                   currentPhase={account.current_phase}
+                  serverMaxDrawdownPercent={account.max_drawdown_percent}
+                  serverDailyDrawdownPercent={account.daily_drawdown_percent}
+                  serverDrawdownViolated={account.drawdown_violated}
                 />
-                {account && (hasConsistencyRule(account.challenge_type) || isFundedAccount) && (
-                  <ConsistencyScoreTracker positions={fundedClosedPositions} />
+                {account && (
+                  <ConsistencyScoreTracker positions={fundedClosedPositions} serverScore={account.consistency_score} serverBestDayProfit={account.best_trading_day_profit} serverTotalProfit={account.closed_profit_total} />
                 )}
               </div>
             )}

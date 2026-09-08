@@ -12,18 +12,23 @@ interface ClosedPosition {
 
 interface ConsistencyScoreTrackerProps {
   positions: ClosedPosition[];
+  serverScore?: number | null;
+  serverBestDayProfit?: number | null;
+  serverTotalProfit?: number | null;
 }
 
-export function ConsistencyScoreTracker({ positions }: ConsistencyScoreTrackerProps) {
-  const totalProfit = positions.reduce((total, position) => total + Math.max(0, position.profit_loss), 0);
+export function ConsistencyScoreTracker({ positions, serverScore, serverBestDayProfit, serverTotalProfit }: ConsistencyScoreTrackerProps) {
+  const calculatedTotalProfit = positions.reduce((total, position) => total + Math.max(0, position.profit_loss), 0);
   const dailyProfits = positions.reduce<Record<string, number>>((totals, position) => {
     if (!position.closed_at || position.profit_loss <= 0) return totals;
     const day = new Date(position.closed_at).toISOString().slice(0, 10);
     totals[day] = (totals[day] || 0) + position.profit_loss;
     return totals;
   }, {});
-  const bestDayProfit = Math.max(0, ...Object.values(dailyProfits));
-  const score = calculateConsistencyScore(positions);
+  const calculatedBestDayProfit = Math.max(0, ...Object.values(dailyProfits));
+  const totalProfit = serverTotalProfit ?? calculatedTotalProfit;
+  const bestDayProfit = serverBestDayProfit ?? calculatedBestDayProfit;
+  const score = serverScore ?? calculateConsistencyScore(positions);
   const progress = Math.min((score / FUNDED_CONSISTENCY_PERCENT) * 100, 100);
   const isWithinLimit = totalProfit > 0 && score < FUNDED_CONSISTENCY_PERCENT;
 

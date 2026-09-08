@@ -18,8 +18,11 @@ interface Account {
   account_size: number;
   price: number;
   status: string;
+  rejection_reason: string | null;
   current_balance: number | null;
   profit_loss: number | null;
+  funded_profit_loss: number | null;
+  consistency_score: number | null;
   created_at: string;
 }
 
@@ -86,7 +89,7 @@ export default function PayoutsPage() {
         .from("accounts")
         .select("*")
         // Instant accounts are funded by definition, including legacy rows not yet normalized.
-        .or("status.eq.funded,and(status.eq.active,challenge_type.eq.instant)")
+        .eq("status", "funded")
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -94,13 +97,13 @@ export default function PayoutsPage() {
       } else if (data) {
         setAccounts(data);
         // Calculate total profit from all funded accounts
-        const total = data.reduce((sum, a) => sum + (a.profit_loss || 0), 0);
+        const total = data.reduce((sum, a) => sum + (a.funded_profit_loss || 0), 0);
         setTotalProfit(total);
       }
 
       const { data: payoutData, error: payoutError } = await supabase
         .from("payout_requests")
-        .select("id, account_id, amount, method, destination, source, status, created_at")
+        .select("id, account_id, amount, method, destination, source, status, rejection_reason, created_at")
         .order("created_at", { ascending: false });
 
       if (payoutError) {
@@ -138,14 +141,14 @@ export default function PayoutsPage() {
   }, [navigate]);
 
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
-  const eligibleTradingAccounts = accounts.filter((account) => (account.profit_loss || 0) >= MIN_PAYOUT_PROFIT);
-  const availableTradingProfit = eligibleTradingAccounts.reduce((sum, account) => sum + Math.max(0, account.profit_loss || 0), 0);
+  const eligibleTradingAccounts = accounts.filter((account) => (account.funded_profit_loss || 0) >= MIN_PAYOUT_PROFIT && (account.consistency_score ?? 0) < 30);
+  const availableTradingProfit = eligibleTradingAccounts.reduce((sum, account) => sum + Math.max(0, account.funded_profit_loss || 0), 0);
   const availableForWithdrawal = availableTradingProfit + commissionAvailable;
   const requestAmount = Number(amount);
 
   const openRequestDialog = () => {
     const firstEligibleAccount = eligibleTradingAccounts[0];
-    const accountProfit = Math.max(0, firstEligibleAccount?.profit_loss || 0);
+    const accountProfit = Math.max(0, firstEligibleAccount?.funded_profit_loss || 0);
     setSelectedAccountId(firstEligibleAccount?.id || "");
     setAmount(accountProfit >= MIN_PAYOUT_PROFIT ? String(Math.floor(accountProfit)) : "");
     setPayoutSource("trading_profit");
@@ -197,7 +200,11 @@ export default function PayoutsPage() {
     const payoutDestination = method === "crypto"
       ? paymentMethods.find((paymentMethod) => paymentMethod.id === selectedPaymentMethodId)?.wallet_address || ""
       : destination.trim();
-    const sourceBalance = isCommissionPayout ? commissionAvailable : Math.max(0, selectedAccount?.profit_loss || 0);
+    const sourceBalance = isCommissionPayout ? commissionAvailable : Math.max(0, selectedAccount?.funded_profit_loss || 0);
+    if (!isCommissionPayout && (selectedAccount?.consistency_score ?? 0) >= 30) {
+      toast({ title: "Consistency rule not met", description: "Keep trading until your best trading day is below 30% of total funded-stage profit.", variant: "destructive" });
+      return;
+    }
     if (!isCommissionPayout && kycStatus !== "approved") {
       toast({ title: "KYC approval required", description: "Complete identity verification before requesting a funded-account payout.", variant: "destructive" });
       return;
@@ -220,7 +227,7 @@ export default function PayoutsPage() {
       : await supabase
         .from("payout_requests")
         .insert({ user_id: user.id, account_id: selectedAccount.id, amount: requestAmount, method, destination: payoutDestination, source: "trading_profit" })
-        .select("id, account_id, amount, method, destination, source, status, created_at")
+        .select("id, account_id, amount, method, destination, source, status, rejection_reason, created_at")
         .single();
     const { data, error } = result;
 
@@ -355,9 +362,9 @@ export default function PayoutsPage() {
                     </div>
                     <div className="text-right">
                       <p className={`font-semibold ${
-                        (account.profit_loss || 0) > 0 ? 'text-success' : 'text-foreground'
+                        (account.funded_profit_loss || 0) > 0 ? 'text-success' : 'text-foreground'
                       }`}>
-                        {(account.profit_loss || 0) > 0 ? '+' : ''}${(account.profit_loss || 0).toLocaleString()}
+                        {(account.funded_profit_loss || 0) > 0 ? '+' : ''}${(account.funded_profit_loss || 0).toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -384,6 +391,7 @@ export default function PayoutsPage() {
                       <div className="min-w-0">
                         <p className="font-medium text-foreground">${request.amount.toLocaleString()} via {request.method === "crypto" ? "Crypto" : "Bank transfer"}</p>
                         <p className="truncate text-sm text-muted-foreground">{request.destination} · {new Date(request.created_at).toLocaleDateString()}</p>
+                        {request.rejection_reason && <p className="mt-1 text-sm text-destructive">Reason: {request.rejection_reason}</p>}
                       </div>
                       <Badge className={config.className}><StatusIcon className="mr-1 h-3 w-3" />{config.label}</Badge>
                     </div>
@@ -428,12 +436,12 @@ export default function PayoutsPage() {
               <Label htmlFor="payout-account">Funded account</Label>
               <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
                 <SelectTrigger id="payout-account"><SelectValue placeholder="Select an account" /></SelectTrigger>
-                <SelectContent>{accounts.map((account) => <SelectItem key={account.id} value={account.id}>${account.account_size.toLocaleString()} · ${(Math.max(0, account.profit_loss || 0)).toLocaleString()} profit available</SelectItem>)}</SelectContent>
+                <SelectContent>{eligibleTradingAccounts.map((account) => <SelectItem key={account.id} value={account.id}>${account.account_size.toLocaleString()} · ${(Math.max(0, account.funded_profit_loss || 0)).toLocaleString()} funded profit available</SelectItem>)}</SelectContent>
               </Select>
             </div>}
             <div className="space-y-2">
               <Label htmlFor="payout-amount">Amount (USD)</Label>
-              <Input id="payout-amount" type="number" min={MIN_PAYOUT_PROFIT} max={payoutSource === "referral_commission" ? commissionAvailable : Math.max(0, selectedAccount?.profit_loss || 0)} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={String(MIN_PAYOUT_PROFIT)} />
+              <Input id="payout-amount" type="number" min={MIN_PAYOUT_PROFIT} max={payoutSource === "referral_commission" ? commissionAvailable : Math.max(0, selectedAccount?.funded_profit_loss || 0)} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={String(MIN_PAYOUT_PROFIT)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="payout-method">Payout method</Label>

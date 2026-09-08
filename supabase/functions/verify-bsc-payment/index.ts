@@ -41,6 +41,7 @@ interface Account {
   status: string;
   created_at: string;
   payment_tx_hash: string | null;
+  payment_reference: string | null;
 }
 
 // Fetch BEP-20 token transactions to our wallet
@@ -138,7 +139,8 @@ serve(async (req) => {
     const { data: pendingAccounts, error: fetchError } = await supabase
       .from("accounts")
       .select("*")
-      .eq("status", "pending_payment");
+      .eq("status", "pending_payment")
+      .eq("payment_provider", "crypto");
 
     if (fetchError) {
       throw new Error(`Failed to fetch pending accounts: ${fetchError.message}`);
@@ -205,19 +207,65 @@ serve(async (req) => {
 
       if (matchingTx) {
         console.log(`Activating account ${account.id} with tx ${matchingTx.hash}`);
-        
-        const { error: activateError } = await supabase
+
+        const { data: usedTransaction } = await supabase
+          .from("accounts")
+          .select("id")
+          .eq("payment_tx_hash", matchingTx.hash)
+          .neq("id", account.id)
+          .maybeSingle();
+        if (usedTransaction) {
+          console.log(`Skipping reused transaction ${matchingTx.hash}`);
+          continue;
+        }
+
+        const reference = account.payment_reference || `crypto-${account.id}`;
+        const { data: paymentOrder } = await supabase
+          .from("payment_orders")
+          .select("id, status")
+          .eq("account_id", account.id)
+          .eq("provider", "crypto")
+          .maybeSingle();
+        if (!paymentOrder) {
+          const { error: orderError } = await supabase.from("payment_orders").insert({
+            user_id: account.user_id,
+            account_id: account.id,
+            provider: "crypto",
+            provider_reference: reference,
+            amount: account.price,
+            currency: "USD",
+            status: "pending",
+            provider_metadata: { source: "bscscan", transaction_hash: matchingTx.hash },
+          });
+          if (orderError) {
+            console.error(`Failed to create crypto payment order for ${account.id}:`, orderError);
+            continue;
+          }
+        } else if (paymentOrder.status !== "pending") {
+          continue;
+        }
+
+        const { data: activatedAccount, error: activateError } = await supabase
           .from("accounts")
           .update({ 
             status: account.challenge_type === "instant" ? "funded" : "active",
             current_phase: account.challenge_type === "instant" ? null : 1,
             payment_tx_hash: matchingTx.hash 
           })
-          .eq("id", account.id);
+          .eq("id", account.id)
+          .eq("status", "pending_payment")
+          .is("payment_tx_hash", null)
+          .select("id")
+          .maybeSingle();
         
-        if (activateError) {
+        if (activateError || !activatedAccount) {
           console.error(`Failed to activate account ${account.id}:`, activateError);
         } else {
+          await supabase.from("payment_orders").update({
+            status: "success",
+            verified_at: new Date().toISOString(),
+            provider_metadata: { source: "bscscan", transaction_hash: matchingTx.hash },
+          }).eq("account_id", account.id).eq("provider", "crypto").eq("status", "pending");
           verifiedCount++;
         }
       } else {

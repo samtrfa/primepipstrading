@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Award, CalendarDays, Download, ShieldCheck } from "lucide-react";
+import { Award, CalendarDays, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import DashboardLayout from "@/components/layout/DashboardLayout";
@@ -8,11 +8,15 @@ import html2canvas from "html2canvas";
 
 interface Certificate {
   id: string;
-  account_id: string;
-  challenge_type: string;
-  account_size: number;
-  phase_number: number;
-  phase_name: string;
+  account_id: string | null;
+  challenge_type: string | null;
+  account_size: number | null;
+  phase_number: number | null;
+  phase_name: string | null;
+  payout_id: string | null;
+  payout_amount: number | null;
+  payout_method: string | null;
+  recipient_name: string | null;
   awarded_at: string;
 }
 
@@ -39,7 +43,7 @@ export default function Certificates() {
 
       const { data, error } = await supabase
         .from("certificates")
-        .select("id, account_id, challenge_type, account_size, phase_number, phase_name, awarded_at")
+        .select("id, account_id, challenge_type, account_size, phase_number, phase_name, payout_id, payout_amount, payout_method, recipient_name, awarded_at")
         .order("awarded_at", { ascending: false });
 
       if (error) console.error("Error fetching certificates:", error);
@@ -69,13 +73,13 @@ export default function Certificates() {
   };
 
   return (
-    <DashboardLayout title="Certificates" subtitle="View certificates for your funded accounts">
+    <DashboardLayout title="Certificates" subtitle="View your funded-account achievements and successful payout awards">
       <div className="mx-auto max-w-6xl space-y-8">
         <div className="flex flex-col justify-between gap-3 border-b border-border pb-6 sm:flex-row sm:items-end">
           <div>
             <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-primary">PrimePips credentials</p>
-            <h2 className="font-serif text-3xl font-bold text-foreground sm:text-4xl">Funded status certificates</h2>
-            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">Official platform records for accounts that have reached funded status.</p>
+            <h2 className="font-serif text-3xl font-bold text-foreground sm:text-4xl">PrimePips certificates</h2>
+            <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">Official records for trading achievements and successful payouts awarded by PrimePips.</p>
           </div>
           <div className="hidden items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground sm:flex"><Award className="h-4 w-4 text-primary" /> Verified account records</div>
         </div>
@@ -92,34 +96,42 @@ export default function Certificates() {
           </Card>
         )}
 
-        {!loading && certificates.length > 0 && <div className="grid gap-8 xl:grid-cols-2">{certificates.map((certificateRecord) => (
-          <article key={certificateRecord.id} className="relative overflow-hidden border-8 border-[#b9a36a] bg-[#e9e4d8] text-[#20272d] shadow-2xl ring-1 ring-[#8b6b28]/60 print:shadow-none">
-            <div ref={(element) => { certificateRefs.current[certificateRecord.id] = element; }} className="relative">
-              <div className="pointer-events-none absolute inset-2 border border-[#b99a4b]/70" />
-            <header className="relative flex items-center justify-between gap-4 bg-[#111820] px-5 py-5 text-white sm:px-8">
-              <div className="flex min-w-0 items-center gap-3">
-                <img src="/logo.svg" alt="PrimePips logo" className="h-12 w-12 shrink-0 rounded-lg" />
-                <div className="min-w-0"><p className="font-serif text-xl font-bold tracking-tight">Prime<span className="text-[#d4af37]">Pips</span></p></div>
+        {!loading && certificates.length > 0 && <div className="grid gap-8 xl:grid-cols-2">{certificates.map((certificateRecord) => {
+          const isPayout = Boolean(certificateRecord.payout_id);
+          const amount = `$${Number(certificateRecord.payout_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+          const accountSize = certificateRecord.account_size ? `$${Number(certificateRecord.account_size).toLocaleString()}` : "-";
+          return (
+            <article key={certificateRecord.id} className="relative overflow-hidden">
+              <div ref={(element) => { certificateRefs.current[certificateRecord.id] = element; }} className="relative grid aspect-[1.414/1] w-full grid-rows-[auto_minmax(0,1fr)_auto_auto] overflow-hidden border-[6px] border-[#c6a75e] bg-[#0b1116] text-[#f5f0e4] shadow-2xl ring-1 ring-[#8a6a2e]/70 print:h-[148.5mm] print:w-[210mm] print:aspect-auto print:shadow-none">
+                <div className="pointer-events-none absolute inset-2 border border-[#c6a75e]/50" />
+                <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full border border-[#c6a75e]/20" />
+                <div className="pointer-events-none absolute -bottom-28 -left-16 h-56 w-56 rounded-full border border-[#c6a75e]/10" />
+
+                <header className="relative flex flex-col items-center px-8 pt-5 sm:px-14 sm:pt-6">
+                  <img src="/primepips-email-logo.svg" alt="PrimePips" className="h-10 w-auto max-w-[min(15rem,80%)] object-contain sm:h-12" />
+                  <div className="mt-3 flex w-full max-w-2xl items-center gap-3"><span className="h-px flex-1 bg-[#c6a75e]/50" /><span className="whitespace-nowrap text-[8px] font-semibold uppercase tracking-[0.28em] text-[#d4af37]">Official certificate</span><span className="h-px flex-1 bg-[#c6a75e]/50" /></div>
+                </header>
+
+                <main className="relative flex min-h-0 flex-col items-center justify-center overflow-hidden px-8 py-4 text-center sm:px-14 sm:py-5">
+                  <p className="text-[7px] font-bold uppercase tracking-[0.28em] text-[#d4af37] sm:text-[8px]">{isPayout ? "Successful payout certificate" : "Achievement certificate"}</p>
+                  <h3 className="mt-1 font-serif text-lg font-bold leading-tight tracking-tight sm:text-2xl">{isPayout ? "Payout Honor" : "Funded Achievement"}</h3>
+                  <p className="mt-1 max-w-full truncate font-serif text-xs font-bold text-[#f5f0e4] sm:text-sm">Presented to {certificateRecord.recipient_name || "PrimePips Trader"}</p>
+                  {isPayout && <p className="mt-2 font-serif text-2xl font-bold leading-none tracking-tight text-[#d4af37] sm:text-3xl">{amount}</p>}
+                  <p className="mt-2 max-w-xl text-[9px] leading-3 text-[#b7c3c5] sm:text-[10px]">{isPayout ? `Crypto payout via PrimePips.` : `Completed ${certificateRecord.phase_name} of the PrimePips program.`}</p>
+                </main>
+
+                <div className="relative z-10 mx-8 grid h-[3.5rem] grid-cols-3 divide-x divide-[#c6a75e]/30 overflow-visible border-y border-[#c6a75e]/40 bg-[#111b21]/70 text-center sm:mx-14 sm:h-[3.75rem]">
+                  <div className="flex min-w-0 flex-col justify-center px-2 leading-none sm:px-5"><p className="text-[7px] font-bold uppercase tracking-[0.14em] leading-none text-[#d4af37]">{isPayout ? "Payout" : "Program"}</p><p className="mt-1 truncate text-[9px] font-semibold leading-none text-[#f5f0e4] sm:text-[10px]">{isPayout ? amount : challengeLabels[certificateRecord.challenge_type || ""] || certificateRecord.challenge_type}</p></div>
+                  <div className="flex min-w-0 flex-col justify-center px-2 leading-none sm:px-5"><p className="text-[7px] font-bold uppercase tracking-[0.14em] leading-none text-[#d4af37]">{isPayout ? "Method" : "Passed"}</p><p className="mt-1 truncate text-[9px] font-semibold capitalize leading-none text-[#f5f0e4] sm:text-[10px]">{isPayout ? certificateRecord.payout_method?.replace("_", " ") : certificateRecord.phase_name}</p></div>
+                  <div className="flex min-w-0 flex-col justify-center px-2 leading-none sm:px-5"><p className="text-[7px] font-bold uppercase tracking-[0.14em] leading-none text-[#d4af37]">Account size</p><p className="mt-1 truncate text-[9px] font-semibold leading-none text-[#f5f0e4] sm:text-[10px]">{accountSize}</p></div>
+                </div>
+
+                <footer className="relative z-10 flex shrink-0 items-center justify-between gap-4 border-t border-[#c6a75e]/30 bg-[#080d12]/80 px-8 py-3 text-[8px] uppercase tracking-[0.16em] text-[#9aaeb2] sm:px-14"><span>PrimePips Funding</span><span className="flex items-center gap-1.5"><CalendarDays className="h-3 w-3 text-[#d4af37]" />{new Date(certificateRecord.awarded_at).toLocaleDateString()}</span><span className="font-mono normal-case tracking-normal">Ref #{certificateRecord.id.slice(0, 8)}</span></footer>
               </div>
-              <p className="text-right text-[10px] font-semibold uppercase tracking-[0.18em] text-[#d4af37]">Official record</p>
-            </header>
-            <div className="relative px-6 py-9 text-center sm:px-12 sm:py-12">
-              <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-full border border-[#b99a4b] bg-[#f3ead0] text-[#8b6b28]"><ShieldCheck className="h-8 w-8" /></div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-[#8b6b28]">Certificate of passing</p>
-              <h3 className="mt-4 font-serif text-3xl font-bold tracking-tight text-[#20272d] sm:text-4xl">PrimePips <span className="text-[#8b6b28]">Achievement</span></h3>
-              <div className="mx-auto my-6 h-px max-w-xs bg-[#b99a4b]" />
-              <p className="mx-auto max-w-lg text-sm leading-7 text-[#59636b]">This certificate recognizes that the trader successfully completed the {certificateRecord.phase_name} of the PrimePips program.</p>
-              <div className="mx-auto mt-8 grid max-w-lg grid-cols-2 border-y border-[#d8c58a] text-left">
-                <div className="border-r border-[#d8c58a] px-4 py-4"><p className="text-[10px] font-bold uppercase tracking-wider text-[#8b6b28]">Program</p><p className="mt-1 font-serif text-base font-bold">{challengeLabels[certificateRecord.challenge_type] || certificateRecord.challenge_type}</p></div>
-                <div className="px-4 py-4"><p className="text-[10px] font-bold uppercase tracking-wider text-[#8b6b28]">Passed</p><p className="mt-1 font-serif text-base font-bold">{certificateRecord.phase_name}</p></div>
-              </div>
-              <div className="mt-7 flex flex-wrap items-center justify-center gap-x-8 gap-y-2 text-[11px] text-[#59636b]"><span className="flex items-center gap-1.5"><CalendarDays className="h-3.5 w-3.5 text-[#8b6b28]" /> Awarded {new Date(certificateRecord.awarded_at).toLocaleDateString()}</span><span className="font-mono">Ref #{certificateRecord.id.slice(0, 8)}</span></div>
-            </div>
-            <footer className="relative flex items-center justify-between gap-4 border-t border-[#c8b98e] bg-[#dcd3bd]/75 px-6 py-4 text-[10px] uppercase tracking-wider text-[#59636b] sm:px-8"><span>PrimePips Funding</span><span>Platform verified</span></footer>
-            </div>
-            <div className="relative bg-background px-5 py-4 print:hidden"><Button type="button" variant="outline" className="w-full" disabled={downloadingId !== null} onClick={() => downloadCertificate(certificateRecord)}><Download className="mr-2 h-4 w-4" />{downloadingId === certificateRecord.id ? "Preparing PNG..." : "Download Certificate"}</Button></div>
-          </article>
-        ))}</div>}
+              <div className="mt-3 bg-background print:hidden"><Button type="button" variant="outline" className="w-full" disabled={downloadingId !== null} onClick={() => downloadCertificate(certificateRecord)}><Download className="mr-2 h-4 w-4" />{downloadingId === certificateRecord.id ? "Preparing PNG..." : "Download Certificate"}</Button></div>
+            </article>
+          );
+        })}</div>}
       </div>
     </DashboardLayout>
   );

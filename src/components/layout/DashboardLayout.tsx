@@ -36,7 +36,7 @@ const sidebarLinks: Array<{ href: string; icon: typeof Activity; label: string; 
 const adminLinks = [
   { href: "/admin", icon: ShieldCheck, label: "Platform overview" },
   { href: "/admin/kyc", icon: FileCheck2, label: "KYC review" },
-  { href: "/admin/traders", icon: Users, label: "Trader activity" },
+  { href: "/admin/traders", icon: Users, label: "Traders" },
   { href: "/admin/exposure", icon: LineChart, label: "Trading exposure" },
   { href: "/admin/referrals", icon: Users, label: "Referral analytics" },
   { href: "/admin/affiliates", icon: Users, label: "Affiliate partners" },

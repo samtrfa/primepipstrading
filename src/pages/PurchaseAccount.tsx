@@ -9,7 +9,6 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
-import { getInitialPhase } from "@/lib/challengeRules";
 import {
   Tooltip,
   TooltipContent,
@@ -305,20 +304,15 @@ export default function PurchaseAccount() {
 
   const handlePurchase = async () => {
     if (!userId) return;
-    
+
     setIsProcessing(true);
 
-    const { error } = await supabase.from("accounts").insert({
-      user_id: userId,
-      challenge_type: selectedChallenge,
-      account_size: selectedSize,
-      price: price,
-      status: "pending_payment",
-      current_phase: getInitialPhase(selectedChallenge),
-      current_balance: selectedSize,
-      payment_address: CRYPTO_WALLET,
-      coupon_code: couponApplies ? activeCoupon!.code : null,
-      discount_percent: discountPercent,
+    const { data, error } = await supabase.functions.invoke("crypto-checkout", {
+      body: {
+        challengeType: selectedChallenge,
+        accountSize: selectedSize,
+        couponCode: couponApplies ? activeCoupon!.code : undefined,
+      },
     });
 
     setIsProcessing(false);
@@ -326,15 +320,15 @@ export default function PurchaseAccount() {
     if (error) {
       toast({
         title: "Error",
-        description: "Failed to create account. Please try again.",
+        description: "Failed to start crypto checkout. Please try again.",
         variant: "destructive",
       });
       return;
     }
 
     toast({
-      title: "Account Created!",
-      description: "Send payment to complete your purchase. We'll activate your account once confirmed.",
+      title: "Payment started",
+      description: `Send ${data.amount} ${data.currency} to the displayed wallet. We'll activate your account once confirmed.`,
     });
 
     navigate("/dashboard");

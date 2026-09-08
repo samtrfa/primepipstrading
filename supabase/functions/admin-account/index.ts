@@ -38,37 +38,52 @@ Deno.serve(async (req) => {
     if (target.user.app_metadata?.role === "admin") return json({ error: "Accounts cannot be granted to admins" }, 400);
 
     if (body.action === "delete-user") {
-      const { data: accountsToDelete, error: accountLookupError } = await admin.from("accounts").select("id").eq("user_id", body.userId);
+      const { data: accountsToDelete, error: accountLookupError } = await admin.from("accounts").select("id").eq("user_id", body.userId).is("archived_at", null);
       if (accountLookupError) return json({ error: "Could not verify trader accounts" }, 500);
       const accountIds = (accountsToDelete ?? []).map((account) => account.id);
       if (accountIds.length) {
-        const { count, error: payoutError } = await admin.from("payout_requests").select("id", { count: "exact", head: true }).in("account_id", accountIds);
-        if (payoutError) return json({ error: "Could not verify account payout history" }, 500);
-        if ((count ?? 0) > 0) return json({ error: "This trader has an account with payout history and cannot be deleted" }, 409);
-        const { error: accountDeleteError } = await admin.from("accounts").delete().eq("user_id", body.userId);
-        if (accountDeleteError) return json({ error: "Could not delete trader accounts" }, 500);
+        const archiveExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+        const { error: accountArchiveError } = await admin.from("accounts").update({
+          archived_at: new Date().toISOString(),
+          archive_expires_at: archiveExpiresAt,
+        }).eq("user_id", body.userId).is("archived_at", null);
+        if (accountArchiveError) return json({ error: "Could not archive trader accounts" }, 500);
       }
-      const { error: deleteError } = await admin.auth.admin.deleteUser(body.userId);
-      if (deleteError) {
-        console.error("Could not delete trader:", deleteError.message);
-        return json({ error: "Could not delete trader" }, 500);
-      }
-      return json({ deleted: true, userId: body.userId });
+      return json({ archived: true, userId: body.userId });
     }
 
     if (body.action === "delete") {
       if (typeof body.accountId !== "string" || typeof body.userId !== "string") return json({ error: "Invalid account details" }, 400);
 
-      const { count, error: payoutError } = await admin.from("payout_requests").select("id", { count: "exact", head: true }).eq("account_id", body.accountId);
-      if (payoutError) return json({ error: "Could not verify account payout history" }, 500);
-      if ((count ?? 0) > 0) return json({ error: "Accounts with payout requests cannot be deleted" }, 409);
-
-      const { error: accountError } = await admin.from("accounts").delete().eq("id", body.accountId).eq("user_id", body.userId);
+      const archiveExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      const { error: accountError } = await admin.from("accounts").update({
+        archived_at: new Date().toISOString(),
+        archive_expires_at: archiveExpiresAt,
+      }).eq("id", body.accountId).eq("user_id", body.userId).is("archived_at", null);
       if (accountError) {
-        console.error("Could not delete account:", accountError.message);
-        return json({ error: "Could not delete account" }, 500);
+        console.error("Could not archive account:", accountError.message);
+        return json({ error: "Could not archive account" }, 500);
       }
-      return json({ deleted: true, accountId: body.accountId });
+      return json({ deleted: true, archived: true, archiveExpiresAt, accountId: body.accountId });
+    }
+
+    if (body.action === "restore") {
+      if (typeof body.accountId !== "string" || typeof body.userId !== "string") return json({ error: "Invalid account details" }, 400);
+
+      const { data: account, error: accountError } = await admin.from("accounts")
+        .update({ archived_at: null, archive_expires_at: null })
+        .eq("id", body.accountId)
+        .eq("user_id", body.userId)
+        .not("archived_at", "is", null)
+        .gt("archive_expires_at", new Date().toISOString())
+        .select("id, user_id, account_size, challenge_type, status, current_balance, profit_loss, current_phase, archived_at, archive_expires_at, updated_at, created_at")
+        .maybeSingle();
+      if (accountError) {
+        console.error("Could not restore account:", accountError.message);
+        return json({ error: "Could not restore account" }, 500);
+      }
+      if (!account) return json({ error: "The archive has expired or the account was not found" }, 404);
+      return json({ account, restored: true });
     }
 
     if (body.action === "reset") {
