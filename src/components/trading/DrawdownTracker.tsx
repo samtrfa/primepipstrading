@@ -54,10 +54,12 @@ export function DrawdownTracker({
   // Calculate daily drawdown from daily start balance
   const dailyDrawdownAmount = Math.max(0, effectiveDailyStart - equity);
   const calculatedDailyDrawdownPercent = effectiveDailyStart > 0 ? (dailyDrawdownAmount / effectiveDailyStart) * 100 : 0;
-  // Display is derived from the current equity inputs. Persisted percentages
-  // remain authoritative for server enforcement, but must not freeze the UI.
-  const maxDrawdownPercent = calculatedMaxDrawdownPercent;
-  const dailyDrawdownPercent = calculatedDailyDrawdownPercent;
+  const maxDrawdownPercent = liveRiskDataAvailable
+    ? calculatedMaxDrawdownPercent
+    : (serverMaxDrawdownPercent ?? calculatedMaxDrawdownPercent);
+  const dailyDrawdownPercent = liveRiskDataAvailable
+    ? calculatedDailyDrawdownPercent
+    : (serverDailyDrawdownPercent ?? calculatedDailyDrawdownPercent);
 
   // Progress towards limits (for progress bars)
   const maxDrawdownProgress = Math.min((maxDrawdownPercent / limits.max) * 100, 100);
@@ -75,7 +77,7 @@ export function DrawdownTracker({
     }
     
     return newViolations;
-  }, [dailyDrawdownPercent, limits.daily, limits.max, maxDrawdownPercent]);
+  }, [dailyDrawdownPercent, limits.daily, limits.max, maxDrawdownPercent, serverDrawdownViolated]);
 
   // Determine warning levels
   const getWarningLevel = (current: number, limit: number) => {

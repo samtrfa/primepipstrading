@@ -573,7 +573,10 @@ export default function TradingPlatform() {
     ? (account.current_balance || account.account_size) + unrealizedPL
     : 0;
   const openPositions = positions.filter((p) => p.status === "open");
-  const liveRiskDataAvailable = openPositions.some((position) => Boolean(position.assets && prices[position.assets.symbol]));
+  const liveRiskDataAvailable =
+    openPositions.length > 0 && openPositions.every((position) =>
+      Boolean(position.assets && prices[position.assets.symbol])
+    );
   const closedPositions = positions.filter((p) => p.status === "closed");
   const fundedClosedPositions = closedPositions.filter(
     (position) => !fundedStartAt || (position.closed_at && position.closed_at > fundedStartAt)
