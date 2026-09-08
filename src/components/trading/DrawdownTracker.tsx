@@ -17,6 +17,7 @@ interface DrawdownTrackerProps {
   serverMaxDrawdownPercent: number | null;
   serverDailyDrawdownPercent: number | null;
   serverDrawdownViolated?: boolean | null;
+  liveRiskDataAvailable?: boolean;
 }
 
 export function DrawdownTracker({
@@ -30,6 +31,7 @@ export function DrawdownTracker({
   serverMaxDrawdownPercent,
   serverDailyDrawdownPercent,
   serverDrawdownViolated = false,
+  liveRiskDataAvailable = false,
 }: DrawdownTrackerProps) {
   const rules = getPhaseRules(challengeType, currentPhase);
   const limits = { daily: rules.dailyDrawdown, max: rules.maxDrawdown };
@@ -50,8 +52,12 @@ export function DrawdownTracker({
   // Calculate daily drawdown from daily start balance
   const dailyDrawdownAmount = Math.max(0, effectiveDailyStart - equity);
   const calculatedDailyDrawdownPercent = effectiveDailyStart > 0 ? (dailyDrawdownAmount / effectiveDailyStart) * 100 : 0;
-  const maxDrawdownPercent = serverMaxDrawdownPercent ?? calculatedMaxDrawdownPercent;
-  const dailyDrawdownPercent = serverDailyDrawdownPercent ?? calculatedDailyDrawdownPercent;
+  const maxDrawdownPercent = liveRiskDataAvailable
+    ? calculatedMaxDrawdownPercent
+    : serverMaxDrawdownPercent ?? calculatedMaxDrawdownPercent;
+  const dailyDrawdownPercent = liveRiskDataAvailable
+    ? calculatedDailyDrawdownPercent
+    : serverDailyDrawdownPercent ?? calculatedDailyDrawdownPercent;
 
   // Progress towards limits (for progress bars)
   const maxDrawdownProgress = Math.min((maxDrawdownPercent / limits.max) * 100, 100);
