@@ -52,12 +52,10 @@ export function DrawdownTracker({
   // Calculate daily drawdown from daily start balance
   const dailyDrawdownAmount = Math.max(0, effectiveDailyStart - equity);
   const calculatedDailyDrawdownPercent = effectiveDailyStart > 0 ? (dailyDrawdownAmount / effectiveDailyStart) * 100 : 0;
-  const maxDrawdownPercent = liveRiskDataAvailable
-    ? calculatedMaxDrawdownPercent
-    : serverMaxDrawdownPercent ?? calculatedMaxDrawdownPercent;
-  const dailyDrawdownPercent = liveRiskDataAvailable
-    ? calculatedDailyDrawdownPercent
-    : serverDailyDrawdownPercent ?? calculatedDailyDrawdownPercent;
+  // Display is derived from the current equity inputs. Persisted percentages
+  // remain authoritative for server enforcement, but must not freeze the UI.
+  const maxDrawdownPercent = calculatedMaxDrawdownPercent;
+  const dailyDrawdownPercent = calculatedDailyDrawdownPercent;
 
   // Progress towards limits (for progress bars)
   const maxDrawdownProgress = Math.min((maxDrawdownPercent / limits.max) * 100, 100);
