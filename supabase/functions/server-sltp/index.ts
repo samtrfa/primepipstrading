@@ -181,7 +181,9 @@ Deno.serve(async (req) => {
       const highWaterMark = Math.max(account.high_water_mark ?? account.account_size, equity);
       const today = new Date().toISOString().slice(0, 10);
       const isNewDay = !account.daily_start_date || account.daily_start_date < today;
-      const dailyStart = isNewDay ? balance : (account.daily_start_balance ?? balance);
+      const dailyStart = isNewDay
+        ? balance
+        : (account.daily_start_balance && account.daily_start_balance > 0 ? account.daily_start_balance : balance);
       const maxDrawdown = highWaterMark > 0 ? Math.max(0, ((highWaterMark - equity) / highWaterMark) * 100) : 0;
       const dailyDrawdown = dailyStart > 0 ? Math.max(0, ((dailyStart - equity) / dailyStart) * 100) : 0;
       const dailyProfits = [...(profitByAccountAndDay.get(account.id)?.values() ?? [])];

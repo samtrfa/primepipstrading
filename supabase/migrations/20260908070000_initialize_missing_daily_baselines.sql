@@ -2,9 +2,12 @@
 -- not the original account size, otherwise daily drawdown can remain at zero
 -- while the account is above its initial balance.
 UPDATE public.accounts
-SET daily_start_balance = COALESCE(daily_start_balance, current_balance, account_size),
+SET daily_start_balance = CASE
+      WHEN COALESCE(daily_start_balance, 0) > 0 THEN daily_start_balance
+      ELSE COALESCE(current_balance, account_size)
+    END,
     daily_start_date = COALESCE(daily_start_date, CURRENT_DATE)
-WHERE daily_start_balance IS NULL OR daily_start_date IS NULL;
+WHERE COALESCE(daily_start_balance, 0) <= 0 OR daily_start_date IS NULL;
 
 CREATE OR REPLACE FUNCTION public.normalize_account_phase_state()
 RETURNS TRIGGER AS $$

@@ -196,7 +196,7 @@ BEGIN
   IF a.daily_start_date IS NULL OR a.daily_start_date < CURRENT_DATE THEN
     daily_start := COALESCE(a.current_balance, a.account_size);
   ELSE
-    daily_start := COALESCE(a.daily_start_balance, a.account_size);
+    daily_start := CASE WHEN COALESCE(a.daily_start_balance, 0) > 0 THEN a.daily_start_balance ELSE COALESCE(a.current_balance, a.account_size) END;
   END IF;
   dailydd := GREATEST(0, (daily_start - equity) / NULLIF(daily_start, 0) * 100);
   SELECT * INTO r FROM trading_rules(a.challenge_type::text, COALESCE(a.current_phase, 1));

@@ -31,7 +31,7 @@ BEGIN
     NEW.daily_start_date := CURRENT_DATE;
     NEW.daily_start_balance := daily_start;
   ELSE
-    daily_start := COALESCE(NEW.daily_start_balance, NEW.account_size);
+    daily_start := CASE WHEN COALESCE(NEW.daily_start_balance, 0) > 0 THEN NEW.daily_start_balance ELSE COALESCE(NEW.current_balance, NEW.account_size) END;
   END IF;
 
   NEW.high_water_mark := GREATEST(COALESCE(OLD.high_water_mark, OLD.account_size), equity);

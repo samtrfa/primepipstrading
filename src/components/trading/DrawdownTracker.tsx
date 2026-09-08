@@ -43,7 +43,9 @@ export function DrawdownTracker({
   const effectiveHWM = highWaterMark ?? accountSize;
   
   // Daily start balance for daily drawdown calculation
-  const effectiveDailyStart = dailyStartBalance ?? accountSize;
+  const effectiveDailyStart = Number.isFinite(dailyStartBalance) && (dailyStartBalance ?? 0) > 0
+    ? dailyStartBalance as number
+    : accountSize;
 
   // Calculate max drawdown from high water mark
   const maxDrawdownAmount = Math.max(0, effectiveHWM - equity);
