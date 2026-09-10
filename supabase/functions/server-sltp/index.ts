@@ -192,6 +192,8 @@ Deno.serve(async (req) => {
       const consistencyScore = totalProfit > 0 ? (bestTradingDay / totalProfit) * 100 : 0;
       const rules = getRules(account.challenge_type, account.current_phase);
       const violation = maxDrawdown >= rules.max ? "max_drawdown" : dailyDrawdown >= rules.daily ? "daily_drawdown" : null;
+      const shouldRestoreFailedAccount = account.status === "failed" && !violation;
+      const nextStatus = shouldRestoreFailedAccount ? (account.challenge_type === "instant" ? "funded" : "active") : account.status;
 
       const { error: accountUpdateError } = await admin.from("accounts").update({
         high_water_mark: highWaterMark,
@@ -202,7 +204,11 @@ Deno.serve(async (req) => {
         consistency_score: consistencyScore,
         best_trading_day_profit: bestTradingDay,
         closed_profit_total: totalProfit,
-        ...(violation ? { drawdown_violated: true, violation_type: violation, status: "failed" } : {}),
+        ...(violation
+          ? { drawdown_violated: true, violation_type: violation, status: "failed" }
+          : shouldRestoreFailedAccount
+            ? { drawdown_violated: false, violation_type: null, status: nextStatus }
+            : { drawdown_violated: false, violation_type: null, status: nextStatus }),
       }).eq("id", account.id);
       if (accountUpdateError) console.error("server risk update failed", { accountId: account.id, message: accountUpdateError.message });
 
