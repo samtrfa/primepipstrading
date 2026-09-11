@@ -59,7 +59,18 @@ export default function Certificates() {
     if (!certificate || downloadingId) return;
     setDownloadingId(certificateRecord.id);
     try {
-      const canvas = await html2canvas(certificate, { backgroundColor: "#e9e4d8", scale: 2, useCORS: true, logging: false });
+      const width = certificate.clientWidth || certificate.scrollWidth;
+      const height = certificate.clientHeight || certificate.scrollHeight;
+      const canvas = await html2canvas(certificate, {
+        backgroundColor: "#0b1116",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        width,
+        height,
+        scrollX: 0,
+        scrollY: 0,
+      });
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) return;
       const link = document.createElement("a");
