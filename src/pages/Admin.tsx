@@ -956,7 +956,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
   };
 
   const purchasedAccounts = (snapshot?.accounts ?? []).filter(
-    isPurchasedAccount,
+    (account) => !account.archived_at && !["pending_payment"].includes(account.status),
   );
   const failedAccounts = (snapshot?.accounts ?? []).filter(
     (account) => account.status === "failed" && !account.archived_at,
@@ -981,6 +981,17 @@ export default function Admin({ section }: { section?: AdminSection }) {
     () => new Map(purchasedAccounts.map((account) => [account.id, account])),
     [purchasedAccounts],
   );
+  const paymentByAccount = useMemo(() => {
+    const entries = new Map<string, Payment>();
+    for (const payment of snapshot?.payments ?? []) {
+      if (!payment.account_id) continue;
+      const current = entries.get(payment.account_id);
+      if (!current || new Date(payment.checkout_at).getTime() > new Date(current.checkout_at).getTime()) {
+        entries.set(payment.account_id, payment);
+      }
+    }
+    return entries;
+  }, [snapshot]);
   const activeUsers = (snapshot?.users ?? []).filter(
     (user) =>
       user.lastSignInAt &&
@@ -1676,15 +1687,17 @@ export default function Admin({ section }: { section?: AdminSection }) {
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="overflow-x-auto">
-                      <table className="min-w-[65rem] w-full text-left text-sm">
+                      <table className="min-w-[76rem] w-full text-left text-sm">
                         <thead className="border-y border-border bg-secondary/40 text-xs uppercase text-muted-foreground">
                           <tr>
                             <th className="px-4 py-3">Trader</th>
                             <th className="px-4 py-3">Account</th>
                             <th className="px-4 py-3">Status</th>
-                            <th className="px-4 py-3">Price</th>
+                            <th className="px-4 py-3">Purchase amount</th>
+                            <th className="px-4 py-3">Payment</th>
                             <th className="px-4 py-3">Purchased</th>
                             <th className="px-4 py-3">Coupon</th>
+                            <th className="px-4 py-3 text-right">Action</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1694,8 +1707,13 @@ export default function Admin({ section }: { section?: AdminSection }) {
                             )
                             .map((account) => {
                               const user = userMap.get(account.user_id);
+                              const payment = paymentByAccount.get(account.id);
+                              const purchaseAmount = Number(account.price ?? payment?.amount ?? 0);
+                              const paymentStatus = payment?.status ?? (account.status === "failed" ? "failed" : "—");
+                              const paymentReference = payment?.provider_reference || "No payment reference";
+                              const paymentFailureReason = payment?.failure_reason || (account.status === "failed" ? "Account was marked as failed." : null);
                               return (
-                                <tr key={account.id} className="border-b border-border/60 last:border-0">
+                                <tr key={account.id} className="border-b border-border/60 last:border-0 align-top">
                                   <td className="px-4 py-3">
                                     <div className="font-medium">{user?.name || "Unnamed trader"}</div>
                                     <div className="text-xs text-muted-foreground">{user?.email || account.user_id.slice(0, 8)}</div>
@@ -1709,10 +1727,32 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                       {account.status.replace("_", " ")}
                                     </Badge>
                                   </td>
-                                  <td className="px-4 py-3">{money(Number(account.price ?? 0))}</td>
+                                  <td className="px-4 py-3">
+                                    <div className="font-medium">{money(purchaseAmount)}</div>
+                                    <div className="text-[10px] text-muted-foreground">{payment?.currency?.toUpperCase() || "USD"}</div>
+                                  </td>
+                                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                                    <div className="font-medium text-foreground">{payment ? payment.provider.toUpperCase() : "No payment"}</div>
+                                    <div className="mt-1">Status: {paymentStatus}</div>
+                                    <div>Ref: {paymentReference}</div>
+                                    {paymentFailureReason && <div className="mt-1 text-destructive">Failure: {paymentFailureReason}</div>}
+                                    {payment && (
+                                      <div className="mt-1 space-y-0.5">
+                                        {payment.checkout_at ? <span>Checked out: {date(payment.checkout_at)}</span> : null}
+                                        {payment.verified_at && <span>Verified: {date(payment.verified_at)}</span>}
+                                        {payment.webhook_at && <span>Webhook: {date(payment.webhook_at)}</span>}
+                                        {payment.refund_amount !== null && payment.refund_amount !== undefined && <span>Refund: {money(Number(payment.refund_amount))}</span>}
+                                      </div>
+                                    )}
+                                  </td>
                                   <td className="px-4 py-3 text-xs text-muted-foreground">{date(account.created_at)}</td>
                                   <td className="px-4 py-3">
                                     <span className="text-xs font-medium text-foreground">{formatCouponUsage(account.coupon_code)}</span>
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <Button size="sm" variant="destructive" onClick={() => void deleteAccount(account)} disabled={deletingAccount === account.id}>
+                                      {deletingAccount === account.id ? "Archiving..." : "Archive"}
+                                    </Button>
                                   </td>
                                 </tr>
                               );

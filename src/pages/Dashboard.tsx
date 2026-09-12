@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { FUNDED_CONSISTENCY_PERCENT, hasConsistencyRule, isInstantAccount } from "@/lib/challengeRules";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/layout/DashboardLayout";
+import { shouldRemovePendingPurchase } from "@/lib/pendingPurchaseCleanup.js";
 
 interface Account {
   id: string;
@@ -94,22 +95,18 @@ export default function Dashboard() {
         );
 
         const stalePendingIds = accountsData
-          .filter((account) => {
-            if (account.status !== "pending_payment") return false;
-            const ageMs = Date.now() - new Date(account.created_at).getTime();
-            return ageMs >= PAYMENT_EXPIRY_MS;
-          })
+          .filter((account) => shouldRemovePendingPurchase(account.status, Date.now() - new Date(account.created_at).getTime(), PAYMENT_EXPIRY_MS))
           .map((account) => account.id);
 
         if (stalePendingIds.length > 0) {
           const { error: stalePendingError } = await supabase
             .from("accounts")
-            .update({ status: "failed" })
+            .delete()
             .in("id", stalePendingIds)
             .eq("status", "pending_payment");
 
           if (stalePendingError) {
-            console.error("Error expiring stale pending accounts:", stalePendingError);
+            console.error("Error removing stale pending accounts:", stalePendingError);
           } else {
             accountsData = accountsData.filter((account) => !stalePendingIds.includes(account.id));
           }

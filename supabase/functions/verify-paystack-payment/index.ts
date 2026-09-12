@@ -72,6 +72,21 @@ Deno.serve(async (req) => {
 
     const paidAmount = Number(transaction?.amount ?? 0) / 100;
     const providerUserId = typeof transaction?.metadata?.user_id === "string" && /^[0-9a-f-]{36}$/i.test(transaction.metadata.user_id) ? transaction.metadata.user_id : null;
+
+    if (transaction.status === "failed" || transaction.status === "abandoned" || transaction.status === "cancelled") {
+      await admin
+        .from("payment_orders")
+        .update({ status: "failed", failure_reason: transaction.gateway_response || "Paystack reported an unsuccessful payment" })
+        .eq("provider", "paystack")
+        .eq("provider_reference", reference);
+      await admin
+        .from("accounts")
+        .delete()
+        .eq("id", payment.account_id)
+        .eq("status", "pending_payment");
+      return json({ verified: false, status: transaction.status, account_id: payment.account_id, deleted_pending_account: true, message: "Payment was not completed; the pending purchase was removed." }, 200);
+    }
+
     const { data: result, error: reconcileError } = await admin.rpc("reconcile_paystack_payment", {
       p_reference: reference,
       p_status: transaction.status === "success" ? "success" : transaction.status === "failed" ? "failed" : "pending",

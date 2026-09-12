@@ -1,6 +1,5 @@
--- Expire unpaid accounts independently of user visits or payment verification requests.
-UPDATE public.accounts
-SET status = 'failed'
+-- Remove abandoned unpaid purchases instead of leaving a failed placeholder in the accounts list.
+DELETE FROM public.accounts
 WHERE status = 'pending_payment'
   AND created_at <= now() - interval '30 minutes';
 
@@ -8,8 +7,7 @@ SELECT cron.schedule(
   'expire-pending-payment-accounts',
   '* * * * *',
   $$
-    UPDATE public.accounts
-    SET status = 'failed'
+    DELETE FROM public.accounts
     WHERE status = 'pending_payment'
       AND created_at <= now() - interval '30 minutes';
   $$
