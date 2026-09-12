@@ -49,6 +49,17 @@ interface AffiliateApplication {
   desired_code: string;
 }
 
+interface AffiliatePurchase {
+  id: string;
+  user_id: string;
+  account_size: number;
+  challenge_type: string;
+  status: string;
+  price: number;
+  coupon_code: string;
+  created_at: string;
+}
+
 interface PaymentMethod {
   id: string;
   network: string;
@@ -86,6 +97,8 @@ export default function ReferralsPage() {
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [loading, setLoading] = useState(true);
   const [referralLink, setReferralLink] = useState("");
+  const [affiliateCoupon, setAffiliateCoupon] = useState<{ code: string; discount_percent: number; is_active: boolean } | null>(null);
+  const [affiliatePurchases, setAffiliatePurchases] = useState<AffiliatePurchase[]>([]);
   const [totalCommission, setTotalCommission] = useState(0);
   const [isAffiliate, setIsAffiliate] = useState(false);
   const [application, setApplication] = useState<AffiliateApplication | null>(null);
@@ -124,7 +137,34 @@ export default function ReferralsPage() {
       }
 
       // The first eight characters are the public referral code stored at signup.
-      const { data: codeData } = await supabase.from("affiliate_codes").select("code").maybeSingle();
+      const [{ data: codeData }, { data: couponData, error: couponError }] = await Promise.all([
+        supabase.from("affiliate_codes").select("code").maybeSingle(),
+        supabase.from("affiliate_codes").select("code, discount_percent, is_active").maybeSingle(),
+      ]);
+
+      if (couponError) {
+        console.error("Error fetching affiliate coupon:", couponError);
+      } else {
+        setAffiliateCoupon(couponData as { code: string; discount_percent: number; is_active: boolean } | null);
+      }
+
+      if (codeData?.code) {
+        const { data: purchaseData, error: purchaseError } = await supabase
+          .from("accounts")
+          .select("id, user_id, account_size, challenge_type, status, price, coupon_code, created_at")
+          .eq("coupon_code", codeData.code)
+          .in("status", ["active", "funded"])
+          .order("created_at", { ascending: false });
+
+        if (purchaseError) {
+          console.error("Error fetching affiliate purchases:", purchaseError);
+        } else {
+          setAffiliatePurchases((purchaseData ?? []) as AffiliatePurchase[]);
+        }
+      } else {
+        setAffiliatePurchases([]);
+      }
+
       setReferralLink(`${window.location.origin}/?ref=${codeData?.code || session.user.id.slice(0, 8)}`);
 
       const { data, error } = await supabase
@@ -202,9 +242,9 @@ export default function ReferralsPage() {
     setSubmittingApplication(false);
   };
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(referralLink).then(() => {
-      toast({ title: "Copied!", description: "Referral link copied to clipboard" });
+  const copyToClipboard = (value: string, label: string) => {
+    navigator.clipboard.writeText(value).then(() => {
+      toast({ title: "Copied!", description: `${label} copied to clipboard` });
     });
   };
 
@@ -242,6 +282,8 @@ export default function ReferralsPage() {
     active: { color: "bg-success/20 text-success" },
     completed: { color: "bg-primary/20 text-primary" },
   };
+
+  const formatChallenge = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 
   if (loading) {
     return <DashboardLayout title="Affiliate" subtitle="Apply to partner with PrimePips"><div className="py-16 text-center text-muted-foreground">Loading affiliate information...</div></DashboardLayout>;
@@ -350,12 +392,98 @@ export default function ReferralsPage() {
               <Button
                 variant="gold"
                 size="icon"
-                onClick={copyToClipboard}
+                onClick={() => copyToClipboard(referralLink, "Referral link")}
                 className="shrink-0"
               >
                 <Copy className="w-4 h-4" />
               </Button>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Affiliate Coupon */}
+        <Card variant="elevated" className="bg-primary/5">
+          <CardHeader>
+            <CardTitle>Your Affiliate Coupon</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Share this code so buyers can unlock your affiliate discount when they purchase an account.
+            </p>
+            <div className="flex flex-col gap-3 rounded-xl border border-border bg-background/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Coupon code</p>
+                <p className="mt-1 font-mono text-2xl font-bold text-foreground">
+                  {affiliateCoupon?.code || "Not assigned yet"}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-left sm:text-right">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Discount</p>
+                  <p className="mt-1 text-lg font-semibold text-primary">
+                    {affiliateCoupon ? `${Number(affiliateCoupon.discount_percent)}% off` : "—"}
+                  </p>
+                </div>
+                <Button
+                  variant="gold"
+                  size="icon"
+                  onClick={() => affiliateCoupon && copyToClipboard(affiliateCoupon.code, "Affiliate coupon")}
+                  disabled={!affiliateCoupon}
+                  className="shrink-0"
+                >
+                  <Copy className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {affiliateCoupon
+                ? affiliateCoupon.is_active
+                  ? "This coupon is active and ready to share."
+                  : "This coupon is currently inactive."
+                : "Your affiliate coupon will appear here once your code has been approved."}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card variant="elevated">
+          <CardHeader>
+            <CardTitle>Successful Purchases Using Your Code</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {affiliatePurchases.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <p className="text-muted-foreground">No successful purchases have used your code yet.</p>
+                <p className="mt-1 text-sm text-muted-foreground">When a buyer uses your code, the purchase and commission will appear here.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Buyer</TableHead>
+                      <TableHead>Account</TableHead>
+                      <TableHead>Purchase Date</TableHead>
+                      <TableHead>Sale Value</TableHead>
+                      <TableHead>Commission</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {affiliatePurchases.map((purchase) => {
+                      const commission = Number(purchase.price || 0) * 0.125;
+                      return (
+                        <TableRow key={purchase.id}>
+                          <TableCell className="font-medium">{purchase.user_id.slice(0, 8)}</TableCell>
+                          <TableCell>{formatChallenge(purchase.challenge_type)} · ${purchase.account_size.toLocaleString()}</TableCell>
+                          <TableCell>{new Date(purchase.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell>${Number(purchase.price || 0).toLocaleString()}</TableCell>
+                          <TableCell className="font-semibold text-success">${commission.toLocaleString()}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </CardContent>
         </Card>
 

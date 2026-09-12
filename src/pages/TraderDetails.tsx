@@ -43,6 +43,32 @@ interface Account {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+  coupon_code?: string | null;
+  price?: number | null;
+}
+
+interface Referral {
+  referrer_id: string;
+  referred_user_id: string;
+  status: string;
+  commission_earned: number;
+  referred_at: string;
+  account_purchased: boolean;
+}
+
+interface AffiliateCode {
+  user_id: string;
+  code: string;
+  discount_percent: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+interface AffiliateBalance {
+  user_id: string;
+  available: number;
+  reserved: number;
+  paid: number;
 }
 
 interface Position {
@@ -81,6 +107,9 @@ interface Snapshot {
   accounts: Account[];
   positions: Position[];
   history: Trade[];
+  referrals: Referral[];
+  affiliateCodes: AffiliateCode[];
+  affiliateBalances: AffiliateBalance[];
 }
 
 const purchasedStatuses = new Set(["active", "funded", "passed", "failed"]);
@@ -137,6 +166,21 @@ export default function TraderDetails() {
   const accountIds = new Set(accounts.map((account) => account.id));
   const positions = (snapshot?.positions ?? []).filter((position) => accountIds.has(position.account_id));
   const trades = (snapshot?.history ?? []).filter((trade) => accountIds.has(trade.account_id));
+  const affiliateCode = (snapshot?.affiliateCodes ?? []).find((candidate) => candidate.user_id === userId);
+  const affiliateReferrals = useMemo(
+    () => (snapshot?.referrals ?? []).filter((referral) => referral.referrer_id === userId),
+    [snapshot, userId],
+  );
+  const affiliateBalance = (snapshot?.affiliateBalances ?? []).find((candidate) => candidate.user_id === userId);
+  const affiliateCodeUses = affiliateCode
+    ? (snapshot?.accounts ?? []).filter((account) => account.coupon_code?.toUpperCase() === affiliateCode.code.toUpperCase()).length
+    : 0;
+  const affiliatePurchases = useMemo(
+    () => (snapshot?.accounts ?? []).filter((account) => account.coupon_code && affiliateCode && account.coupon_code.toUpperCase() === affiliateCode.code.toUpperCase() && account.user_id !== userId && purchasedStatuses.has(account.status)),
+    [snapshot, affiliateCode, userId],
+  );
+  const affiliateCommissionTotal = affiliateReferrals.reduce((total, referral) => total + Number(referral.commission_earned || 0), 0);
+  const affiliateConvertedCount = affiliateReferrals.filter((referral) => referral.account_purchased).length;
   const symbols = useMemo(
     () => [...new Set(positions.map((position) => position.assets?.symbol).filter((symbol): symbol is string => Boolean(symbol)))],
     [positions],
@@ -204,6 +248,95 @@ export default function TraderDetails() {
         </div>
 
         <Card variant="glass"><CardHeader><CardTitle>Performance overview</CardTitle><p className="text-sm text-muted-foreground">Best positive trading day: {money(bestDay)} · {trades.length} recorded trade events · Live floating P/L: <span className={cn("font-semibold", floatingPL >= 0 ? "text-success" : "text-destructive")}>{money(floatingPL)}</span></p></CardHeader><CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{accounts.map((account) => { const accountPositions = positions.filter((position) => position.account_id === account.id); const closed = accountPositions.filter((position) => position.status !== "open"); const unrealized = livePLByAccount.get(account.id) ?? 0; const liveEquity = (account.current_balance ?? account.account_size) + unrealized; const liveRiskDataAvailable = accountPositions.some((position) => Boolean(position.status === "open" && position.assets?.symbol && prices[position.assets.symbol])); return <div key={account.id} className="space-y-4 rounded-lg border border-border/70 bg-background/50 p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">${account.account_size.toLocaleString()} {challengeName(account.challenge_type)}</p><p className="mt-1 text-xs text-muted-foreground">Phase {account.current_phase ?? "-"} · Created {new Date(account.created_at).toLocaleDateString()}</p></div><Badge variant={account.status === "failed" ? "destructive" : "outline"}>{account.status.replace(/_/g, " ")}</Badge></div><div className="grid grid-cols-2 gap-3 text-sm"><div><p className="text-muted-foreground">Live equity</p><p className="font-semibold">{money(liveEquity)}</p></div><div><p className="text-muted-foreground">Live P/L</p><p className={cn("font-semibold", (account.profit_loss ?? 0) + unrealized >= 0 ? "text-success" : "text-destructive")}>{money((account.profit_loss ?? 0) + unrealized)}</p><p className="text-[10px] text-muted-foreground">{money(unrealized)} floating</p></div><div><p className="text-muted-foreground">Closed positions</p><p className="font-semibold">{closed.length}</p></div><div><p className="text-muted-foreground">Open positions</p><p className="font-semibold">{accountPositions.length - closed.length}</p></div></div><DrawdownTracker accountSize={account.account_size} currentBalance={account.current_balance ?? account.account_size} highWaterMark={account.high_water_mark} dailyStartBalance={account.daily_start_balance} unrealizedPL={unrealized} challengeType={account.challenge_type} currentPhase={account.current_phase} serverMaxDrawdownPercent={account.max_drawdown_percent} serverDailyDrawdownPercent={account.daily_drawdown_percent} serverDrawdownViolated={account.drawdown_violated} liveRiskDataAvailable={liveRiskDataAvailable} /><ProfitTargetTracker accountSize={account.account_size} currentBalance={account.current_balance ?? account.account_size} unrealizedPL={unrealized} challengeType={account.challenge_type} currentPhase={account.current_phase} phasePassed={account.phase_passed ?? false} /><ConsistencyScoreTracker positions={closed.map((position) => ({ profit_loss: position.profit_loss ?? 0, closed_at: position.closed_at }))} serverScore={account.consistency_score} serverBestDayProfit={account.best_trading_day_profit} serverTotalProfit={account.closed_profit_total} /></div>; })}</CardContent></Card>
+
+        {affiliateCode && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Affiliate activity</CardTitle>
+              <p className="text-sm text-muted-foreground">Track the affiliate code, referral conversions, and accumulated commission for this user.</p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {[{ label: "Affiliate code", value: affiliateCode.code, detail: affiliateCode.is_active ? "Active" : "Inactive", accent: "font-mono" }, { label: "Discount", value: `${Number(affiliateCode.discount_percent)}%`, detail: "customer discount" }, { label: "Referrals", value: String(affiliateReferrals.length), detail: `${affiliateConvertedCount} converted` }, { label: "Accumulated commission", value: money(affiliateCommissionTotal), detail: `${money(affiliateBalance?.available ?? 0)} available` }].map(({ label, value, detail, accent }) => (
+                  <div key={label} className="rounded-md border border-border/70 bg-background/50 p-4">
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
+                    <p className={cn("mt-2 text-xl font-bold", accent ?? "")}>{value}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{detail}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Code usage</p>
+                  <p className="mt-2 text-2xl font-bold">{affiliateCodeUses}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Successful account purchases using this code.</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Available balance</p>
+                  <p className="mt-2 text-2xl font-bold text-success">{money(affiliateBalance?.available ?? 0)}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Paid: {money(affiliateBalance?.paid ?? 0)} · reserved: {money(affiliateBalance?.reserved ?? 0)}</p>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-[40rem] w-full text-left text-sm">
+                  <thead className="border-y border-border bg-secondary/40 text-xs uppercase text-muted-foreground">
+                    <tr>
+                      <th className="px-4 py-3">Referred trader</th>
+                      <th className="px-4 py-3">Status</th>
+                      <th className="px-4 py-3">Purchase</th>
+                      <th className="px-4 py-3 text-right">Commission</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {affiliateReferrals.length === 0 ? (
+                      <tr><td colSpan={4} className="p-6 text-sm text-muted-foreground">No affiliate referrals recorded for this user.</td></tr>
+                    ) : affiliateReferrals.map((referral) => (
+                      <tr key={`${referral.referred_user_id}-${referral.referred_at}`} className="border-b border-border/60 last:border-0">
+                        <td className="px-4 py-3">
+                          <p className="font-medium">{referral.referred_user_id.slice(0, 8)}</p>
+                          <p className="text-xs text-muted-foreground">{date(referral.referred_at)}</p>
+                        </td>
+                        <td className="px-4 py-3"><Badge variant={referral.account_purchased ? "default" : "outline"}>{referral.status}</Badge></td>
+                        <td className="px-4 py-3">{referral.account_purchased ? "Converted" : "Pending"}</td>
+                        <td className="px-4 py-3 text-right font-medium text-success">{money(Number(referral.commission_earned || 0))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {affiliatePurchases.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="min-w-[38rem] w-full text-left text-sm">
+                    <thead className="border-y border-border bg-secondary/40 text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-3">Buyer</th>
+                        <th className="px-4 py-3">Account</th>
+                        <th className="px-4 py-3">Date</th>
+                        <th className="px-4 py-3 text-right">Commission</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {affiliatePurchases.map((purchase) => {
+                        const commission = Number((purchase.price ?? 0) * 0.125);
+                        return (
+                          <tr key={purchase.id} className="border-b border-border/60 last:border-0">
+                            <td className="px-4 py-3 font-medium">{purchase.user_id.slice(0, 8)}</td>
+                            <td className="px-4 py-3">{challengeName(purchase.challenge_type)} · ${purchase.account_size.toLocaleString()}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{date(purchase.created_at)}</td>
+                            <td className="px-4 py-3 text-right font-medium text-success">{money(commission)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card><CardHeader><CardTitle>Trade history</CardTitle><p className="text-sm text-muted-foreground">All recorded events for this trader's accounts.</p></CardHeader><CardContent className="p-0"><div className="overflow-x-auto"><table className="min-w-[45rem] w-full text-left text-sm"><thead className="border-y border-border bg-secondary/40 text-xs uppercase text-muted-foreground"><tr><th className="px-4 py-3">Symbol</th><th className="px-4 py-3">Action</th><th className="px-4 py-3">Account</th><th className="px-4 py-3">Time</th><th className="px-4 py-3 text-right">P/L</th></tr></thead><tbody>{trades.map((trade) => <tr key={trade.id} className="border-b border-border/60 last:border-0"><td className="px-4 py-3 font-medium">{trade.symbol}</td><td className="px-4 py-3"><Badge variant="secondary">{trade.action}</Badge></td><td className="px-4 py-3 font-mono text-xs text-muted-foreground">{trade.account_id.slice(0, 8)}</td><td className="px-4 py-3 text-muted-foreground">{date(trade.created_at)}</td><td className={cn("px-4 py-3 text-right font-medium", (trade.profit_loss ?? 0) >= 0 ? "text-success" : "text-destructive")}>{money(trade.profit_loss ?? 0)}</td></tr>)}</tbody></table></div>{!trades.length && <p className="p-6 text-sm text-muted-foreground">No trade events recorded.</p>}</CardContent></Card>
         <Card><CardHeader><CardTitle>Positions</CardTitle><p className="text-sm text-muted-foreground">Open and closed positions across the trader's accounts. Open positions use live bid/ask pricing.</p></CardHeader><CardContent className="p-0"><div className="overflow-x-auto"><table className="min-w-[50rem] w-full text-left text-sm"><thead className="border-y border-border bg-secondary/40 text-xs uppercase text-muted-foreground"><tr><th className="px-4 py-3">Position</th><th className="px-4 py-3">Account</th><th className="px-4 py-3">Size</th><th className="px-4 py-3">Entry / exit</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">P/L</th></tr></thead><tbody>{positions.map((position) => { const positionPL = position.status === "open" ? livePositionPL(position) : (position.profit_loss ?? 0); return <tr key={position.id} className="border-b border-border/60 last:border-0"><td className="px-4 py-3"><p className="font-medium">{position.assets?.symbol || "Unknown asset"}</p><p className="text-xs text-muted-foreground">{position.position_type}</p></td><td className="px-4 py-3 font-mono text-xs text-muted-foreground">{position.account_id.slice(0, 8)}</td><td className="px-4 py-3">{position.lot_size} lots</td><td className="px-4 py-3 text-xs text-muted-foreground">{position.entry_price} / {position.exit_price ?? "-"}</td><td className="px-4 py-3"><Badge variant={position.status === "open" ? "outline" : "secondary"}>{position.status}</Badge></td><td className={cn("px-4 py-3 text-right font-medium", positionPL >= 0 ? "text-success" : "text-destructive")}>{money(positionPL)}</td></tr>; })}</tbody></table></div>{!positions.length && <p className="p-6 text-sm text-muted-foreground">No positions recorded.</p>}</CardContent></Card>
