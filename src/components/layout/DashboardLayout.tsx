@@ -41,6 +41,7 @@ const adminLinks = [
   { href: "/admin/referrals", icon: Users, label: "Referral analytics" },
   { href: "/admin/affiliates", icon: Users, label: "Affiliate partners" },
   { href: "/admin/activity", icon: Activity, label: "Trade activity" },
+  { href: "/admin/purchased-accounts", icon: Wallet, label: "Purchased accounts" },
   { href: "/admin/payouts", icon: Wallet, label: "Payout requests" },
   { href: "/admin/payments", icon: CreditCard, label: "Payment reconciliation" },
   { href: "/admin/coupons", icon: Tag, label: "Purchase coupons" },

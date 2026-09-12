@@ -33,6 +33,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useTradingViewPrices } from "@/hooks/useTradingViewPrices";
 import { calculatePositionPL } from "@/lib/tradingCalculations";
 import { countAffiliateCodeUses } from "@/lib/affiliateCodeUsage";
+import { formatCouponUsage } from "@/lib/purchasedAccountDisplay.js";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -83,6 +84,7 @@ type Account = {
   archived_at: string | null;
   archive_expires_at: string | null;
   coupon_code: string | null;
+  price: number | null;
   updated_at: string;
   created_at: string;
 };
@@ -203,6 +205,7 @@ type AdminSection =
   | "kyc"
   | "payments"
   | "payouts"
+  | "purchases"
   | "coupons";
 type Kyc = {
   id: string;
@@ -1068,9 +1071,11 @@ export default function Admin({ section }: { section?: AdminSection }) {
                   ? "Payment reconciliation"
                   : section === "payouts"
                     ? "Payout requests"
-                    : section === "coupons"
-                      ? "Purchase coupons"
-                      : "Platform overview";
+                    : section === "purchases"
+                      ? "Purchased accounts"
+                      : section === "coupons"
+                        ? "Purchase coupons"
+                        : "Platform overview";
 
   const statCards = [
     {
@@ -1653,6 +1658,70 @@ export default function Admin({ section }: { section?: AdminSection }) {
                       <p className="text-sm text-muted-foreground">
                         No accounts have been created.
                       </p>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
+              {(!section || section === "purchases") && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-xl">
+                      <WalletCards className="h-5 w-5 text-primary" />
+                      Purchased accounts
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Every paid account with full purchase metadata, including whether a coupon was used and which code was applied.
+                    </p>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="min-w-[65rem] w-full text-left text-sm">
+                        <thead className="border-y border-border bg-secondary/40 text-xs uppercase text-muted-foreground">
+                          <tr>
+                            <th className="px-4 py-3">Trader</th>
+                            <th className="px-4 py-3">Account</th>
+                            <th className="px-4 py-3">Status</th>
+                            <th className="px-4 py-3">Price</th>
+                            <th className="px-4 py-3">Purchased</th>
+                            <th className="px-4 py-3">Coupon</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[...purchasedAccounts]
+                            .sort((firstAccount, secondAccount) =>
+                              new Date(secondAccount.created_at).getTime() - new Date(firstAccount.created_at).getTime(),
+                            )
+                            .map((account) => {
+                              const user = userMap.get(account.user_id);
+                              return (
+                                <tr key={account.id} className="border-b border-border/60 last:border-0">
+                                  <td className="px-4 py-3">
+                                    <div className="font-medium">{user?.name || "Unnamed trader"}</div>
+                                    <div className="text-xs text-muted-foreground">{user?.email || account.user_id.slice(0, 8)}</div>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <div>${account.account_size.toLocaleString()} · {account.challenge_type.replace("_", " ")}</div>
+                                    <div className="font-mono text-[10px] text-muted-foreground">{account.id.slice(0, 8)}</div>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <Badge variant={account.status === "failed" ? "destructive" : "outline"}>
+                                      {account.status.replace("_", " ")}
+                                    </Badge>
+                                  </td>
+                                  <td className="px-4 py-3">{money(Number(account.price ?? 0))}</td>
+                                  <td className="px-4 py-3 text-xs text-muted-foreground">{date(account.created_at)}</td>
+                                  <td className="px-4 py-3">
+                                    <span className="text-xs font-medium text-foreground">{formatCouponUsage(account.coupon_code)}</span>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {purchasedAccounts.length === 0 && (
+                      <p className="p-6 text-sm text-muted-foreground">No purchased accounts have been recorded yet.</p>
                     )}
                   </CardContent>
                 </Card>
