@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { TrendingUp, Mail, Lock, Eye, EyeOff } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { isAllowedEmail } from "@/lib/emailPolicy";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -34,11 +35,21 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!isAllowedEmail(email)) {
+      toast({
+        title: "Unsupported email provider",
+        description: "Please use a trusted email provider such as Gmail, Yahoo, Outlook, iCloud, or ProtonMail.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password,
       });
       if (error) {

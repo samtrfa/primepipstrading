@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { isAllowedEmail } from "@/lib/emailPolicy";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -16,6 +17,16 @@ export default function ForgotPassword() {
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+
+    if (!isAllowedEmail(email)) {
+      toast({
+        title: "Unsupported email provider",
+        description: "Please use a trusted email provider such as Gmail, Yahoo, Outlook, iCloud, or ProtonMail.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,

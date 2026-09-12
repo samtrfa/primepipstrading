@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { TrendingUp, Mail, Lock, Eye, EyeOff, User, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { isAllowedEmail } from "@/lib/emailPolicy";
 
 export default function Register() {
   const [formData, setFormData] = useState({
@@ -70,6 +71,15 @@ export default function Register() {
       toast({
         title: "Password too short",
         description: "Password must be at least 6 characters.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!isAllowedEmail(formData.email)) {
+      toast({
+        title: "Unsupported email provider",
+        description: "Please use a trusted email provider such as Gmail, Yahoo, Outlook, iCloud, or ProtonMail.",
         variant: "destructive",
       });
       return;
