@@ -59,15 +59,15 @@ export default function Certificates() {
     if (!certificate || downloadingId) return;
     setDownloadingId(certificateRecord.id);
     try {
-      const width = certificate.clientWidth || certificate.scrollWidth;
-      const height = certificate.clientHeight || certificate.scrollHeight;
       const canvas = await html2canvas(certificate, {
-        backgroundColor: "#0b1116",
+        backgroundColor: "#000000",
         scale: 2,
         useCORS: true,
         logging: false,
-        width,
-        height,
+        width: 1080,
+        height: 1080,
+        windowWidth: 1080,
+        windowHeight: 1080,
         scrollX: 0,
         scrollY: 0,
       });
@@ -113,33 +113,64 @@ export default function Certificates() {
           const accountSize = certificateRecord.account_size ? `$${Number(certificateRecord.account_size).toLocaleString()}` : "-";
           const traderName = certificateRecord.recipient_name || "PrimePips Trader";
           const methodLabel = certificateRecord.payout_method?.replace(/_/g, " ") || "Crypto";
+          const payoutDate = new Date(certificateRecord.awarded_at).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
           return (
-            <article key={certificateRecord.id} className="relative overflow-hidden">
-              <div ref={(element) => { certificateRefs.current[certificateRecord.id] = element; }} className="relative grid aspect-[1.414/1] w-full grid-rows-[auto_minmax(0,1fr)_auto_auto] overflow-hidden border-[6px] border-[#c6a75e] bg-[#0b1116] text-[#f5f0e4] shadow-2xl ring-1 ring-[#8a6a2e]/70 print:h-[148.5mm] print:w-[210mm] print:aspect-auto print:shadow-none">
-                <div className="pointer-events-none absolute inset-2 border border-[#c6a75e]/50" />
-                <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full border border-[#c6a75e]/20" />
-                <div className="pointer-events-none absolute -bottom-28 -left-16 h-56 w-56 rounded-full border border-[#c6a75e]/10" />
+            <article key={certificateRecord.id} className="relative overflow-hidden" style={{ width: "100%", maxWidth: 1080, margin: "0 auto" }}>
+              <div
+                ref={(element) => { certificateRefs.current[certificateRecord.id] = element; }}
+                style={{
+                  position: "relative",
+                  width: "100%",
+                  maxWidth: 1080,
+                  aspectRatio: "1 / 1",
+                  margin: "0 auto",
+                  overflow: "hidden",
+                  border: "2px solid rgba(214, 184, 117, 0.8)",
+                  borderRadius: "16px",
+                  background: "linear-gradient(180deg, rgba(43,48,52,0.94) 0%, rgba(17,23,28,0.96) 100%)",
+                  boxShadow: "0 0 0 1px rgba(214,184,117,0.28), inset 0 0 0 1px rgba(214,184,117,0.16)",
+                  color: "#f5f0e4",
+                  boxSizing: "border-box",
+                }}
+              >
+                <div style={{ position: "absolute", inset: 8, border: "1px solid rgba(214,184,117,0.4)", borderRadius: 10, boxSizing: "border-box" }} />
+                <div style={{ position: "absolute", inset: 0, opacity: 0.16, background: "radial-gradient(circle at 15% 18%, rgba(255,255,255,0.10), transparent 24%), radial-gradient(circle at 80% 30%, rgba(255,255,255,0.06), transparent 18%)", pointerEvents: "none" }} />
+                <div style={{ position: "absolute", width: 260, height: 260, borderRadius: "50%", border: "1px solid rgba(214,184,117,0.10)", right: -40, top: -70 }} />
+                <div style={{ position: "absolute", width: 220, height: 220, borderRadius: "50%", border: "1px solid rgba(214,184,117,0.08)", left: -40, bottom: -80 }} />
 
-                <header className="relative flex flex-col items-center px-8 pt-5 sm:px-14 sm:pt-6">
-                  <img src="/primepips-email-logo.svg" alt="PrimePips" className="h-10 w-auto max-w-[min(15rem,80%)] object-contain sm:h-12" />
-                  <div className="mt-3 flex w-full max-w-2xl items-center gap-3"><span className="h-px flex-1 bg-[#c6a75e]/50" /><span className="whitespace-nowrap text-[8px] font-semibold uppercase tracking-[0.28em] text-[#d4af37]">Official certificate</span><span className="h-px flex-1 bg-[#c6a75e]/50" /></div>
-                </header>
+                <div style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", width: "100%", height: "100%", boxSizing: "border-box", padding: "26px 30px 18px" }}>
+                  <header style={{ display: "flex", justifyContent: "center", alignItems: "center", marginTop: 2 }}>
+                    <div style={{ width: 164, height: 52, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <img src="/primepips-email-logo.svg" alt="PrimePips" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+                    </div>
+                  </header>
 
-                <main className="relative flex min-h-0 flex-col items-center justify-center overflow-hidden px-8 py-3 text-center sm:px-14 sm:py-4">
-                  <p className="text-[7px] font-bold uppercase tracking-[0.28em] text-[#d4af37] sm:text-[8px]">{isPayout ? "Successful payout certificate" : "Achievement certificate"}</p>
-                  <h3 className="mt-2 font-serif text-[clamp(1.6rem,2.5vw,3rem)] font-bold leading-none tracking-tight text-[#f5f0e4]">{isPayout ? "Payout Honor" : "Funded Achievement"}</h3>
-                  <p className="mt-2 max-w-full break-words px-2 font-serif text-[11px] font-bold text-[#f5f0e4] sm:text-sm">Presented to {traderName}</p>
-                  {isPayout && <p className="mt-3 font-serif text-[clamp(2rem,4vw,3.2rem)] font-bold leading-none tracking-tight text-[#d4af37]">{amount}</p>}
-                  <p className="mt-2 max-w-xl text-[9px] leading-[1.35] text-[#b7c3c5] sm:text-[10px]">{isPayout ? `Crypto payout via PrimePips.` : `Completed ${certificateRecord.phase_name} of the PrimePips program.`}</p>
-                </main>
+                  <main style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", flex: 1, paddingTop: 10, paddingBottom: 8 }}>
+                    <h3 style={{ margin: 0, fontFamily: "Arial, Helvetica, sans-serif", fontSize: "clamp(24px, 3vw, 52px)", letterSpacing: "0.02em", textTransform: "uppercase", fontWeight: 700, lineHeight: 0.98, color: "#f5f0e4" }}>{isPayout ? "Payout" : "Achievement"}<br />{isPayout ? "Certificate" : "Certificate"}</h3>
+                    <p style={{ margin: "14px 0 0", fontFamily: "Georgia, serif", fontSize: 16, fontStyle: "italic", color: "#f5f0e4", fontWeight: 500 }}>presented to: <span style={{ fontStyle: "normal", fontWeight: 700 }}>{traderName}</span></p>
+                    {isPayout && <p style={{ margin: "18px 0 0", fontFamily: "Georgia, serif", fontSize: 46, fontWeight: 700, lineHeight: 1, letterSpacing: "-0.06em", color: "#d4af37" }}>{amount}</p>}
 
-                <div className="relative z-10 mx-8 grid h-[3.25rem] grid-cols-3 divide-x divide-[#c6a75e]/30 overflow-hidden border-y border-[#c6a75e]/40 bg-[#111b21]/70 text-center sm:mx-14 sm:h-[3.5rem]">
-                  <div className="flex min-w-0 flex-col justify-center px-2 leading-none sm:px-4"><p className="text-[6px] font-bold uppercase tracking-[0.14em] text-[#d4af37] sm:text-[7px]">{isPayout ? "Payout" : "Program"}</p><p className="mt-1 truncate text-[8px] font-semibold leading-none text-[#f5f0e4] sm:text-[9px]">{isPayout ? amount : challengeLabels[certificateRecord.challenge_type || ""] || certificateRecord.challenge_type}</p></div>
-                  <div className="flex min-w-0 flex-col justify-center px-2 leading-none sm:px-4"><p className="text-[6px] font-bold uppercase tracking-[0.14em] text-[#d4af37] sm:text-[7px]">{isPayout ? "Method" : "Passed"}</p><p className="mt-1 truncate text-[8px] font-semibold capitalize leading-none text-[#f5f0e4] sm:text-[9px]">{isPayout ? methodLabel : certificateRecord.phase_name}</p></div>
-                  <div className="flex min-w-0 flex-col justify-center px-2 leading-none sm:px-4"><p className="text-[6px] font-bold uppercase tracking-[0.14em] text-[#d4af37] sm:text-[7px]">Account size</p><p className="mt-1 truncate text-[8px] font-semibold leading-none text-[#f5f0e4] sm:text-[9px]">{accountSize}</p></div>
+                    <div style={{ width: "100%", marginTop: 20, padding: "0 10%" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10, width: "100%" }}>
+                        <div style={{ textAlign: "center", borderTop: "1px solid rgba(214,184,117,0.45)", paddingTop: 10 }}>
+                          <div style={{ fontSize: 8, letterSpacing: "0.18em", textTransform: "uppercase", color: "#d9dfe0", marginBottom: 4 }}>Account Size</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#f5f0e4" }}>{accountSize}</div>
+                        </div>
+                        <div style={{ textAlign: "center", borderTop: "1px solid rgba(214,184,117,0.45)", paddingTop: 10 }}>
+                          <div style={{ fontSize: 8, letterSpacing: "0.18em", textTransform: "uppercase", color: "#d9dfe0", marginBottom: 4 }}>{isPayout ? "Payout Date" : "Award Date"}</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#f5f0e4" }}>{payoutDate}</div>
+                        </div>
+                      </div>
+
+                      {isPayout && (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 12, paddingTop: 10, borderTop: "1px solid rgba(214,184,117,0.25)", fontSize: 10, color: "#d9dfe0", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+                          <span>Method: {methodLabel}</span>
+                          <span>PrimePips</span>
+                        </div>
+                      )}
+                    </div>
+                  </main>
                 </div>
-
-                <footer className="relative z-10 flex shrink-0 items-center justify-between gap-4 border-t border-[#c6a75e]/30 bg-[#080d12]/80 px-8 py-3 text-[8px] uppercase tracking-[0.16em] text-[#9aaeb2] sm:px-14"><span>PrimePips Funding</span><span className="flex items-center gap-1.5"><CalendarDays className="h-3 w-3 text-[#d4af37]" />{new Date(certificateRecord.awarded_at).toLocaleDateString()}</span><span className="font-mono normal-case tracking-normal">Ref #{certificateRecord.id.slice(0, 8)}</span></footer>
               </div>
               <div className="mt-3 bg-background print:hidden"><Button type="button" variant="outline" className="w-full" disabled={downloadingId !== null} onClick={() => downloadCertificate(certificateRecord)}><Download className="mr-2 h-4 w-4" />{downloadingId === certificateRecord.id ? "Preparing PNG..." : "Download Certificate"}</Button></div>
             </article>

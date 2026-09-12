@@ -617,6 +617,27 @@ export default function Admin({ section }: { section?: AdminSection }) {
     setDeletingAccount(null);
   };
 
+  const deleteArchivedAccount = async (account: Account) => {
+    if (!window.confirm(`Delete archived account ${account.id.slice(0, 8)} permanently? This removes the account immediately and cannot be undone.`)) return;
+
+    setDeletingAccount(account.id);
+    setError("");
+    const { data, error: deleteError } = await supabase.functions.invoke(
+      "admin-account",
+      { body: { action: "delete-archived", accountId: account.id, userId: account.user_id } },
+    );
+    if (deleteError || !data?.deleted) {
+      setError(deleteError?.message || "The archived account could not be permanently deleted.");
+    } else {
+      setSnapshot((current) => current ? {
+        ...current,
+        accounts: current.accounts.filter((candidate) => candidate.id !== account.id),
+      } : current);
+      if (editingAccount?.id === account.id) setEditingAccount(null);
+    }
+    setDeletingAccount(null);
+  };
+
   const deleteTrader = async () => {
     const user = snapshot?.users.find(
       (candidate) => candidate.id === deleteUserId,
@@ -1260,10 +1281,16 @@ export default function Admin({ section }: { section?: AdminSection }) {
                               {account.archive_expires_at ? ` permanently deleted ${date(account.archive_expires_at)}` : " pending deletion"}
                             </p>
                           </div>
-                          <Button size="sm" variant="outline" onClick={() => void restoreAccount(account)} disabled={deletingAccount === account.id}>
-                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
-                            {deletingAccount === account.id ? "Restoring..." : "Restore account"}
-                          </Button>
+                          <div className="flex flex-wrap gap-2">
+                            <Button size="sm" variant="outline" onClick={() => void restoreAccount(account)} disabled={deletingAccount === account.id}>
+                              <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                              {deletingAccount === account.id ? "Restoring..." : "Restore account"}
+                            </Button>
+                            <Button size="sm" variant="destructive" onClick={() => void deleteArchivedAccount(account)} disabled={deletingAccount === account.id}>
+                              <Trash2 className="mr-2 h-3.5 w-3.5" />
+                              {deletingAccount === account.id ? "Deleting..." : "Delete permanently"}
+                            </Button>
+                          </div>
                         </div>
                       );
                     })}

@@ -67,6 +67,26 @@ Deno.serve(async (req) => {
       return json({ deleted: true, archived: true, archiveExpiresAt, accountId: body.accountId });
     }
 
+    if (body.action === "delete-archived") {
+      if (typeof body.accountId !== "string" || typeof body.userId !== "string") return json({ error: "Invalid account details" }, 400);
+
+      const { data: account, error: accountError } = await admin.from("accounts")
+        .delete()
+        .eq("id", body.accountId)
+        .eq("user_id", body.userId)
+        .not("archived_at", "is", null)
+        .select("id")
+        .maybeSingle();
+
+      if (accountError) {
+        console.error("Could not permanently delete archived account:", accountError.message);
+        return json({ error: "Could not permanently delete archived account" }, 500);
+      }
+      if (!account) return json({ error: "Archived account not found or it is not eligible for permanent deletion" }, 404);
+
+      return json({ deleted: true, accountId: body.accountId });
+    }
+
     if (body.action === "restore") {
       if (typeof body.accountId !== "string" || typeof body.userId !== "string") return json({ error: "Invalid account details" }, 400);
 
