@@ -13,7 +13,7 @@ const accountStatuses = ["pending_payment", "active", "failed", "passed", "funde
 
 type ChallengeType = (typeof challengeTypes)[number];
 
-async function supabaseRest<T>(path: string, method: string, token: string, body?: unknown, query = ""): Promise<T> {
+async function supabaseRest<T>(path: string, method: string, token: string, body?: unknown, query = ""): Promise<T | null> {
   const url = new URL(`${supabaseUrl}/rest/v1/${path}`);
   if (query) url.search = query;
 
@@ -29,14 +29,21 @@ async function supabaseRest<T>(path: string, method: string, token: string, body
   });
 
   const text = await response.text();
-  const json = text ? JSON.parse(text) : null;
+  let json: unknown = null;
+  if (text) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = { message: text };
+    }
+  }
 
   if (!response.ok) {
-    const message = json?.message ?? json?.error ?? `Request failed with status ${response.status}`;
+    const message = (json as { message?: string; error?: string } | null)?.message ?? (json as { message?: string; error?: string } | null)?.error ?? `Request failed with status ${response.status}`;
     throw new Error(String(message));
   }
 
-  return json as T;
+  return json as T | null;
 }
 
 function getJwtRole(token: string): string | null {
@@ -98,7 +105,7 @@ Deno.serve(async (req) => {
     const hasUserId = typeof body.userId === "string" && body.userId.length > 0;
 
     if (action !== "delete-archived" && !hasUserId) return json({ error: "Invalid user details" }, 400);
-    if (hasUserId) {
+    if (hasUserId && action !== "delete-archived") {
       const target = await getUserById(body.userId);
       const targetUser = target?.user ?? target;
       if (!targetUser) return json({ error: "User not found" }, 404);
@@ -132,17 +139,22 @@ Deno.serve(async (req) => {
     if (body.action === "delete-archived") {
       if (typeof body.accountId !== "string") return json({ error: "Invalid account details" }, 400);
 
-      let query = `id=eq.${encodeURIComponent(body.accountId)}&archived_at=is.not.null`;
+      let query = `id=eq.${encodeURIComponent(body.accountId)}&archived_at=not.is.null`;
       if (typeof body.userId === "string" && body.userId.length > 0) {
         query += `&user_id=eq.${encodeURIComponent(body.userId)}`;
       }
 
-      const deletedRows = await supabaseRest<Array<{ id: string }>>("accounts", "DELETE", serviceRoleKey, undefined, query);
-      const account = deletedRows?.[0] ?? null;
+      try {
+        const deletedRows = await supabaseRest<Array<{ id: string }>>("accounts", "DELETE", serviceRoleKey, undefined, query);
+        const account = deletedRows?.[0] ?? null;
 
-      if (!account) return json({ error: "Archived account not found or it is not eligible for permanent deletion" }, 404);
+        if (!account) return json({ error: "Archived account not found or it is not eligible for permanent deletion" }, 404);
 
-      return json({ deleted: true, accountId: body.accountId });
+        return json({ deleted: true, accountId: body.accountId });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Could not permanently delete archived account";
+        return json({ error: message }, 500);
+      }
     }
 
     if (body.action === "restore") {
@@ -151,7 +163,7 @@ Deno.serve(async (req) => {
       const account = await supabaseRest<Array<Record<string, unknown>>>("accounts", "PATCH", serviceRoleKey, {
         archived_at: null,
         archive_expires_at: null,
-      }, `id=eq.${encodeURIComponent(body.accountId)}&user_id=eq.${encodeURIComponent(body.userId)}&archived_at=is.not.null&archive_expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=id,user_id,account_size,challenge_type,status,current_balance,profit_loss,current_phase,archived_at,archive_expires_at,updated_at,created_at`);
+      }, `id=eq.${encodeURIComponent(body.accountId)}&user_id=eq.${encodeURIComponent(body.userId)}&archived_at=not.is.null&archive_expires_at=gt.${encodeURIComponent(new Date().toISOString())}&select=id,user_id,account_size,challenge_type,status,current_balance,profit_loss,current_phase,archived_at,archive_expires_at,updated_at,created_at`);
       const restored = Array.isArray(account) ? account[0] : null;
       if (!restored) return json({ error: "The archive has expired or the account was not found" }, 404);
       return json({ account: restored, restored: true });
@@ -239,6 +251,6 @@ Deno.serve(async (req) => {
     return json({ account: inserted });
   } catch (error) {
     console.error("admin-account error:", error);
-    return json({ error: "Unexpected error" }, 500);
+    return json({ error: error instanceof Error ? error.message : "Unexpected error" }, 500);
   }
 });

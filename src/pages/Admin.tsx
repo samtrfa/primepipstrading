@@ -85,6 +85,10 @@ type Account = {
   archive_expires_at: string | null;
   coupon_code: string | null;
   price: number | null;
+  payment_currency: string | null;
+  payment_amount_local: number | null;
+  payment_provider: string | null;
+  payment_reference: string | null;
   updated_at: string;
   created_at: string;
 };
@@ -956,7 +960,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
   };
 
   const purchasedAccounts = (snapshot?.accounts ?? []).filter(
-    (account) => !account.archived_at && !["pending_payment"].includes(account.status),
+    (account) => !account.archived_at && ["pending_payment", "active", "funded", "passed", "failed"].includes(account.status),
   );
   const failedAccounts = (snapshot?.accounts ?? []).filter(
     (account) => account.status === "failed" && !account.archived_at,
@@ -1708,10 +1712,12 @@ export default function Admin({ section }: { section?: AdminSection }) {
                             .map((account) => {
                               const user = userMap.get(account.user_id);
                               const payment = paymentByAccount.get(account.id);
-                              const purchaseAmount = Number(account.price ?? payment?.amount ?? 0);
-                              const paymentStatus = payment?.status ?? (account.status === "failed" ? "failed" : "—");
-                              const paymentReference = payment?.provider_reference || "No payment reference";
+                              const purchaseAmount = Number(account.payment_amount_local ?? account.price ?? payment?.amount ?? 0);
+                              const purchaseCurrency = (account.payment_currency || payment?.currency || "USD").toUpperCase();
+                              const paymentStatus = payment?.status ?? (account.status === "failed" ? "failed" : account.status === "pending_payment" ? "pending" : "—");
+                              const paymentReference = account.payment_reference || payment?.provider_reference || "No payment reference";
                               const paymentFailureReason = payment?.failure_reason || (account.status === "failed" ? "Account was marked as failed." : null);
+                              const displayCurrency = purchaseCurrency === "USD" ? "$" : purchaseCurrency === "NGN" ? "₦" : purchaseCurrency + " ";
                               return (
                                 <tr key={account.id} className="border-b border-border/60 last:border-0 align-top">
                                   <td className="px-4 py-3">
@@ -1728,11 +1734,11 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                     </Badge>
                                   </td>
                                   <td className="px-4 py-3">
-                                    <div className="font-medium">{money(purchaseAmount)}</div>
-                                    <div className="text-[10px] text-muted-foreground">{payment?.currency?.toUpperCase() || "USD"}</div>
+                                    <div className="font-medium">{displayCurrency === "$" ? money(purchaseAmount) : `${displayCurrency}${purchaseAmount.toLocaleString()}`}</div>
+                                    <div className="text-[10px] text-muted-foreground">Paid in {purchaseCurrency}</div>
                                   </td>
                                   <td className="px-4 py-3 text-xs text-muted-foreground">
-                                    <div className="font-medium text-foreground">{payment ? payment.provider.toUpperCase() : "No payment"}</div>
+                                    <div className="font-medium text-foreground">{(account.payment_provider || payment?.provider || "No payment").toUpperCase()}</div>
                                     <div className="mt-1">Status: {paymentStatus}</div>
                                     <div>Ref: {paymentReference}</div>
                                     {paymentFailureReason && <div className="mt-1 text-destructive">Failure: {paymentFailureReason}</div>}
