@@ -11,6 +11,7 @@ import { ProfitTargetTracker } from "@/components/trading/ProfitTargetTracker";
 import { useTradingViewPrices } from "@/hooks/useTradingViewPrices";
 import { supabase } from "@/integrations/supabase/client";
 import { calculatePositionPL } from "@/lib/tradingCalculations";
+import { countAffiliateCodeUses } from "@/lib/affiliateCodeUsage";
 import { cn } from "@/lib/utils";
 
 interface User {
@@ -172,9 +173,7 @@ export default function TraderDetails() {
     [snapshot, userId],
   );
   const affiliateBalance = (snapshot?.affiliateBalances ?? []).find((candidate) => candidate.user_id === userId);
-  const affiliateCodeUses = affiliateCode
-    ? (snapshot?.accounts ?? []).filter((account) => account.coupon_code?.toUpperCase() === affiliateCode.code.toUpperCase()).length
-    : 0;
+  const affiliateCodeUses = affiliateCode ? countAffiliateCodeUses(snapshot?.accounts ?? [], affiliateCode.code) : 0;
   const affiliatePurchases = useMemo(
     () => (snapshot?.accounts ?? []).filter((account) => account.coupon_code && affiliateCode && account.coupon_code.toUpperCase() === affiliateCode.code.toUpperCase() && account.user_id !== userId && purchasedStatuses.has(account.status)),
     [snapshot, affiliateCode, userId],

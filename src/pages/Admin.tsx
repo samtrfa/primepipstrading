@@ -32,6 +32,7 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useTradingViewPrices } from "@/hooks/useTradingViewPrices";
 import { calculatePositionPL } from "@/lib/tradingCalculations";
+import { countAffiliateCodeUses } from "@/lib/affiliateCodeUsage";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -2683,8 +2684,8 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                   </Badge>
                                 </td>
                                 <td className="px-4 py-4 text-right">
-                                  <div className="font-medium">{(() => { const code = snapshot.affiliateCodes.find((affiliateCode) => affiliateCode.user_id === user.id)?.code; return code ? snapshot.accounts.filter((account) => account.coupon_code?.toUpperCase() === code.toUpperCase()).length : 0; })()}</div>
-                                  <div className="text-xs text-muted-foreground">purchases</div>
+                                  <div className="font-medium">{(() => { const code = snapshot.affiliateCodes.find((affiliateCode) => affiliateCode.user_id === user.id)?.code; return code ? countAffiliateCodeUses(snapshot.accounts, code) : 0; })()}</div>
+                                  <div className="text-xs text-muted-foreground">successful purchases</div>
                                 </td>
                                 <td className="px-4 py-4 text-right">
                                   <div className="font-medium">{snapshot.referrals.filter((referral) => referral.referrer_id === user.id && referral.account_purchased).length}</div>
