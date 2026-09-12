@@ -1714,7 +1714,20 @@ export default function Admin({ section }: { section?: AdminSection }) {
                               const payment = paymentByAccount.get(account.id);
                               const purchaseAmount = Number(account.payment_amount_local ?? account.price ?? payment?.amount ?? 0);
                               const purchaseCurrency = (account.payment_currency || payment?.currency || "USD").toUpperCase();
-                              const paymentStatus = payment?.status ?? (account.status === "failed" ? "failed" : account.status === "pending_payment" ? "pending" : "—");
+                              const paymentStatus =
+                                payment?.status === "success"
+                                  ? "paid"
+                                  : payment?.status === "failed"
+                                    ? "failed"
+                                    : payment?.status === "pending"
+                                      ? "pending"
+                                      : account.status === "failed"
+                                        ? "failed"
+                                        : account.status === "pending_payment"
+                                          ? "pending"
+                                          : account.status === "active" || account.status === "funded" || account.status === "passed"
+                                            ? "paid"
+                                            : "—";
                               const paymentReference = account.payment_reference || payment?.provider_reference || "No payment reference";
                               const paymentFailureReason = payment?.failure_reason || (account.status === "failed" ? "Account was marked as failed." : null);
                               const displayCurrency = purchaseCurrency === "USD" ? "$" : purchaseCurrency === "NGN" ? "₦" : purchaseCurrency + " ";
