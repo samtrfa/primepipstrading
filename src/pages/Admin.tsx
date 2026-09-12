@@ -344,6 +344,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
   const [selectedAffiliateApplication, setSelectedAffiliateApplication] = useState<AffiliateApplication | null>(null);
   const [savingAffiliateCode, setSavingAffiliateCode] = useState<string | null>(null);
   const [affiliateCodeDrafts, setAffiliateCodeDrafts] = useState<Record<string, { discount: string; isActive: boolean }>>({});
+  const [affiliateAssignDrafts, setAffiliateAssignDrafts] = useState<Record<string, string>>({});
   const [reviewingPayout, setReviewingPayout] = useState<string | null>(null);
   const [selectedPayout, setSelectedPayout] = useState<Payout | null>(null);
   const [payoutRejectionReason, setPayoutRejectionReason] = useState("");
@@ -407,16 +408,29 @@ export default function Admin({ section }: { section?: AdminSection }) {
     };
   }, []);
 
-  const updateAffiliateStatus = async (user: User) => {
+  const updateAffiliateStatus = async (user: User, codeOverride?: string) => {
     setUpdatingAffiliate(user.id);
+    setError("");
+    const isAssigning = !user.isAffiliate;
+    const code = codeOverride?.trim().toUpperCase();
+    if (isAssigning && !code) {
+      setError("Enter a code before assigning affiliate access.");
+      setUpdatingAffiliate(null);
+      return;
+    }
+
     const { error: updateError } = await supabase.functions.invoke(
       "admin-affiliate",
       {
-        body: { userId: user.id, affiliate: !user.isAffiliate },
+        body: {
+          userId: user.id,
+          affiliate: isAssigning,
+          ...(isAssigning ? { code, discountPercent: 10, isActive: true } : {}),
+        },
       },
     );
     if (updateError) {
-      setError("The affiliate status could not be updated.");
+      setError(updateError.message || "The affiliate status could not be updated.");
     } else {
       setSnapshot((current) =>
         current
@@ -424,12 +438,15 @@ export default function Admin({ section }: { section?: AdminSection }) {
               ...current,
               users: current.users.map((candidate) =>
                 candidate.id === user.id
-                  ? { ...candidate, isAffiliate: !user.isAffiliate }
+                  ? { ...candidate, isAffiliate: isAssigning }
                   : candidate,
               ),
             }
           : current,
       );
+      if (isAssigning) {
+        setAffiliateAssignDrafts((current) => ({ ...current, [user.id]: "" }));
+      }
     }
     setUpdatingAffiliate(null);
   };
@@ -2688,22 +2705,34 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                   </Button>
                                 </td>
                                 <td className="px-6 py-4 text-right">
-                                  <Button
-                                    variant={
-                                      user.isAffiliate ? "outline" : "gold"
-                                    }
-                                    size="sm"
-                                    onClick={() =>
-                                      void updateAffiliateStatus(user)
-                                    }
-                                    disabled={updatingAffiliate === user.id}
-                                  >
-                                    {updatingAffiliate === user.id
-                                      ? "Updating..."
-                                      : user.isAffiliate
-                                        ? "Remove access"
-                                        : "Assign affiliate"}
-                                  </Button>
+                                  {user.isAffiliate ? (
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => void updateAffiliateStatus(user)}
+                                      disabled={updatingAffiliate === user.id}
+                                    >
+                                      {updatingAffiliate === user.id ? "Updating..." : "Remove access"}
+                                    </Button>
+                                  ) : (
+                                    <div className="flex items-center justify-end gap-2">
+                                      <Input
+                                        value={affiliateAssignDrafts[user.id] ?? ""}
+                                        onChange={(event) => setAffiliateAssignDrafts((current) => ({ ...current, [user.id]: event.target.value.toUpperCase() }))}
+                                        className="h-9 w-24 rounded-md border border-border bg-background px-2 text-xs font-mono"
+                                        placeholder="CODE"
+                                        maxLength={8}
+                                      />
+                                      <Button
+                                        variant="gold"
+                                        size="sm"
+                                        onClick={() => void updateAffiliateStatus(user, affiliateAssignDrafts[user.id])}
+                                        disabled={updatingAffiliate === user.id}
+                                      >
+                                        {updatingAffiliate === user.id ? "Updating..." : "Assign affiliate"}
+                                      </Button>
+                                    </div>
+                                  )}
                                 </td>
                               </tr>
                             ))}

@@ -85,12 +85,34 @@ Deno.serve(async (req) => {
     }
 
     if (typeof body.userId !== "string" || typeof body.affiliate !== "boolean") return json({ error: "Invalid request" }, 400);
+    const requestedCode = typeof body.code === "string" ? body.code.trim().toUpperCase() : null;
     const { data: target, error: targetError } = await admin.auth.admin.getUserById(body.userId);
     if (targetError || !target.user) return json({ error: "User not found" }, 404);
     if (target.user.app_metadata?.role === "admin") return json({ error: "Admin status cannot be changed here" }, 400);
+
+    if (body.affiliate) {
+      if (!requestedCode) return json({ error: "A code is required before granting affiliate access" }, 400);
+      if (!/^[A-Z0-9]{6,8}$/.test(requestedCode)) return json({ error: "Affiliate code must be 6-8 letters or numbers" }, 400);
+
+      const [{ data: existingAffiliate }, { data: existingCoupon }] = await Promise.all([
+        admin.from("affiliate_codes").select("user_id").eq("code", requestedCode).maybeSingle(),
+        admin.from("coupons").select("id").eq("code", requestedCode).maybeSingle(),
+      ]);
+      if (existingAffiliate && existingAffiliate.user_id !== body.userId) return json({ error: "This affiliate code is already in use" }, 409);
+      if (existingCoupon) return json({ error: "This code is already used by a purchase coupon" }, 409);
+
+      const { error: affiliateCodeError } = await admin.from("affiliate_codes").upsert({
+        user_id: body.userId,
+        code: requestedCode,
+        discount_percent: Number.isFinite(Number(body.discountPercent)) ? Number(body.discountPercent) : 10,
+        is_active: body.isActive === undefined ? true : Boolean(body.isActive),
+      }, { onConflict: "user_id" });
+      if (affiliateCodeError) return json({ error: "Could not assign affiliate code" }, 500);
+    }
+
     const { error: updateError } = await admin.auth.admin.updateUserById(body.userId, { app_metadata: { ...target.user.app_metadata, affiliate: body.affiliate } });
     if (updateError) return json({ error: "Could not update affiliate status" }, 500);
-    return json({ affiliate: body.affiliate });
+    return json({ affiliate: body.affiliate, code: requestedCode || null });
   } catch (error) {
     console.error("admin-affiliate error:", error);
     return json({ error: "Unexpected error" }, 500);
