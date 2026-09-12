@@ -39,25 +39,20 @@ async function supabaseRest<T>(path: string, method: string, token: string, body
   return json as T;
 }
 
-async function getVerifiedUser(token: string) {
-  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    method: "GET",
-    headers: {
-      apikey: anonKey,
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-    },
-  });
+function getJwtRole(token: string): string | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
 
-  const text = await response.text();
-  const json = text ? JSON.parse(text) : null;
+    const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const decoded = atob(padded);
+    const parsed = JSON.parse(decoded);
 
-  if (!response.ok) {
-    const message = json?.message ?? "Invalid session";
-    throw new Error(String(message));
+    return parsed?.app_metadata?.role ?? parsed?.role ?? parsed?.claims?.app_metadata?.role ?? null;
+  } catch {
+    return null;
   }
-
-  return json;
 }
 
 async function getUserById(userId: string) {
@@ -93,8 +88,8 @@ Deno.serve(async (req) => {
     if (!authorization?.startsWith("Bearer ")) return json({ error: "Unauthorized" }, 401);
 
     const token = authorization.replace("Bearer ", "");
-    const sessionUser = await getVerifiedUser(token);
-    if (sessionUser?.app_metadata?.role !== "admin") return json({ error: "Forbidden" }, 403);
+    const userRole = getJwtRole(token);
+    if (userRole !== "admin") return json({ error: "Forbidden" }, 403);
 
     const body = await req.json();
     const action = typeof body?.action === "string" ? body.action : null;
