@@ -1729,7 +1729,11 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                             ? "paid"
                                             : "—";
                               const paymentReference = account.payment_reference || payment?.provider_reference || "No payment reference";
-                              const paymentFailureReason = payment?.failure_reason || (account.status === "failed" ? "Account was marked as failed." : null);
+                              const isPaidPurchase = account.status === "active" || account.status === "funded" || account.status === "passed" || payment?.status === "success";
+                              const paymentFailureReason =
+                                isPaidPurchase
+                                  ? null
+                                  : payment?.failure_reason || (account.status === "failed" ? "Account was marked as failed." : null);
                               const displayCurrency = purchaseCurrency === "USD" ? "$" : purchaseCurrency === "NGN" ? "₦" : purchaseCurrency + " ";
                               return (
                                 <tr key={account.id} className="border-b border-border/60 last:border-0 align-top">
