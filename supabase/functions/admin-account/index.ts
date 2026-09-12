@@ -139,16 +139,17 @@ Deno.serve(async (req) => {
     if (body.action === "delete-archived") {
       if (typeof body.accountId !== "string") return json({ error: "Invalid account details" }, 400);
 
-      let query = `id=eq.${encodeURIComponent(body.accountId)}&archived_at=not.is.null`;
+      let filterQuery = `id=eq.${encodeURIComponent(body.accountId)}&archived_at=not.is.null`;
       if (typeof body.userId === "string" && body.userId.length > 0) {
-        query += `&user_id=eq.${encodeURIComponent(body.userId)}`;
+        filterQuery += `&user_id=eq.${encodeURIComponent(body.userId)}`;
       }
 
       try {
-        const deletedRows = await supabaseRest<Array<{ id: string }>>("accounts", "DELETE", serviceRoleKey, undefined, query);
-        const account = deletedRows?.[0] ?? null;
+        const existingRows = await supabaseRest<Array<{ id: string }>>("accounts", "GET", serviceRoleKey, undefined, `select=id&${filterQuery}`);
+        if (!existingRows?.length) return json({ error: "Archived account not found or it is not eligible for permanent deletion" }, 404);
 
-        if (!account) return json({ error: "Archived account not found or it is not eligible for permanent deletion" }, 404);
+        const deletedRows = await supabaseRest<Array<{ id: string }>>("accounts", "DELETE", serviceRoleKey, undefined, `${filterQuery}&select=id`);
+        if (!deletedRows?.length) return json({ error: "Archived account not found or it is not eligible for permanent deletion" }, 404);
 
         return json({ deleted: true, accountId: body.accountId });
       } catch (error) {
