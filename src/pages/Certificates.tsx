@@ -54,23 +54,142 @@ export default function Certificates() {
     loadFundedAccounts();
   }, []);
 
+  const drawRoundedRect = (ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) => {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  };
+
+  const loadImage = (src: string): Promise<HTMLImageElement> => new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = src;
+  });
+
+  const renderCertificateToCanvas = async (certificateRecord: Certificate) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1080;
+    canvas.height = 1080;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return null;
+
+    const isPayout = Boolean(certificateRecord.payout_id);
+    const amount = `$${Number(certificateRecord.payout_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+    const accountSize = certificateRecord.account_size ? `$${Number(certificateRecord.account_size).toLocaleString()}` : "-";
+    const traderName = certificateRecord.recipient_name || "PrimePips Trader";
+    const methodLabel = certificateRecord.payout_method?.replace(/_/g, " ") || "Crypto";
+    const payoutDate = new Date(certificateRecord.awarded_at).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
+
+    const cardX = 184;
+    const cardY = 120;
+    const cardW = 712;
+    const cardH = 840;
+
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const cardGradient = ctx.createLinearGradient(0, cardY, 0, cardY + cardH);
+    cardGradient.addColorStop(0, "#303840");
+    cardGradient.addColorStop(1, "#1a2127");
+
+    ctx.fillStyle = cardGradient;
+    drawRoundedRect(ctx, cardX, cardY, cardW, cardH, 18);
+    ctx.fill();
+
+    ctx.strokeStyle = "rgba(214, 184, 117, 0.9)";
+    ctx.lineWidth = 3;
+    drawRoundedRect(ctx, cardX, cardY, cardW, cardH, 18);
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(214,184,117,0.2)";
+    ctx.lineWidth = 1;
+    drawRoundedRect(ctx, cardX + 8, cardY + 8, cardW - 16, cardH - 16, 12);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.fillStyle = "rgba(214,184,117,0.09)";
+    ctx.arc(cardX + cardW - 110, cardY + 120, 100, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.fillStyle = "rgba(214,184,117,0.05)";
+    ctx.arc(cardX + 60, cardY + cardH - 60, 120, 0, Math.PI * 2);
+    ctx.fill();
+
+    const logo = await loadImage("/primepips-email-logo.svg");
+    const logoWidth = 220;
+    const logoHeight = 70;
+    const logoX = cardX + (cardW - logoWidth) / 2;
+    const logoY = cardY + 36;
+    ctx.drawImage(logo, logoX, logoY, logoWidth, logoHeight);
+
+    const titleY = cardY + 245;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#f3f0eb";
+    ctx.font = "700 74px Arial";
+    ctx.fillText(isPayout ? "PAYOUT" : "ACHIEVEMENT", cardX + cardW / 2, titleY);
+    ctx.fillText("CERTIFICATE", cardX + cardW / 2, titleY + 75);
+
+    ctx.fillStyle = "#dfe3e6";
+    ctx.font = "italic 24px Georgia";
+    ctx.fillText(`presented to: ${traderName}`, cardX + cardW / 2, titleY + 150);
+
+    ctx.fillStyle = "#d4af37";
+    ctx.font = "700 62px Arial";
+    ctx.fillText(amount, cardX + cardW / 2, titleY + 250);
+
+    const dividerY = titleY + 285;
+    ctx.strokeStyle = "rgba(214,184,117,0.75)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cardX + 80, dividerY);
+    ctx.lineTo(cardX + cardW - 80, dividerY);
+    ctx.stroke();
+
+    const detailY = dividerY + 60;
+    const detailGap = 220;
+    const detailFont = "600 18px Arial";
+    const valueFont = "700 26px Arial";
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(217,223,224,0.8)";
+    ctx.font = "600 13px Arial";
+    ctx.letterSpacing = "0.14em";
+    ctx.fillText("ACCOUNT SIZE", cardX + cardW / 2 - detailGap, detailY);
+    ctx.fillText(isPayout ? "PAYOUT DATE" : "AWARD DATE", cardX + cardW / 2 + detailGap, detailY);
+
+    ctx.fillStyle = "#f3f0eb";
+    ctx.font = valueFont;
+    ctx.fillText(accountSize, cardX + cardW / 2 - detailGap, detailY + 52);
+    ctx.fillText(payoutDate, cardX + cardW / 2 + detailGap, detailY + 52);
+
+    ctx.fillStyle = "rgba(217,223,224,0.85)";
+    ctx.font = "600 12px Arial";
+    ctx.fillText(`METHOD: ${methodLabel.toUpperCase()}`, cardX + 150, cardY + cardH - 52);
+    ctx.fillText("PRIMEPIPS", cardX + cardW - 150, cardY + cardH - 52);
+
+    return canvas;
+  };
+
   const downloadCertificate = async (certificateRecord: Certificate) => {
     const certificate = certificateRefs.current[certificateRecord.id];
     if (!certificate || downloadingId) return;
     setDownloadingId(certificateRecord.id);
+
     try {
-      const canvas = await html2canvas(certificate, {
-        backgroundColor: "#000000",
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        width: 1080,
-        height: 1080,
-        windowWidth: 1080,
-        windowHeight: 1080,
-        scrollX: 0,
-        scrollY: 0,
-      });
+      const canvas = await renderCertificateToCanvas(certificateRecord);
+      if (!canvas) return;
+
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
       if (!blob) return;
       const link = document.createElement("a");
@@ -115,13 +234,13 @@ export default function Certificates() {
           const methodLabel = certificateRecord.payout_method?.replace(/_/g, " ") || "Crypto";
           const payoutDate = new Date(certificateRecord.awarded_at).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
           return (
-            <article key={certificateRecord.id} className="relative overflow-hidden" style={{ width: "100%", maxWidth: 1080, margin: "0 auto" }}>
+            <article key={certificateRecord.id} className="relative overflow-hidden" style={{ width: "100%", maxWidth: 980, margin: "0 auto" }}>
               <div
                 ref={(element) => { certificateRefs.current[certificateRecord.id] = element; }}
                 style={{
                   position: "relative",
                   width: "100%",
-                  maxWidth: 1080,
+                  maxWidth: 760,
                   aspectRatio: "1 / 1",
                   margin: "0 auto",
                   overflow: "hidden",
