@@ -509,6 +509,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
       "admin-account",
       {
         body: {
+          action: "grant",
           userId: grantUserId,
           challengeType: grantChallenge,
           accountSize: Number(grantSize),

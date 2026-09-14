@@ -99,7 +99,15 @@ Deno.serve(async (req) => {
     if (userRole !== "admin") return json({ error: "Forbidden" }, 403);
 
     const body = await req.json();
-    const action = typeof body?.action === "string" ? body.action : null;
+    const action = typeof body?.action === "string"
+      ? body.action
+      : (
+          typeof body?.userId === "string" && body.userId.length > 0 &&
+          typeof body?.challengeType === "string" &&
+          typeof body?.accountSize === "number"
+            ? "grant"
+            : null
+        );
     if (!action) return json({ error: "Action required" }, 400);
 
     const hasUserId = typeof body.userId === "string" && body.userId.length > 0;
