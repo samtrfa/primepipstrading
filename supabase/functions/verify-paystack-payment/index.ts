@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: payment, error: accountError } = await admin
       .from("payment_orders")
-      .select("id, user_id, account_id, provider_reference, amount, currency")
+      .select("id, user_id, account_id, provider_reference, amount, currency, status")
       .eq("provider", "paystack")
       .eq("provider_reference", reference)
       .maybeSingle();
@@ -57,6 +57,20 @@ Deno.serve(async (req) => {
     }
     if (!payment || payment.user_id !== userId) {
       return json({ error: "Payment not found" }, 404);
+    }
+
+    if (payment.status === "success") {
+      const { data: result, error: reconcileError } = await admin.rpc("reconcile_paystack_payment", {
+        p_reference: reference,
+        p_status: "success",
+        p_amount: Number(payment.amount ?? 0),
+        p_currency: payment.currency || null,
+        p_provider_user_id: null,
+        p_metadata: { status: "success", source: "existing-payment-order" },
+        p_source: "verification",
+      });
+      if (reconcileError) throw reconcileError;
+      return json({ verified: true, status: "success", account_id: payment.account_id, ...result });
     }
 
     const paystackResponse = await fetch(

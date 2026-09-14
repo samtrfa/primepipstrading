@@ -10,3 +10,8 @@ test('removes stale pending payment purchases after the timeout', () => {
   assert.equal(shouldRemovePendingPurchase('pending_payment', 31 * 60 * 1000, 30 * 60 * 1000), true);
   assert.equal(shouldRemovePendingPurchase('pending_payment', 29 * 60 * 1000, 30 * 60 * 1000), false);
 });
+
+test('keeps already-successful payments from being expired while still pending in the app', () => {
+  assert.equal(shouldRemovePendingPurchase('pending_payment', 31 * 60 * 1000, 30 * 60 * 1000, 'success'), false);
+  assert.equal(shouldRemovePendingPurchase('pending_payment', 29 * 60 * 1000, 30 * 60 * 1000, 'success'), false);
+});

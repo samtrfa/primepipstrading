@@ -94,8 +94,34 @@ export default function Dashboard() {
           (account) => account.status !== "failed" || account.drawdown_violated === true,
         );
 
+        const pendingAccountIds = accountsData
+          .filter((account) => account.status === "pending_payment")
+          .map((account) => account.id);
+
+        let paymentStatusesByAccountId = new Map<string, string>();
+        if (pendingAccountIds.length > 0) {
+          const { data: pendingPayments, error: pendingPaymentsError } = await supabase
+            .from("payment_orders")
+            .select("account_id, status")
+            .in("account_id", pendingAccountIds)
+            .in("provider", ["paystack"]);
+
+          if (pendingPaymentsError) {
+            console.error("Error fetching pending payment orders:", pendingPaymentsError);
+          } else {
+            paymentStatusesByAccountId = new Map(
+              (pendingPayments ?? []).map((payment) => [payment.account_id, payment.status]),
+            );
+          }
+        }
+
         const stalePendingIds = accountsData
-          .filter((account) => shouldRemovePendingPurchase(account.status, Date.now() - new Date(account.created_at).getTime(), PAYMENT_EXPIRY_MS))
+          .filter((account) => shouldRemovePendingPurchase(
+            account.status,
+            Date.now() - new Date(account.created_at).getTime(),
+            PAYMENT_EXPIRY_MS,
+            paymentStatusesByAccountId.get(account.id) ?? "pending",
+          ))
           .map((account) => account.id);
 
         if (stalePendingIds.length > 0) {
