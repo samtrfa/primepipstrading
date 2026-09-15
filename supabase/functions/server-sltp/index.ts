@@ -195,6 +195,22 @@ Deno.serve(async (req) => {
       const shouldRestoreFailedAccount = account.status === "failed" && !violation;
       const nextStatus = shouldRestoreFailedAccount ? (account.challenge_type === "instant" ? "funded" : "active") : account.status;
 
+      if (violation) {
+        drawdownAccounts.push(account.id);
+        for (const position of openPositions.filter((candidate) => candidate.account_id === account.id)) {
+          const exitPrice = livePrices.get(position.id);
+          if (!exitPrice) continue;
+          const { error: closeError } = await admin.rpc("close_trade", {
+            p_account_id: account.id,
+            p_position_id: position.id,
+            p_exit_price: exitPrice,
+            p_action: "close",
+            p_request_id: crypto.randomUUID(),
+          });
+          if (closeError) console.error("server drawdown close failed", { positionId: position.id, message: closeError.message });
+        }
+      }
+
       const { error: accountUpdateError } = await admin.from("accounts").update({
         high_water_mark: highWaterMark,
         daily_start_balance: dailyStart,
@@ -211,23 +227,6 @@ Deno.serve(async (req) => {
             : { drawdown_violated: false, violation_type: null, status: nextStatus }),
       }).eq("id", account.id);
       if (accountUpdateError) console.error("server risk update failed", { accountId: account.id, message: accountUpdateError.message });
-
-      if (violation) drawdownAccounts.push(account.id);
-    }
-
-    for (const accountId of drawdownAccounts) {
-      for (const position of openPositions.filter((candidate) => candidate.account_id === accountId)) {
-        const exitPrice = livePrices.get(position.id);
-        if (!exitPrice) continue;
-        const { error: closeError } = await admin.rpc("close_trade", {
-          p_account_id: accountId,
-          p_position_id: position.id,
-          p_exit_price: exitPrice,
-          p_action: "close",
-          p_request_id: crypto.randomUUID(),
-        });
-        if (closeError) console.error("server drawdown close failed", { positionId: position.id, message: closeError.message });
-      }
     }
 
     for (const trigger of sltpTriggers) {

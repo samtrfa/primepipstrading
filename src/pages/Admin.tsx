@@ -34,6 +34,7 @@ import { useTradingViewPrices } from "@/hooks/useTradingViewPrices";
 import { calculatePositionPL } from "@/lib/tradingCalculations";
 import { countAffiliateCodeUses } from "@/lib/affiliateCodeUsage";
 import { formatCouponUsage } from "@/lib/purchasedAccountDisplay.js";
+import { getPhaseRules } from "@/lib/challengeRules";
 import { cn } from "@/lib/utils";
 import {
   Collapsible,
@@ -1731,10 +1732,18 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                             : "—";
                               const paymentReference = account.payment_reference || payment?.provider_reference || "No payment reference";
                               const isPaidPurchase = account.status === "active" || account.status === "funded" || account.status === "passed" || payment?.status === "success";
+                              const phaseRules = getPhaseRules(account.challenge_type, account.current_phase);
+                              const failedDrawdownReason =
+                                account.status === "failed"
+                                  ? ((account.violation_type === "daily_drawdown" || (typeof account.daily_drawdown_percent === "number" && account.daily_drawdown_percent >= phaseRules.dailyDrawdown))
+                                      ? "Daily drawdown limit breached."
+                                      : (account.violation_type === "max_drawdown" || (typeof account.max_drawdown_percent === "number" && account.max_drawdown_percent >= phaseRules.maxDrawdown))
+                                        ? "Max drawdown limit breached."
+                                        : "Account was marked as failed.")
+                                  : null;
                               const paymentFailureReason =
-                                isPaidPurchase
-                                  ? null
-                                  : payment?.failure_reason || (account.status === "failed" ? "Account was marked as failed." : null);
+                                failedDrawdownReason ||
+                                (isPaidPurchase ? null : payment?.failure_reason || null);
                               const displayCurrency = purchaseCurrency === "USD" ? "$" : purchaseCurrency === "NGN" ? "₦" : purchaseCurrency + " ";
                               return (
                                 <tr key={account.id} className="border-b border-border/60 last:border-0 align-top">
