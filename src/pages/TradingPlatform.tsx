@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -122,6 +122,7 @@ export default function TradingPlatform() {
   const [positionDraft, setPositionDraft] = useState({ stopLoss: "", takeProfit: "" });
   const [applyPositionToAsset, setApplyPositionToAsset] = useState(false);
   const [view, setView] = useState<"trade" | "chart">("trade");
+  const drawdownCloseTriggeredRef = useRef(false);
 
   // Get symbols for live prices synced with TradingView
   const symbols = assets.map((a) => a.symbol);
@@ -592,6 +593,56 @@ export default function TradingPlatform() {
   const fundedClosedPositions = closedPositions.filter(
     (position) => !fundedStartAt || (position.closed_at && position.closed_at > fundedStartAt)
   );
+
+  useEffect(() => {
+    if (!account || openPositions.length === 0 || isBlocked || drawdownCloseTriggeredRef.current) return;
+
+    const rules = getPhaseRules(account.challenge_type, account.current_phase);
+    const balance = account.current_balance ?? account.account_size;
+    const highWaterMark = account.high_water_mark && account.high_water_mark > 0
+      ? account.high_water_mark
+      : account.account_size;
+    const today = new Date().toISOString().slice(0, 10);
+    const dailyStartBalance = account.daily_start_date === today && account.daily_start_balance && account.daily_start_balance > 0
+      ? account.daily_start_balance
+      : balance;
+    const equity = balance + unrealizedPL;
+    const maxDrawdown = highWaterMark > 0 ? Math.max(0, ((highWaterMark - equity) / highWaterMark) * 100) : 0;
+    const dailyDrawdown = dailyStartBalance > 0 ? Math.max(0, ((dailyStartBalance - equity) / dailyStartBalance) * 100) : 0;
+
+    if (maxDrawdown < rules.maxDrawdown && dailyDrawdown < rules.dailyDrawdown) return;
+
+    drawdownCloseTriggeredRef.current = true;
+    const closeBreachedPositions = async () => {
+      const results = await Promise.all(openPositions.map(async (position) => {
+        if (!position.assets) return { error: null };
+        const currentPrice = prices[position.assets.symbol];
+        if (!currentPrice) return { error: new Error(`Price unavailable for ${position.assets.symbol}`) };
+        const exitPrice = position.position_type === "buy" ? currentPrice.bid : currentPrice.ask;
+        const { error } = await supabase.rpc("close_trade", {
+          p_account_id: account.id,
+          p_position_id: position.id,
+          p_exit_price: exitPrice,
+          p_action: "close",
+          p_request_id: crypto.randomUUID(),
+        });
+        return { error };
+      }));
+
+      const failedClosures = results.filter((result) => result.error);
+      await refreshServerState();
+      if (failedClosures.length > 0) {
+        console.error("Immediate drawdown close failed", failedClosures.map(({ error }) => error));
+        toast({
+          title: "Drawdown breach detected",
+          description: "Some positions could not be closed immediately. Server risk protection will retry.",
+          variant: "destructive",
+        });
+      }
+    };
+
+    void closeBreachedPositions();
+  }, [account, isBlocked, openPositions, prices, refreshServerState, toast, unrealizedPL]);
 
   if (isLoading) {
     return (

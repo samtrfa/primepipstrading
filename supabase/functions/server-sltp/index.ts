@@ -32,6 +32,7 @@ type ServerAccount = {
   current_phase: number | null;
   status: string;
   drawdown_violated: boolean | null;
+  violation_type: string | null;
 };
 
 type ClosedPosition = {
