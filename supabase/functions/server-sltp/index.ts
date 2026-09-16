@@ -115,8 +115,8 @@ Deno.serve(async (req) => {
     const [{ data: accounts, error: accountsError }, { data: closedPositions, error: closedPositionsError }] = await Promise.all([
       admin
       .from("accounts")
-      .select("id, account_size, current_balance, high_water_mark, daily_start_balance, daily_start_date, funded_started_at, challenge_type, current_phase, status, drawdown_violated")
-      .in("status", ["active", "funded"]),
+      .select("id, account_size, current_balance, high_water_mark, daily_start_balance, daily_start_date, funded_started_at, challenge_type, current_phase, status, drawdown_violated, violation_type")
+      .in("status", ["active", "funded", "failed"]),
       admin
         .from("positions")
         .select("account_id, profit_loss, closed_at")
@@ -192,10 +192,11 @@ Deno.serve(async (req) => {
       const consistencyScore = totalProfit > 0 ? (bestTradingDay / totalProfit) * 100 : 0;
       const rules = getRules(account.challenge_type, account.current_phase);
       const violation = maxDrawdown >= rules.max ? "max_drawdown" : dailyDrawdown >= rules.daily ? "daily_drawdown" : null;
-      const shouldRestoreFailedAccount = account.status === "failed" && !violation;
+      const shouldCloseOpenPositions = Boolean(violation || account.drawdown_violated || account.status === "failed");
+      const shouldRestoreFailedAccount = account.status === "failed" && !violation && !account.drawdown_violated;
       const nextStatus = shouldRestoreFailedAccount ? (account.challenge_type === "instant" ? "funded" : "active") : account.status;
 
-      if (violation) {
+      if (shouldCloseOpenPositions) {
         drawdownAccounts.push(account.id);
         for (const position of openPositions.filter((candidate) => candidate.account_id === account.id)) {
           const exitPrice = livePrices.get(position.id);
@@ -211,6 +212,7 @@ Deno.serve(async (req) => {
         }
       }
 
+      const finalViolation = violation ?? (account.drawdown_violated && account.violation_type ? account.violation_type : null);
       const { error: accountUpdateError } = await admin.from("accounts").update({
         high_water_mark: highWaterMark,
         daily_start_balance: dailyStart,
@@ -220,8 +222,8 @@ Deno.serve(async (req) => {
         consistency_score: consistencyScore,
         best_trading_day_profit: bestTradingDay,
         closed_profit_total: totalProfit,
-        ...(violation
-          ? { drawdown_violated: true, violation_type: violation, status: "failed" }
+        ...(finalViolation
+          ? { drawdown_violated: true, violation_type: finalViolation, status: "failed" }
           : shouldRestoreFailedAccount
             ? { drawdown_violated: false, violation_type: null, status: nextStatus }
             : { drawdown_violated: false, violation_type: null, status: nextStatus }),

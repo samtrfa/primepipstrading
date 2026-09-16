@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
+import { getChallengeDisplayRules } from "@/lib/challengeRules";
 import {
   Tooltip,
   TooltipContent,
@@ -23,17 +24,6 @@ interface PricingTier {
   prices: Record<ChallengeType, number>;
 }
 
-interface ChallengeRules {
-  dailyDrawdown: string;
-  maxDrawdown: string;
-  profitTarget: string;
-  consistencyRule: string;
-  minTradingDays: string;
-  weekendTrading: string;
-  maxTradingDays: string;
-  payouts?: string;
-}
-
 const ruleExplanations: Record<string, string> = {
   dailyDrawdown: "Maximum loss allowed in a single trading day. If your daily losses exceed this percentage, you breach the account.",
   maxDrawdown: "Maximum total loss allowed from your highest account balance. Trailing means it follows your highest balance reached.",
@@ -46,46 +36,6 @@ const ruleExplanations: Record<string, string> = {
 };
 
 const noConsistencyRuleExplanation = "No consistency rule means you can trade freely.";
-
-const challengeRules: Record<ChallengeType, ChallengeRules> = {
-  three_step: {
-    dailyDrawdown: "4%",
-    maxDrawdown: "6% (trailing)",
-    profitTarget: "10%",
-    consistencyRule: "None",
-    minTradingDays: "4 days",
-    weekendTrading: "Allowed",
-    maxTradingDays: "Unlimited",
-  },
-  two_step: {
-    dailyDrawdown: "4%",
-    maxDrawdown: "8% (trailing)",
-    profitTarget: "10%",
-    consistencyRule: "None",
-    minTradingDays: "4 days",
-    weekendTrading: "Allowed",
-    maxTradingDays: "Unlimited",
-  },
-  one_step: {
-    dailyDrawdown: "6%",
-    maxDrawdown: "8% (trailing)",
-    profitTarget: "10%",
-    consistencyRule: "None",
-    minTradingDays: "4 days",
-    weekendTrading: "Allowed",
-    maxTradingDays: "Unlimited",
-  },
-  instant: {
-    dailyDrawdown: "6%",
-    maxDrawdown: "10%",
-    profitTarget: "N/A",
-    consistencyRule: "30%",
-    minTradingDays: "None",
-    weekendTrading: "Allowed",
-    maxTradingDays: "Unlimited",
-    payouts: "Biweekly",
-  },
-};
 
 const challengeTypes: { id: ChallengeType; label: string; icon: React.ElementType; description: string; badge?: string }[] = [
   { id: "three_step", label: "3-Step Challenge", icon: Target, description: "3 phases to prove your skills" },
@@ -178,7 +128,7 @@ export default function PurchaseAccount() {
 
   const selectedTier = pricingTiers.find(t => t.size === selectedSize);
   const basePrice = selectedTier?.prices[selectedChallenge] || 0;
-  const rules = challengeRules[selectedChallenge];
+  const rules = getChallengeDisplayRules(selectedChallenge);
   const activeCoupon = appliedCoupon;
 
   const couponApplies =
@@ -255,7 +205,7 @@ export default function PurchaseAccount() {
     setCouponError(null);
   };
 
-  const handlePaystackCheckout = async (paymentMethod: "bank_transfer" | "other" = "bank_transfer") => {
+  const handlePaystackCheckout = async (paymentMethod: "bank_transfer" | "card" | "other" = "bank_transfer") => {
     setIsProcessing(true);
 
     const { data, error } = await supabase.functions.invoke("korapay-checkout", {
@@ -661,6 +611,16 @@ export default function PurchaseAccount() {
                         ) : (
                           "Continue with Bank Transfer"
                         )}
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="lg"
+                        className="w-full"
+                        onClick={() => handlePaystackCheckout("card")}
+                        disabled={isProcessing}
+                      >
+                        Pay securely with Card
                       </Button>
 
                       <Button

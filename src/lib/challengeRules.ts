@@ -6,6 +6,18 @@ export interface PhaseRules {
   profitTarget: number; // % of account size
   dailyDrawdown: number; // % of daily start balance
   maxDrawdown: number; // % of high water mark
+  minimumTradingDays: number;
+}
+
+export interface ChallengeDisplayRules {
+  dailyDrawdown: string;
+  maxDrawdown: string;
+  profitTarget: string;
+  consistencyRule: string;
+  minTradingDays: string;
+  weekendTrading: string;
+  maxTradingDays: string;
+  payouts?: string;
 }
 
 export const FUNDED_MAX_RISK_PERCENT = 1;
@@ -33,19 +45,19 @@ export function calculateConsistencyScore(positions: ConsistencyPosition[]): num
 
 export const CHALLENGE_RULES: Record<string, PhaseRules[]> = {
   three_step: [
-    { name: "Phase 1", profitTarget: 8, dailyDrawdown: 5, maxDrawdown: 10 },
-    { name: "Phase 2", profitTarget: 5, dailyDrawdown: 5, maxDrawdown: 10 },
-    { name: "Phase 3", profitTarget: 5, dailyDrawdown: 5, maxDrawdown: 10 },
+    { name: "Phase 1", profitTarget: 8, dailyDrawdown: 5, maxDrawdown: 10, minimumTradingDays: 4 },
+    { name: "Phase 2", profitTarget: 5, dailyDrawdown: 5, maxDrawdown: 10, minimumTradingDays: 4 },
+    { name: "Phase 3", profitTarget: 5, dailyDrawdown: 5, maxDrawdown: 10, minimumTradingDays: 4 },
   ],
   two_step: [
-    { name: "Phase 1", profitTarget: 8, dailyDrawdown: 5, maxDrawdown: 10 },
-    { name: "Phase 2", profitTarget: 5, dailyDrawdown: 5, maxDrawdown: 10 },
+    { name: "Phase 1", profitTarget: 8, dailyDrawdown: 5, maxDrawdown: 10, minimumTradingDays: 4 },
+    { name: "Phase 2", profitTarget: 5, dailyDrawdown: 5, maxDrawdown: 10, minimumTradingDays: 4 },
   ],
   one_step: [
-    { name: "Evaluation", profitTarget: 10, dailyDrawdown: 4, maxDrawdown: 6 },
+    { name: "Evaluation", profitTarget: 10, dailyDrawdown: 4, maxDrawdown: 6, minimumTradingDays: 4 },
   ],
   instant: [
-    { name: "Funded", profitTarget: 0, dailyDrawdown: 5, maxDrawdown: 10 },
+    { name: "Funded", profitTarget: 0, dailyDrawdown: 5, maxDrawdown: 10, minimumTradingDays: 0 },
   ],
 };
 
@@ -67,6 +79,24 @@ export function isInstantAccount(challengeType: string): boolean {
 
 export function hasConsistencyRule(challengeType: string): boolean {
   return challengeType === "one_step" || challengeType === "instant";
+}
+
+export function getChallengeDisplayRules(challengeType: string): ChallengeDisplayRules {
+  const phases = getPhases(challengeType);
+  const uniqueTargets = [...new Set(phases.map((phase) => phase.profitTarget).filter((target) => target > 0))];
+  const uniqueDailyDrawdowns = [...new Set(phases.map((phase) => phase.dailyDrawdown))];
+  const uniqueMaxDrawdowns = [...new Set(phases.map((phase) => phase.maxDrawdown))];
+
+  return {
+    dailyDrawdown: `${uniqueDailyDrawdowns.join(" / ")}%`,
+    maxDrawdown: `${uniqueMaxDrawdowns.join(" / ")}% (trailing)`,
+    profitTarget: uniqueTargets.length === 0 ? "N/A" : `${uniqueTargets.join("% then ")}%`,
+    consistencyRule: hasConsistencyRule(challengeType) ? "30%" : "None",
+    minTradingDays: phases[0].minimumTradingDays === 0 ? "None" : `${phases[0].minimumTradingDays} days`,
+    weekendTrading: "Allowed",
+    maxTradingDays: "Unlimited",
+    ...(challengeType === "instant" ? { payouts: "Biweekly" } : {}),
+  };
 }
 
 /** Rules for the given (1-based) phase, clamped to valid range. */
