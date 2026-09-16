@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Check, Star, HelpCircle, Target, Clock, Zap, Rocket } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { getChallengeDisplayRules } from "@/lib/challengeRules";
 import { supabase } from "@/integrations/supabase/client";
 import {
   Popover,
@@ -13,17 +14,6 @@ import {
 } from "@/components/ui/popover";
 
 type ChallengeType = "three_step" | "two_step" | "one_step" | "instant";
-
-interface ChallengeRules {
-  dailyDrawdown: string;
-  maxDrawdown: string;
-  profitTarget: string;
-  consistencyRule: string;
-  minTradingDays: string;
-  weekendTrading: string;
-  maxTradingDays: string;
-  payouts?: string;
-}
 
 const ruleExplanations: Record<string, string> = {
   dailyDrawdown: "Maximum loss allowed in a single trading day.",
@@ -37,46 +27,6 @@ const ruleExplanations: Record<string, string> = {
 };
 
 const noConsistencyRuleExplanation = "No consistency rule means you can trade freely.";
-
-const challengeRules: Record<ChallengeType, ChallengeRules> = {
-  three_step: {
-    dailyDrawdown: "4%",
-    maxDrawdown: "6% (trailing)",
-    profitTarget: "10%",
-    consistencyRule: "None",
-    minTradingDays: "4 days",
-    weekendTrading: "Allowed",
-    maxTradingDays: "Unlimited",
-  },
-  two_step: {
-    dailyDrawdown: "4%",
-    maxDrawdown: "8% (trailing)",
-    profitTarget: "10%",
-    consistencyRule: "None",
-    minTradingDays: "4 days",
-    weekendTrading: "Allowed",
-    maxTradingDays: "Unlimited",
-  },
-  one_step: {
-    dailyDrawdown: "6%",
-    maxDrawdown: "8% (trailing)",
-    profitTarget: "10%",
-    consistencyRule: "None",
-    minTradingDays: "4 days",
-    weekendTrading: "Allowed",
-    maxTradingDays: "Unlimited",
-  },
-  instant: {
-    dailyDrawdown: "6%",
-    maxDrawdown: "10%",
-    profitTarget: "N/A",
-    consistencyRule: "30%",
-    minTradingDays: "None",
-    weekendTrading: "Allowed",
-    maxTradingDays: "Unlimited",
-    payouts: "Biweekly",
-  },
-};
 
 const challengeTypes: { id: ChallengeType; label: string; icon: React.ElementType; description: string; badge?: string }[] = [
   { id: "three_step", label: "3-Step", icon: Target, description: "3 phases to prove your skills" },
@@ -153,7 +103,7 @@ export function PricingSection() {
     }
   };
 
-  const rules = challengeRules[selectedChallenge];
+  const rules = getChallengeDisplayRules(selectedChallenge);
 
   return (
     <section className="py-16 sm:py-24 relative" id="pricing">

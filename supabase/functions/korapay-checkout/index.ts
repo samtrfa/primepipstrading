@@ -65,7 +65,9 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => null);
     const challengeType = body?.challengeType;
     const accountSize = Number(body?.accountSize);
-    const paymentMethod = body?.paymentMethod === "other" ? "other" : "bank_transfer";
+    const paymentMethod = ["bank_transfer", "card", "other"].includes(body?.paymentMethod)
+      ? body.paymentMethod
+      : "bank_transfer";
     const couponCode = typeof body?.couponCode === "string"
       ? body.couponCode.trim().toUpperCase().slice(0, 32)
       : null;
@@ -90,8 +92,6 @@ Deno.serve(async (req) => {
     // Validate the coupon server-side; never trust a client-supplied discount.
     let discountPercent = 0;
     let appliedCoupon: string | null = null;
-    let couponId: string | null = null;
-    let couponUses = 0;
 
     if (couponCode) {
       const couponQuery = await admin
@@ -131,8 +131,6 @@ Deno.serve(async (req) => {
 
       discountPercent = Number(row.discount_percent);
       appliedCoupon = row.code;
-      couponId = row.id;
-      couponUses = uses;
     }
 
     const priceUsd = Math.round(basePriceUsd * (100 - discountPercent)) / 100;
@@ -194,7 +192,9 @@ Deno.serve(async (req) => {
         callback_url: redirectUrl,
         channels: paymentMethod === "bank_transfer"
           ? ["bank_transfer"]
-          : ["card", "ussd", "mobile_money", "bank_transfer", "bank"],
+          : paymentMethod === "card"
+            ? ["card"]
+            : ["card", "ussd", "mobile_money", "bank_transfer", "bank"],
         email,
         metadata: {
           account_id: account.id,
@@ -222,10 +222,6 @@ Deno.serve(async (req) => {
       await admin.from("payment_orders").update({ status: "failed", failure_reason: "Paystack returned an invalid initialization response" }).eq("provider_reference", reference);
       await admin.from("accounts").delete().eq("id", account.id).eq("status", "pending_payment");
       return json({ error: parsed?.message || "Payment provider error", details: paystackBody }, 502);
-    }
-
-    if (couponId) {
-      await admin.from("coupons").update({ times_used: couponUses + 1 }).eq("id", couponId);
     }
 
     return json({

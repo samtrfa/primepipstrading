@@ -9,7 +9,7 @@ declare namespace Deno {
 }
 
 declare module "npm:@supabase/supabase-js@2" {
-  export function createClient(...args: unknown[]): any;
+  export function createClient(...args: unknown[]): unknown;
 }
 
 declare module "npm:@supabase/supabase-js@2/cors" {

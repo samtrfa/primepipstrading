@@ -11,10 +11,12 @@ import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { calculatePositionPL, formatPips, getRequiredMargin } from "@/lib/tradingCalculations";
+import { shouldModifyPositionForAsset } from "@/lib/tradingPanelRules.js";
 import {
   getInitialPhase,
   getPhaseRules,
   getTotalPhases,
+  hasConsistencyRule,
   isInstantAccount,
 } from "@/lib/challengeRules";
 import { TradingViewChart } from "@/components/trading/TradingViewChart";
@@ -125,6 +127,24 @@ export default function TradingPlatform() {
   const symbols = assets.map((a) => a.symbol);
   const { prices, isConnected, getMarketStatus } = useTradingViewPrices(symbols);
 
+  const refreshServerState = useCallback(async () => {
+    if (!accountId) return { accountData: null, positionsData: [] as Position[] };
+
+    const [{ data: accountData }, { data: positionsData }] = await Promise.all([
+      supabase.from("accounts").select("*").eq("id", accountId).maybeSingle(),
+      supabase.from("positions").select("*, assets(*)").eq("account_id", accountId).order("opened_at", { ascending: false }),
+    ]);
+
+    if (accountData) {
+      setAccount(accountData as Account);
+    }
+    if (positionsData) {
+      setPositions(positionsData as Position[]);
+    }
+
+    return { accountData, positionsData: (positionsData ?? []) as Position[] };
+  }, [accountId]);
+
   // Fetch account and positions
   useEffect(() => {
     const fetchData = async () => {
@@ -216,17 +236,9 @@ export default function TradingPlatform() {
 
   useEffect(() => {
     if (!accountId) return;
-    const refreshServerState = async () => {
-      const [{ data: accountData }, { data: positionsData }] = await Promise.all([
-        supabase.from("accounts").select("*").eq("id", accountId).maybeSingle(),
-        supabase.from("positions").select("*, assets(*)").eq("account_id", accountId).order("opened_at", { ascending: false }),
-      ]);
-      if (accountData) setAccount(accountData as Account);
-      if (positionsData) setPositions(positionsData as Position[]);
-    };
     const interval = window.setInterval(() => void refreshServerState(), 5000);
     return () => window.clearInterval(interval);
-  }, [accountId]);
+  }, [accountId, refreshServerState]);
 
   // Calculate unrealized P/L for open positions using proper pip calculations
   const calculateUnrealizedPL = useCallback(() => {
@@ -315,6 +327,15 @@ export default function TradingPlatform() {
     const currentPrice = prices[selectedAsset.symbol];
     if (!currentPrice) return;
 
+    if (currentPrice.isMarketOpen === false) {
+      toast({
+        title: "Market closed",
+        description: "This market is currently closed. Trading is paused until the market reopens.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsPlacingOrder(true);
 
     const entryPrice = type === "buy" ? currentPrice.ask : currentPrice.bid;
@@ -380,15 +401,20 @@ export default function TradingPlatform() {
     }
 
     const positionWithAsset = { ...(positionData as unknown as Position), assets: selectedAsset };
-    setPositions((prev) => [positionWithAsset, ...prev]);
+    await refreshServerState();
     toast({
       title: `${type.toUpperCase()} Order Placed`,
       description: `${selectedAsset.symbol} @ ${formatPrice(selectedAsset.symbol, entryPrice)}`,
+      duration: 4000,
     });
 
     setStopLoss("");
     setTakeProfit("");
     setIsPlacingOrder(false);
+    setEditingPositionId(null);
+    if (positionWithAsset.id) {
+      setApplyPositionToAsset(false);
+    }
   };
 
   const handleClosePosition = useCallback(async (
@@ -428,21 +454,8 @@ export default function TradingPlatform() {
     const closeResult = closeData as unknown as { position: Position & { profit_loss: number }; account: Account };
     const profitLoss = Number(closeResult.position.profit_loss);
     const updatedAccount = closeResult.account;
-    const closedAt = new Date().toISOString();
-    setAccount(updatedAccount as unknown as Account);
-    setPositions((prev) =>
-      prev.map((p) =>
-        p.id === position.id
-          ? {
-              ...p,
-              status: "closed",
-              exit_price: exitPrice,
-              profit_loss: profitLoss,
-              closed_at: closedAt,
-            }
-          : p
-      )
-    );
+
+    await refreshServerState();
 
     if (updatedAccount.status !== "failed") {
       toast({
@@ -452,7 +465,7 @@ export default function TradingPlatform() {
       });
     }
 
-  }, [account, prices, toast]);
+  }, [account, prices, toast, refreshServerState]);
 
   const handleModifyPosition = async (position: Position) => {
     if (isBlocked) return;
@@ -485,11 +498,7 @@ export default function TradingPlatform() {
       return;
     }
 
-    setPositions((prev) => prev.map((item) => (
-      (applyPositionToAsset && item.status === "open" && item.asset_id === position.asset_id) || item.id === position.id
-        ? { ...item, stop_loss: stopLoss, take_profit: takeProfit }
-        : item
-    )));
+    await refreshServerState();
     setEditingPositionId(null);
     setApplyPositionToAsset(false);
     toast({ title: applyPositionToAsset ? "Positions modified" : "Position modified" });
@@ -501,6 +510,14 @@ export default function TradingPlatform() {
 
     if (isInstantAccount(account.challenge_type)) return;
     if (!account.phase_passed) return;
+    if (hasConsistencyRule(account.challenge_type) && (account.consistency_score ?? 0) >= 30) {
+      toast({
+        title: "Consistency rule not met",
+        description: "Your best trading day is still too large relative to total profit. Finish the phase below the 30% threshold before advancing.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setIsProceeding(true);
 
@@ -561,9 +578,7 @@ export default function TradingPlatform() {
     }
 
     setAccount(updatedAccount as unknown as Account);
-
-    // Start the new phase with a clean slate in the positions panel
-    setPositions([]);
+    await refreshServerState();
 
     setIsProceeding(false);
   };
@@ -857,7 +872,7 @@ export default function TradingPlatform() {
                     variant="destructive"
                     className="w-full h-10"
                     onClick={() => handlePlaceOrder("sell")}
-                    disabled={!selectedAsset || isPlacingOrder || isBlocked || insufficientMargin}
+                    disabled={!selectedAsset || isPlacingOrder || isBlocked || insufficientMargin || selectedAsset && prices[selectedAsset.symbol]?.isMarketOpen === false}
                   >
                     <TrendingDown className="w-4 h-4 mr-1" />
                     SELL
@@ -865,7 +880,7 @@ export default function TradingPlatform() {
                   <Button
                     className="w-full h-10 bg-green-600 hover:bg-green-700"
                     onClick={() => handlePlaceOrder("buy")}
-                    disabled={!selectedAsset || isPlacingOrder || isBlocked || insufficientMargin}
+                    disabled={!selectedAsset || isPlacingOrder || isBlocked || insufficientMargin || selectedAsset && prices[selectedAsset.symbol]?.isMarketOpen === false}
                   >
                     <TrendingUp className="w-4 h-4 mr-1" />
                     BUY
@@ -927,7 +942,7 @@ export default function TradingPlatform() {
                   unrealizedPL={unrealizedPL}
                   challengeType={account.challenge_type}
                   currentPhase={account.current_phase}
-                  phasePassed={!isBlocked && (account.phase_passed || false) && (account.consistency_score ?? 0) < 30}
+                  phasePassed={!isBlocked && (account.phase_passed || false) && (!hasConsistencyRule(account.challenge_type) || (account.consistency_score ?? 0) < 30)}
                   onProceedToNextPhase={handleProceedToNextPhase}
                   isProceeding={isProceeding}
                 />
