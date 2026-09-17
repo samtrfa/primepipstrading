@@ -85,6 +85,7 @@ export default function Dashboard() {
       const { data, error } = await supabase
         .from("accounts")
         .select("*")
+        .is("archived_at", null)
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -128,6 +129,7 @@ export default function Dashboard() {
               const { data: refreshedAccounts, error: refreshedAccountsError } = await supabase
                 .from("accounts")
                 .select("*")
+                .is("archived_at", null)
                 .order("created_at", { ascending: false });
 
               if (refreshedAccountsError) {

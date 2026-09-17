@@ -59,20 +59,6 @@ Deno.serve(async (req) => {
       return json({ error: "Payment not found" }, 404);
     }
 
-    if (payment.status === "success") {
-      const { data: result, error: reconcileError } = await admin.rpc("reconcile_paystack_payment", {
-        p_reference: reference,
-        p_status: "success",
-        p_amount: Number(payment.amount ?? 0),
-        p_currency: payment.currency || null,
-        p_provider_user_id: null,
-        p_metadata: { status: "success", source: "existing-payment-order" },
-        p_source: "verification",
-      });
-      if (reconcileError) throw reconcileError;
-      return json({ verified: true, status: "success", account_id: payment.account_id, ...result });
-    }
-
     const paystackResponse = await fetch(
       `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
       { headers: { Authorization: `Bearer ${PAYSTACK_SECRET_KEY}` } },

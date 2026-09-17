@@ -1906,8 +1906,8 @@ export default function Admin({ section }: { section?: AdminSection }) {
                       Payment reconciliation
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
-                      Review provider callbacks that need investigation or did
-                      not match a checkout order.
+                      Review pending orders and provider callbacks that need
+                      investigation or did not match a checkout order.
                     </p>
                   </CardHeader>
                   <CardContent className="p-0">
@@ -1926,7 +1926,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                         <tbody>
                           {snapshot.payments
                             .filter((payment) =>
-                              ["unmatched", "failed", "refunded"].includes(
+                              ["pending", "expired", "unmatched", "failed", "refunded"].includes(
                                 payment.status,
                               ),
                             )
@@ -1972,12 +1972,12 @@ export default function Admin({ section }: { section?: AdminSection }) {
                       </table>
                     </div>
                     {snapshot.payments.filter((payment) =>
-                      ["unmatched", "failed", "refunded"].includes(
+                      ["pending", "expired", "unmatched", "failed", "refunded"].includes(
                         payment.status,
                       ),
                     ).length === 0 && (
                       <p className="p-6 text-sm text-muted-foreground">
-                        No unmatched, failed, or refunded payments.
+                        No pending or exceptional payments.
                       </p>
                     )}
                   </CardContent>
