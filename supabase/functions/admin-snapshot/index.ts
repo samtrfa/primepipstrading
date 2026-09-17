@@ -52,23 +52,37 @@ Deno.serve(async (req) => {
       console.error("Could not load users:", usersError.message);
       return json({ error: "Could not load users" }, 500);
     }
-    const failed = [accounts, positions, referrals, applications, affiliateCodes, affiliateBalances, history, kyc, kycDocuments, payments, payouts, coupons].find((result) => result.error);
-    if (failed?.error) {
-      console.error("Could not load platform data:", failed.error.message);
-      return json({ error: "Could not load platform data" }, 500);
-    }
+    const readData = <T,>(result: { data: T[] | null; error: { message: string } | null }, source: string) => {
+      if (result.error) {
+        console.error(`Could not load ${source}:`, result.error.message);
+        return [] as T[];
+      }
+      return result.data ?? [];
+    };
+    const accountsData = readData(accounts, "accounts");
+    const positionsData = readData(positions, "positions");
+    const referralsData = readData(referrals, "referrals");
+    const applicationsData = readData(applications, "affiliate applications");
+    const affiliateCodesData = readData(affiliateCodes, "affiliate codes");
+    const affiliateBalancesData = readData(affiliateBalances, "affiliate balances");
+    const historyData = readData(history, "trade history");
+    const kycData = readData(kyc, "kyc");
+    const kycDocumentsData = readData(kycDocuments, "kyc documents");
+    const paymentsData = readData(payments, "payments");
+    const payoutsData = readData(payouts, "payouts");
+    const couponsData = readData(coupons, "coupons");
 
     const users = usersData?.users ?? [];
     const adminUserIds = new Set(users.filter((user) => user.app_metadata?.role === "admin").map((user) => user.id));
-    const visibleAccounts = (accounts.data ?? []).filter((account) => !adminUserIds.has(account.user_id));
+    const visibleAccounts = accountsData.filter((account) => !adminUserIds.has(account.user_id));
     const accountById = new Map(visibleAccounts.map((account) => [account.id, account]));
     const fundedStartByAccount = new Map<string, string>();
-    for (const trade of history.data ?? []) {
+    for (const trade of historyData) {
       if (trade.action !== "phase_advance" || !trade.notes?.toLowerCase().includes("funded")) continue;
       const current = fundedStartByAccount.get(trade.account_id);
       if (!current || new Date(trade.created_at) > new Date(current)) fundedStartByAccount.set(trade.account_id, trade.created_at);
     }
-    const auditedPayouts = (payouts.data ?? []).map((payout) => {
+    const auditedPayouts = payoutsData.map((payout) => {
       if (payout.source !== "trading_profit") return { ...payout, auditFlag: null };
       const account = payout.account_id ? accountById.get(payout.account_id) : null;
       const fundedStart = account && (fundedStartByAccount.get(account.id) ?? account.funded_started_at);
@@ -91,17 +105,17 @@ Deno.serve(async (req) => {
         isAdmin: user.app_metadata?.role === "admin",
       })),
       accounts: visibleAccounts,
-      positions: positions.data ?? [],
-      referrals: referrals.data ?? [],
-      affiliateApplications: applications.data ?? [],
-      affiliateCodes: affiliateCodes.data ?? [],
-      affiliateBalances: affiliateBalances.data ?? [],
-      history: history.data ?? [],
-      kyc: kyc.data ?? [],
-      kycDocuments: kycDocuments.data ?? [],
-      payments: payments.data ?? [],
+      positions: positionsData,
+      referrals: referralsData,
+      affiliateApplications: applicationsData,
+      affiliateCodes: affiliateCodesData,
+      affiliateBalances: affiliateBalancesData,
+      history: historyData,
+      kyc: kycData,
+      kycDocuments: kycDocumentsData,
+      payments: paymentsData,
       payouts: auditedPayouts,
-      coupons: coupons.data ?? [],
+      coupons: couponsData,
       generatedAt: new Date().toISOString(),
     });
   } catch (error) {
