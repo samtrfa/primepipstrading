@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { supabase } from "@/integrations/supabase/client";
+import { FunctionsHttpError } from "@supabase/supabase-js";
 import { useTradingViewPrices } from "@/hooks/useTradingViewPrices";
 import { calculatePositionPL } from "@/lib/tradingCalculations";
 import { countAffiliateCodeUses } from "@/lib/affiliateCodeUsage";
@@ -565,8 +566,19 @@ export default function Admin({ section }: { section?: AdminSection }) {
         },
       },
     );
-    if (updateError || !data?.account)
-      setError(updateError?.message || "The account could not be updated.");
+    if (updateError || !data?.account) {
+      let message = updateError?.message || "The account could not be updated.";
+      if (updateError instanceof FunctionsHttpError) {
+        const responseText = await updateError.context.text();
+        try {
+          const responseBody = JSON.parse(responseText) as { error?: string };
+          message = responseBody.error || message;
+        } catch {
+          message = responseText || message;
+        }
+      }
+      setError(message);
+    }
     else {
       setSnapshot((current) =>
         current

@@ -24,6 +24,7 @@ async function supabaseRest<T>(path: string, method: string, token: string, body
       Authorization: `Bearer ${token}`,
       Accept: "application/json",
       "Content-Type": "application/json",
+      Prefer: "return=representation",
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -219,7 +220,10 @@ Deno.serve(async (req) => {
         current_balance: body.currentBalance,
         profit_loss: body.profitLoss,
       }, `id=eq.${encodeURIComponent(body.accountId)}&select=id,user_id,account_size,challenge_type,status,current_balance,profit_loss,current_phase,updated_at,created_at`);
-      const updated = Array.isArray(account) ? account[0] : null;
+      const updated = Array.isArray(account) && account[0]
+        ? account[0]
+        : (await supabaseRest<Array<Record<string, unknown>>>("accounts", "GET", serviceRoleKey, undefined,
+          `id=eq.${encodeURIComponent(body.accountId)}&select=id,user_id,account_size,challenge_type,status,current_balance,profit_loss,current_phase,updated_at,created_at`))?.[0];
       if (!updated) return json({ error: "Could not update account" }, 500);
       return json({ account: updated });
     }

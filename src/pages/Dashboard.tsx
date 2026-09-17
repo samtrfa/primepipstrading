@@ -102,13 +102,43 @@ export default function Dashboard() {
         if (pendingAccountIds.length > 0) {
           const { data: pendingPayments, error: pendingPaymentsError } = await supabase
             .from("payment_orders")
-            .select("account_id, status")
+            .select("account_id, provider_reference, status")
             .in("account_id", pendingAccountIds)
             .in("provider", ["paystack"]);
 
           if (pendingPaymentsError) {
             console.error("Error fetching pending payment orders:", pendingPaymentsError);
           } else {
+            const paymentsToVerify = (pendingPayments ?? []).filter(
+              (payment) => payment.provider_reference && payment.status !== "success",
+            );
+
+            if (paymentsToVerify.length > 0) {
+              await Promise.all(paymentsToVerify.map(async (payment) => {
+                const { error: verificationError } = await supabase.functions.invoke(
+                  "verify-paystack-payment",
+                  { body: { reference: payment.provider_reference } },
+                );
+
+                if (verificationError) {
+                  console.error(`Error verifying pending payment ${payment.provider_reference}:`, verificationError);
+                }
+              }));
+
+              const { data: refreshedAccounts, error: refreshedAccountsError } = await supabase
+                .from("accounts")
+                .select("*")
+                .order("created_at", { ascending: false });
+
+              if (refreshedAccountsError) {
+                console.error("Error refreshing accounts after payment verification:", refreshedAccountsError);
+              } else {
+                accountsData = (refreshedAccounts || []).filter(
+                  (account) => account.status !== "failed" || account.drawdown_violated === true,
+                );
+              }
+            }
+
             paymentStatusesByAccountId = new Map(
               (pendingPayments ?? []).map((payment) => [payment.account_id, payment.status]),
             );
