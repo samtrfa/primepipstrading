@@ -206,6 +206,16 @@ export default function PurchaseAccount() {
   };
 
   const handlePaystackCheckout = async (paymentMethod: "bank_transfer" | "card" | "other" = "bank_transfer") => {
+    toast({
+      title: "Platform update in progress",
+      description: "Purchases are temporarily paused while we fix the payment system. Please check back shortly.",
+      variant: "default",
+    });
+    navigate("/payment-maintenance", { replace: true });
+    return;
+  };
+
+  const handlePaystackCheckoutLive = async (paymentMethod: "bank_transfer" | "card" | "other" = "bank_transfer") => {
     setIsProcessing(true);
 
     const { data, error } = await supabase.functions.invoke("korapay-checkout", {

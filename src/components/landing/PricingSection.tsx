@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Check, Star, HelpCircle, Target, Clock, Zap, Rocket } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { getChallengeDisplayRules } from "@/lib/challengeRules";
-import { supabase } from "@/integrations/supabase/client";
 import {
   Popover,
   PopoverContent,
@@ -73,34 +72,9 @@ function RuleItem({ label, value, ruleKey }: { label: string; value: string; rul
 export function PricingSection() {
   const navigate = useNavigate();
   const [selectedChallenge, setSelectedChallenge] = useState<ChallengeType>("one_step");
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setIsLoggedIn(!!session);
-    };
-    checkAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      setIsLoggedIn(!!session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handlePurchase = (size: number) => {
-    // Store selection in sessionStorage for after login/signup
-    sessionStorage.setItem("pendingPurchase", JSON.stringify({
-      challengeType: selectedChallenge,
-      accountSize: size,
-    }));
-
-    if (isLoggedIn) {
-      navigate(`/purchase?challenge=${selectedChallenge}&size=${size}`);
-    } else {
-      navigate(`/register?redirect=purchase&challenge=${selectedChallenge}&size=${size}`);
-    }
+  const handlePurchase = () => {
+    navigate("/payment-maintenance");
   };
 
   const rules = getChallengeDisplayRules(selectedChallenge);
@@ -222,9 +196,9 @@ export function PricingSection() {
                 <Button
                   variant={account.popular ? "gold" : "outline"}
                   className="w-full text-sm sm:text-base py-2 sm:py-2.5"
-                  onClick={() => handlePurchase(account.size)}
+                  onClick={handlePurchase}
                 >
-                  {isLoggedIn ? "Purchase Now" : "Get Started"}
+                  Purchases Paused
                 </Button>
               </CardContent>
             </Card>
