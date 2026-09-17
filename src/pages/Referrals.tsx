@@ -332,7 +332,7 @@ export default function ReferralsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Total Referrals</p>
-                  <p className="text-3xl font-bold text-foreground">{referrals.length}</p>
+                  <p className="text-3xl font-bold text-foreground">{referrals.filter(r => r.account_purchased).length}</p>
                 </div>
                 <Users className="w-10 h-10 text-primary opacity-50" />
               </div>

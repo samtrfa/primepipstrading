@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -368,7 +368,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
   const [manualAwardDestination, setManualAwardDestination] = useState("");
   const [awardingPayout, setAwardingPayout] = useState(false);
 
-  const loadSnapshot = async (background = false) => {
+  const loadSnapshot = useCallback(async (background = false) => {
     if (!background) setLoading(true);
     setError("");
     const {
@@ -401,7 +401,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
       if (couponError) setError("Purchase coupons could not be loaded.");
     }
     setLoading(false);
-  };
+  }, [navigate]);
 
   useEffect(() => {
     void loadSnapshot();
@@ -416,7 +416,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
       window.clearInterval(refreshInterval);
       window.removeEventListener("focus", refreshWhenVisible);
     };
-  }, []);
+  }, [loadSnapshot]);
 
   const updateAffiliateStatus = async (user: User, codeOverride?: string) => {
     setUpdatingAffiliate(user.id);
@@ -567,7 +567,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
       },
     );
     if (updateError || !data?.account) {
-      let message = updateError?.message || "The account could not be updated.";
+      let message = data?.error || updateError?.message || "The account could not be updated.";
       if (updateError instanceof FunctionsHttpError) {
         const responseText = await updateError.context.text();
         try {

@@ -30,21 +30,21 @@ async function supabaseRest<T>(path: string, method: string, token: string, body
   });
 
   const text = await response.text();
-  let json: unknown = null;
+  let parsed: unknown = null;
   if (text) {
     try {
-      json = JSON.parse(text);
+      parsed = JSON.parse(text);
     } catch {
-      json = { message: text };
+      parsed = { message: text };
     }
   }
 
   if (!response.ok) {
-    const message = (json as { message?: string; error?: string } | null)?.message ?? (json as { message?: string; error?: string } | null)?.error ?? `Request failed with status ${response.status}`;
+    const message = (parsed as { message?: string; error?: string } | null)?.message ?? (parsed as { message?: string; error?: string } | null)?.error ?? `Request failed with status ${response.status}`;
     throw new Error(String(message));
   }
 
-  return json as T | null;
+  return parsed as T | null;
 }
 
 function getJwtRole(token: string): string | null {
@@ -114,7 +114,7 @@ Deno.serve(async (req) => {
     const hasUserId = typeof body.userId === "string" && body.userId.length > 0;
 
     if (action !== "delete-archived" && !hasUserId) return json({ error: "Invalid user details" }, 400);
-    if (hasUserId && action !== "delete-archived") {
+    if (hasUserId && action !== "delete-archived" && action !== "update") {
       const target = await getUserById(body.userId);
       const targetUser = target?.user ?? target;
       if (!targetUser) return json({ error: "User not found" }, 404);
@@ -211,15 +211,52 @@ Deno.serve(async (req) => {
         return json({ error: "Invalid account details" }, 400);
       }
 
-      const account = await supabaseRest<Array<Record<string, unknown>>>("accounts", "PATCH", serviceRoleKey, {
+      const existingAccounts = await supabaseRest<Array<Record<string, unknown>>>("accounts", "GET", serviceRoleKey, undefined,
+        `id=eq.${encodeURIComponent(body.accountId)}&select=id,status,payment_reference,challenge_type,account_size,current_balance,profit_loss,current_phase`);
+      const existingAccount = existingAccounts?.[0];
+
+      if (!existingAccount) return json({ error: "Account not found" }, 404);
+
+      if (existingAccount.status === "pending_payment" && ["active", "funded"].includes(body.status)) {
+        let recoveredAccount: Record<string, unknown> | null = null;
+        try {
+          recoveredAccount = await supabaseRest<Record<string, unknown>>(
+            "rpc/admin_activate_pending_account",
+            "POST",
+            serviceRoleKey,
+            { p_account_id: body.accountId },
+          );
+        } catch (recoveryError) {
+          const message = recoveryError instanceof Error ? recoveryError.message : "Payment recovery failed";
+          console.error("Admin pending account activation failed:", recoveryError);
+          return json({ error: message, code: "ADMIN_ACCOUNT_ACTIVATION_FAILED" }, 409);
+        }
+
+        if (recoveredAccount && ["active", "funded"].includes(String(recoveredAccount.status))) {
+          return json({ account: recoveredAccount, recoveredPayment: true });
+        }
+
+        return json({ error: "Payment reconciliation did not activate the account." }, 409);
+      }
+
+      const isPendingActivation = existingAccount.status === "pending_payment" && ["active", "funded"].includes(body.status);
+      const updatePayload = {
         user_id: body.userId,
         challenge_type: body.challengeType,
         account_size: body.accountSize,
         status: body.status,
-        current_phase: body.currentPhase,
-        current_balance: body.currentBalance,
-        profit_loss: body.profitLoss,
-      }, `id=eq.${encodeURIComponent(body.accountId)}&select=id,user_id,account_size,challenge_type,status,current_balance,profit_loss,current_phase,updated_at,created_at`);
+        current_phase: isPendingActivation
+          ? (existingAccount.challenge_type === "instant" ? null : (existingAccount.current_phase ?? 1))
+          : body.currentPhase,
+        current_balance: isPendingActivation
+          ? (existingAccount.current_balance ?? existingAccount.account_size)
+          : body.currentBalance,
+        profit_loss: isPendingActivation
+          ? (existingAccount.profit_loss ?? 0)
+          : body.profitLoss,
+      };
+      const account = await supabaseRest<Array<Record<string, unknown>>>("accounts", "PATCH", serviceRoleKey, updatePayload,
+        `id=eq.${encodeURIComponent(body.accountId)}&select=id,user_id,account_size,challenge_type,status,current_balance,profit_loss,current_phase,updated_at,created_at`);
       const updated = Array.isArray(account) && account[0]
         ? account[0]
         : (await supabaseRest<Array<Record<string, unknown>>>("accounts", "GET", serviceRoleKey, undefined,
@@ -264,6 +301,9 @@ Deno.serve(async (req) => {
     return json({ account: inserted });
   } catch (error) {
     console.error("admin-account error:", error);
-    return json({ error: error instanceof Error ? error.message : "Unexpected error" }, 500);
+    return json({
+      error: error instanceof Error ? error.message : "Unexpected error",
+      code: "ADMIN_ACCOUNT_SERVER_ERROR",
+    }, 409);
   }
 });
