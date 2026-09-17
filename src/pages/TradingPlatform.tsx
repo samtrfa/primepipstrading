@@ -80,6 +80,8 @@ const MARKET_CAP_ORDER = [
   "SAND",
 ];
 
+const MAX_QUOTE_AGE_MS = 5000;
+
 const marketCapRank = (symbol: string) => {
   const base = symbol.replace(/(USDT|USDC|USD|\/|-)/g, "").toUpperCase();
   const idx = MARKET_CAP_ORDER.indexOf(base);
@@ -123,6 +125,7 @@ export default function TradingPlatform() {
   const [applyPositionToAsset, setApplyPositionToAsset] = useState(false);
   const [view, setView] = useState<"trade" | "chart">("trade");
   const drawdownCloseTriggeredRef = useRef(false);
+  const sltpClosingRef = useRef(new Set<string>());
 
   // Get symbols for live prices synced with TradingView
   const symbols = assets.map((a) => a.symbol);
@@ -327,6 +330,10 @@ export default function TradingPlatform() {
 
     const currentPrice = prices[selectedAsset.symbol];
     if (!currentPrice) return;
+    if (Date.now() - currentPrice.timestamp > MAX_QUOTE_AGE_MS) {
+      toast({ title: "Market data is stale", description: "Wait for a fresh quote before trading.", variant: "destructive" });
+      return;
+    }
 
     if (currentPrice.isMarketOpen === false) {
       toast({
@@ -339,7 +346,6 @@ export default function TradingPlatform() {
 
     setIsPlacingOrder(true);
 
-    const entryPrice = type === "buy" ? currentPrice.ask : currentPrice.bid;
     const lots = parseFloat(lotSize);
 
     if (isNaN(lots) || lots <= 0) {
@@ -348,6 +354,7 @@ export default function TradingPlatform() {
       return;
     }
 
+    const entryPrice = type === "buy" ? currentPrice.ask : currentPrice.bid;
     const stopLossPrice = stopLoss.trim() ? Number(stopLoss) : null;
     const takeProfitPrice = takeProfit.trim() ? Number(takeProfit) : null;
     const invalidLevels =
@@ -380,15 +387,17 @@ export default function TradingPlatform() {
       return;
     }
 
-    const { data: positionData, error: positionError } = await supabase.rpc("place_trade", {
-      p_account_id: account.id,
-      p_asset_id: selectedAsset.id,
-      p_position_type: type,
-      p_lot_size: lots,
-      p_entry_price: entryPrice,
-      p_stop_loss: stopLossPrice,
-      p_take_profit: takeProfitPrice,
-      p_request_id: crypto.randomUUID(),
+    const { data: executionData, error: positionError } = await supabase.functions.invoke("trade-execution", {
+      body: {
+        action: "place",
+        accountId: account.id,
+        assetId: selectedAsset.id,
+        positionType: type,
+        lotSize: lots,
+        stopLoss: stopLossPrice,
+        takeProfit: takeProfitPrice,
+        requestId: crypto.randomUUID(),
+      },
     });
 
     if (positionError) {
@@ -401,11 +410,12 @@ export default function TradingPlatform() {
       return;
     }
 
-    const positionWithAsset = { ...(positionData as unknown as Position), assets: selectedAsset };
+    const positionWithAsset = { ...(executionData?.position as unknown as Position), assets: selectedAsset };
+    const executedEntryPrice = Number(executionData?.entryPrice ?? entryPrice);
     await refreshServerState();
     toast({
       title: `${type.toUpperCase()} Order Placed`,
-      description: `${selectedAsset.symbol} @ ${formatPrice(selectedAsset.symbol, entryPrice)}`,
+      description: `${selectedAsset.symbol} @ ${formatPrice(selectedAsset.symbol, executedEntryPrice)}`,
       duration: 4000,
     });
 
@@ -427,17 +437,23 @@ export default function TradingPlatform() {
 
     const currentPrice = prices[position.assets.symbol];
     if (!currentPrice) return;
+    if (Date.now() - currentPrice.timestamp > MAX_QUOTE_AGE_MS) {
+      toast({ title: "Market data is stale", description: "Wait for a fresh quote before closing.", variant: "destructive" });
+      return;
+    }
 
     const exitPrice = triggeredPrice ?? (
       position.position_type === "buy" ? currentPrice.bid : currentPrice.ask
     );
 
-    const { data: closeData, error: closeError } = await supabase.rpc("close_trade", {
-      p_account_id: account.id,
-      p_position_id: position.id,
-      p_exit_price: exitPrice,
-      p_action: triggerAction,
-      p_request_id: crypto.randomUUID(),
+    const { data: closeData, error: closeError } = await supabase.functions.invoke("trade-execution", {
+      body: {
+        action: "close",
+        accountId: account.id,
+        positionId: position.id,
+        triggerAction,
+        requestId: crypto.randomUUID(),
+      },
     });
 
     if (closeError || !closeData) {
@@ -595,6 +611,37 @@ export default function TradingPlatform() {
   );
 
   useEffect(() => {
+    if (openPositions.length === 0) return;
+
+    for (const position of openPositions) {
+      if (sltpClosingRef.current.has(position.id) || !position.assets) continue;
+
+      const quote = prices[position.assets.symbol];
+      if (!quote || Date.now() - quote.timestamp > MAX_QUOTE_AGE_MS) continue;
+
+      const marketPrice = position.position_type === "buy" ? quote.bid : quote.ask;
+      const stopTriggered = position.stop_loss !== null && (
+        position.position_type === "buy"
+          ? marketPrice <= position.stop_loss
+          : marketPrice >= position.stop_loss
+      );
+      const targetTriggered = position.take_profit !== null && (
+        position.position_type === "buy"
+          ? marketPrice >= position.take_profit
+          : marketPrice <= position.take_profit
+      );
+
+      if (!stopTriggered && !targetTriggered) continue;
+
+      const triggerAction = stopTriggered ? "sl_hit" : "tp_hit";
+      sltpClosingRef.current.add(position.id);
+      void handleClosePosition(position, marketPrice, triggerAction).finally(() => {
+        sltpClosingRef.current.delete(position.id);
+      });
+    }
+  }, [handleClosePosition, openPositions, prices]);
+
+  useEffect(() => {
     if (!account || openPositions.length === 0 || isBlocked || drawdownCloseTriggeredRef.current) return;
 
     const rules = getPhaseRules(account.challenge_type, account.current_phase);
@@ -619,12 +666,13 @@ export default function TradingPlatform() {
         const currentPrice = prices[position.assets.symbol];
         if (!currentPrice) return { error: new Error(`Price unavailable for ${position.assets.symbol}`) };
         const exitPrice = position.position_type === "buy" ? currentPrice.bid : currentPrice.ask;
-        const { error } = await supabase.rpc("close_trade", {
-          p_account_id: account.id,
-          p_position_id: position.id,
-          p_exit_price: exitPrice,
-          p_action: "close",
-          p_request_id: crypto.randomUUID(),
+        const { error } = await supabase.functions.invoke("trade-execution", {
+          body: {
+            action: "close",
+            accountId: account.id,
+            positionId: position.id,
+            requestId: crypto.randomUUID(),
+          },
         });
         return { error };
       }));

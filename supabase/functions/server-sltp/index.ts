@@ -87,6 +87,41 @@ const getOpenPositions = async (admin: ReturnType<typeof createClient>) => {
   }
 };
 
+const getClosedPositions = async (admin: ReturnType<typeof createClient>) => {
+  const pageSize = 1000;
+  const closedPositions: ClosedPosition[] = [];
+
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await admin
+      .from("positions")
+      .select("account_id, profit_loss, closed_at")
+      .eq("status", "closed")
+      .not("closed_at", "is", null)
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw error;
+    closedPositions.push(...((data ?? []) as ClosedPosition[]));
+    if (!data || data.length < pageSize) return closedPositions;
+  }
+};
+
+const getPhaseAdvances = async (admin: ReturnType<typeof createClient>) => {
+  const pageSize = 1000;
+  const phaseAdvances: Array<{ account_id: string; created_at: string }> = [];
+
+  for (let offset = 0; ; offset += pageSize) {
+    const { data, error } = await admin
+      .from("trade_history")
+      .select("account_id, created_at")
+      .eq("action", "phase_advance")
+      .range(offset, offset + pageSize - 1);
+
+    if (error) throw error;
+    phaseAdvances.push(...((data ?? []) as Array<{ account_id: string; created_at: string }>));
+    if (!data || data.length < pageSize) return phaseAdvances;
+  }
+};
+
 const getRules = (challengeType: string, currentPhase: number | null) => {
   if (challengeType === "instant") return { daily: 5, max: 10 };
   if (challengeType === "one_step") return { daily: 4, max: 6 };
@@ -113,25 +148,30 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceRoleKey);
     const positions = await getOpenPositions(admin);
     const openPositions = positions.filter((position) => position.assets?.symbol);
-    const [{ data: accounts, error: accountsError }, { data: closedPositions, error: closedPositionsError }] = await Promise.all([
+    const [{ data: accounts, error: accountsError }, closedPositions, phaseAdvances] = await Promise.all([
       admin
       .from("accounts")
       .select("id, account_size, current_balance, high_water_mark, daily_start_balance, daily_start_date, funded_started_at, challenge_type, current_phase, status, drawdown_violated, violation_type")
       .in("status", ["active", "funded", "failed"]),
-      admin
-        .from("positions")
-        .select("account_id, profit_loss, closed_at")
-        .eq("status", "closed")
-        .not("closed_at", "is", null),
+      getClosedPositions(admin),
+      getPhaseAdvances(admin),
     ]);
     if (accountsError) throw accountsError;
-    if (closedPositionsError) throw closedPositionsError;
     const accountMap = new Map<string, ServerAccount>((accounts ?? []).map((account) => [account.id, account as ServerAccount]));
+    const phaseAdvanceByAccount = new Map<string, string>();
+    for (const phaseAdvance of phaseAdvances ?? []) {
+      const previous = phaseAdvanceByAccount.get(phaseAdvance.account_id);
+      if (!previous || phaseAdvance.created_at > previous) {
+        phaseAdvanceByAccount.set(phaseAdvance.account_id, phaseAdvance.created_at);
+      }
+    }
     const profitByAccountAndDay = new Map<string, Map<string, number>>();
     for (const position of (closedPositions ?? []) as ClosedPosition[]) {
       if (!position.closed_at || (position.profit_loss ?? 0) <= 0) continue;
       const account = accountMap.get(position.account_id);
       if (account?.status === "funded" && account.funded_started_at && position.closed_at < account.funded_started_at) continue;
+      const phaseAdvanceAt = phaseAdvanceByAccount.get(position.account_id);
+      if (account?.status !== "funded" && phaseAdvanceAt && position.closed_at <= phaseAdvanceAt) continue;
       const day = position.closed_at.slice(0, 10);
       const dailyProfit = profitByAccountAndDay.get(position.account_id) ?? new Map<string, number>();
       dailyProfit.set(day, (dailyProfit.get(day) ?? 0) + (position.profit_loss ?? 0));
@@ -234,6 +274,7 @@ Deno.serve(async (req) => {
 
     for (const trigger of sltpTriggers) {
       const { position, exitPrice, action } = trigger;
+      if (drawdownAccounts.includes(position.account_id)) continue;
       const { error: closeError } = await admin.rpc("close_trade", {
         p_account_id: position.account_id,
         p_position_id: position.id,

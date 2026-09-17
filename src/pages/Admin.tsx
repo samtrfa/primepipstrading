@@ -924,20 +924,13 @@ export default function Admin({ section }: { section?: AdminSection }) {
     const results = await Promise.all(
       positions.map(async (position) => {
         const asset = position.assets;
-        const price = asset ? prices[asset.symbol] : undefined;
-        const exitPrice = price
-          ? position.position_type.toLowerCase() === "buy"
-            ? price.bid
-            : price.ask
-          : null;
-        if (!exitPrice)
-          return {
-            error: `${asset?.symbol || position.id}: live price unavailable`,
-          };
-        const { error: closeError } = await supabase.rpc("close_trade", {
-          p_account_id: position.account_id,
-          p_position_id: position.id,
-          p_exit_price: exitPrice,
+        const { error: closeError } = await supabase.functions.invoke("trade-execution", {
+          body: {
+            action: "close",
+            accountId: position.account_id,
+            positionId: position.id,
+            requestId: crypto.randomUUID(),
+          },
         });
         return closeError
           ? { error: `${asset?.symbol || position.id}: ${closeError.message}` }

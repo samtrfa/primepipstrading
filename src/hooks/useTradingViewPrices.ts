@@ -25,6 +25,7 @@ export function useTradingViewPrices(symbols: string[]) {
 
   const wsRef = useRef<WebSocket | null>(null);
   const livePricesRef = useRef<Record<string, number>>({});
+  const livePriceUpdatedAtRef = useRef<Record<string, number>>({});
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const symbolsKey = symbols.join(",");
   const stableSymbols = useMemo(() => symbolsKey ? symbolsKey.split(",") : [], [symbolsKey]);
@@ -42,6 +43,7 @@ export function useTradingViewPrices(symbols: string[]) {
         for (const [symbol, priceData] of Object.entries(data.prices as Record<string, { price: number }>)) {
           if (Number.isFinite(priceData.price) && priceData.price > 0) {
             livePricesRef.current[symbol] = priceData.price;
+            livePriceUpdatedAtRef.current[symbol] = Date.now();
           }
         }
       }
@@ -87,6 +89,7 @@ export function useTradingViewPrices(symbols: string[]) {
               const price = parseFloat(data.data.price);
               if (Number.isFinite(price) && price > 0) {
                 livePricesRef.current[pair] = price;
+                livePriceUpdatedAtRef.current[pair] = Date.now();
               }
             }
           } catch {
@@ -116,7 +119,6 @@ export function useTradingViewPrices(symbols: string[]) {
     if (stableSymbols.length === 0) return;
 
     const updatePrices = () => {
-      const timestamp = Date.now();
       const next: Record<string, PriceData> = {};
 
       for (const symbol of stableSymbols) {
@@ -127,7 +129,7 @@ export function useTradingViewPrices(symbols: string[]) {
           bid: last - half,
           ask: last + half,
           lastPrice: last,
-          timestamp,
+          timestamp: livePriceUpdatedAtRef.current[symbol] ?? 0,
           isMarketOpen: true,
         };
       }
