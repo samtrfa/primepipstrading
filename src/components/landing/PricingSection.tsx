@@ -188,10 +188,6 @@ export function PricingSection() {
                     <Check className="w-3 sm:w-4 h-3 sm:h-4 text-primary shrink-0 mt-0.5" />
                     <span className="text-muted-foreground">Weekend Trading</span>
                   </li>
-                  <li className="flex items-start gap-2">
-                    <Check className="w-3 sm:w-4 h-3 sm:h-4 text-primary shrink-0 mt-0.5" />
-                    <span className="text-muted-foreground">Crypto Payments</span>
-                  </li>
                 </ul>
                 <Button
                   variant={account.popular ? "gold" : "outline"}

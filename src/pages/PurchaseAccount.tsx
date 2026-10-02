@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { TrendingUp, Check, Zap, Target, Clock, Rocket, Copy, ArrowLeft, HelpCircle, Landmark, Bitcoin, Loader2, Tag, X } from "lucide-react";
+import { TrendingUp, Check, Zap, Target, Clock, Rocket, ArrowLeft, HelpCircle, Landmark, Loader2, Tag, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
@@ -54,12 +54,8 @@ const pricingTiers: PricingTier[] = [
   { size: 200000, label: "$200K", prices: { three_step: 490, two_step: 560, one_step: 520, instant: 520 } },
 ];
 
-const CRYPTO_WALLET = "0x66aeC4645A4d204653d2e62FCA26968Ce1B5db1a";
-
 const challengeLabel = (type: ChallengeType) =>
   challengeTypes.find((c) => c.id === type)?.label ?? type.replace(/_/g, "-");
-
-type PaymentMethod = "paystack" | "crypto";
 
 function RuleItem({ label, value, ruleKey }: { label: string; value: string; ruleKey: string }) {
   const explanation =
@@ -108,7 +104,6 @@ export default function PurchaseAccount() {
   const [currencyQuoteError, setCurrencyQuoteError] = useState<string | null>(null);
   const [currencyQuoteRetry, setCurrencyQuoteRetry] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("paystack");
   const [userId, setUserId] = useState<string | null>(null);
   const [couponInput, setCouponInput] = useState("");
   const [couponLoading, setCouponLoading] = useState(false);
@@ -302,46 +297,6 @@ export default function PurchaseAccount() {
     }
 
     window.location.href = data.checkoutUrl;
-  };
-
-  const copyAddress = () => {
-    navigator.clipboard.writeText(CRYPTO_WALLET);
-    toast({
-      title: "Address copied!",
-      description: "Wallet address copied to clipboard.",
-    });
-  };
-
-  const handlePurchase = async () => {
-    if (!userId) return;
-
-    setIsProcessing(true);
-
-    const { data, error } = await supabase.functions.invoke("crypto-checkout", {
-      body: {
-        challengeType: selectedChallenge,
-        accountSize: selectedSize,
-        couponCode: couponApplies ? activeCoupon!.code : undefined,
-      },
-    });
-
-    setIsProcessing(false);
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to start crypto checkout. Please try again.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    toast({
-      title: "Payment started",
-      description: `Send ${data.amount} ${data.currency} to the displayed wallet. We'll activate your account once confirmed.`,
-    });
-
-    navigate("/dashboard");
   };
 
   return (
@@ -590,51 +545,8 @@ export default function PurchaseAccount() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {/* Payment method selector */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod("paystack")}
-                      className={cn(
-                        "flex flex-col items-center gap-1 rounded-xl border-2 p-4 transition-all",
-                        paymentMethod === "paystack"
-                          ? "border-primary bg-primary/10"
-                          : "border-border hover:border-primary/50"
-                      )}
-                    >
-                      <Landmark
-                        className={cn(
-                          "w-6 h-6",
-                          paymentMethod === "paystack" ? "text-primary" : "text-muted-foreground"
-                        )}
-                      />
-                      <span className="text-sm font-medium text-foreground">Paystack</span>
-                      <span className="text-[11px] text-muted-foreground">Cards & bank payments</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPaymentMethod("crypto")}
-                      className={cn(
-                        "flex flex-col items-center gap-1 rounded-xl border-2 p-4 transition-all",
-                        paymentMethod === "crypto"
-                          ? "border-primary bg-primary/10"
-                          : "border-border hover:border-primary/50"
-                      )}
-                    >
-                      <Bitcoin
-                        className={cn(
-                          "w-6 h-6",
-                          paymentMethod === "crypto" ? "text-primary" : "text-muted-foreground"
-                        )}
-                      />
-                      <span className="text-sm font-medium text-foreground">Crypto</span>
-                      <span className="text-[11px] text-muted-foreground">USDT / USDC (BSC)</span>
-                    </button>
-                  </div>
-
-                  {paymentMethod === "paystack" ? (
-                    <div className="space-y-6">
-                      <div className="bg-secondary/50 rounded-lg p-6 space-y-5">
+                  <div className="space-y-6">
+                    <div className="bg-secondary/50 rounded-lg p-6 space-y-5">
                         <div className="text-center">
                             <p className="text-sm text-muted-foreground">
                               Estimated cost for {getCountryName(countryCode)}
@@ -738,75 +650,7 @@ export default function PurchaseAccount() {
                         You'll be taken to a secure checkout to finish paying, then returned to your
                         dashboard.
                       </p>
-                    </div>
-                  ) : (
-                  <div className="space-y-6">
-                  <div className="bg-secondary/50 rounded-lg p-6">
-                    <div className="text-center mb-4">
-                      <div className="text-4xl font-bold text-primary mb-2">${price}</div>
-                      <div className="text-muted-foreground">
-                        {challengeTypes.find(c => c.id === selectedChallenge)?.label} - ${selectedSize.toLocaleString()} Account
-                      </div>
-                    </div>
-
-                    {/* QR Code */}
-                    <div className="flex justify-center mb-6">
-                      <div className="p-4 bg-white rounded-xl shadow-sm">
-                        <img 
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(CRYPTO_WALLET)}`}
-                          alt="Payment QR Code" 
-                          className="w-44 h-44"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="space-y-4">
-                      <div>
-                        <label className="text-sm text-muted-foreground block mb-2">
-                          Wallet Address (BEP-20 - Binance Smart Chain)
-                        </label>
-                        <div className="flex gap-2">
-                          <code className="flex-1 bg-background p-3 rounded-lg text-sm text-foreground break-all border border-border">
-                            {CRYPTO_WALLET}
-                          </code>
-                          <Button variant="outline" onClick={copyAddress}>
-                            <Copy className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </div>
-
-                      <div className="text-sm text-muted-foreground space-y-2">
-                        <p className="flex items-center gap-2">
-                          <Check className="w-4 h-4 text-primary" />
-                          Accepted: USDT, USDC, BNB (BEP-20 tokens only)
-                        </p>
-                        <p className="flex items-center gap-2">
-                          <Check className="w-4 h-4 text-primary" />
-                          Network: Binance Smart Chain (BSC)
-                        </p>
-                        <p className="flex items-center gap-2">
-                          <Check className="w-4 h-4 text-primary" />
-                          Account activated within 24 hours after confirmation
-                        </p>
-                      </div>
-                    </div>
                   </div>
-
-                  <Button
-                    variant="gold"
-                    size="lg"
-                    className="w-full"
-                    onClick={handlePurchase}
-                    disabled={isProcessing}
-                  >
-                    {isProcessing ? "Processing..." : "I've Sent the Payment"}
-                  </Button>
-
-                  <p className="text-center text-sm text-muted-foreground">
-                    After sending payment, click the button above. Your account will be activated once we confirm the transaction.
-                  </p>
-                  </div>
-                  )}
                 </CardContent>
               </Card>
             </div>

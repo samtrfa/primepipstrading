@@ -12,9 +12,6 @@ content_path = "./supabase/templates/confirmation.html"
 subject = "Reset your PrimePips password"
 content_path = "./supabase/templates/recovery.html"
 
-[functions.verify-bsc-payment]
-verify_jwt = false
-
 [functions.forex-prices]
 verify_jwt = false
 
