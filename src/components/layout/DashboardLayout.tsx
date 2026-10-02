@@ -24,7 +24,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import NotificationsCenter from "@/components/layout/NotificationsCenter";
 
-const sidebarLinks: Array<{ href: string; icon: typeof Activity; label: string; nested?: boolean }> = [
+type SidebarLink = { href: string; icon: typeof Activity; label: string; nested?: boolean };
+
+const sidebarLinks: SidebarLink[] = [
   { href: "/dashboard", icon: BarChart3, label: "Overview" },
   { href: "/dashboard/analytics", icon: LineChart, label: "Analytics", nested: true },
   { href: "/dashboard/payouts", icon: Wallet, label: "Payouts" },
@@ -33,7 +35,7 @@ const sidebarLinks: Array<{ href: string; icon: typeof Activity; label: string; 
   { href: "/dashboard/billing", icon: CreditCard, label: "Billing" },
 ];
 
-const adminLinks = [
+const adminLinks: SidebarLink[] = [
   { href: "/admin", icon: ShieldCheck, label: "Platform overview" },
   { href: "/admin/kyc", icon: FileCheck2, label: "KYC review" },
   { href: "/admin/traders", icon: Users, label: "Traders" },

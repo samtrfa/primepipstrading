@@ -18,7 +18,6 @@ interface Account {
   account_size: number;
   price: number;
   status: string;
-  rejection_reason: string | null;
   current_balance: number | null;
   profit_loss: number | null;
   funded_profit_loss: number | null;
@@ -34,6 +33,7 @@ interface PayoutRequest {
   destination: string;
   source: string;
   status: string;
+  rejection_reason: string | null;
   created_at: string;
 }
 

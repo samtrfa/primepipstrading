@@ -74,7 +74,7 @@ export function PricingSection() {
   const [selectedChallenge, setSelectedChallenge] = useState<ChallengeType>("one_step");
 
   const handlePurchase = () => {
-    navigate("/payment-maintenance");
+    navigate("/purchase");
   };
 
   const rules = getChallengeDisplayRules(selectedChallenge);

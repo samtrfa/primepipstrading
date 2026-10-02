@@ -8,10 +8,12 @@ import { TrendingUp, Mail, Lock, Eye, EyeOff, User, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { isAllowedEmail } from "@/lib/emailPolicy";
+import { countries } from "@/lib/countryCurrencies";
 
 export default function Register() {
   const [formData, setFormData] = useState({
     fullName: "",
+    country: "",
     email: "",
     password: "",
     confirmPassword: "",
@@ -51,7 +53,7 @@ export default function Register() {
     return () => subscription.unsubscribe();
   }, [navigate, searchParams]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
@@ -95,6 +97,7 @@ export default function Register() {
           emailRedirectTo: `${window.location.origin}/auth/callback`,
           data: {
             full_name: formData.fullName,
+            country: formData.country,
             referral_code: referralCode,
           },
         },
@@ -195,6 +198,23 @@ export default function Register() {
                     required
                   />
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="country">Country of residence</Label>
+                <select
+                  id="country"
+                  name="country"
+                  value={formData.country}
+                  onChange={handleChange}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                  required
+                >
+                  <option value="" disabled>Select your country</option>
+                  {countries.map(({ code, name }) => (
+                    <option key={code} value={code}>{name}</option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-2">

@@ -283,7 +283,7 @@ export default function ReferralsPage() {
     completed: { color: "bg-primary/20 text-primary" },
   };
 
-  const formatChallenge = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const formatChallenge = (value: string) => value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 
   if (loading) {
     return <DashboardLayout title="Affiliate" subtitle="Apply to partner with PrimePips"><div className="py-16 text-center text-muted-foreground">Loading affiliate information...</div></DashboardLayout>;

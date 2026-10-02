@@ -57,6 +57,7 @@ export function DrawdownTracker({
   currentPhase = 1,
   serverDrawdownViolated = false,
   serverViolationType,
+  liveRiskDataAvailable,
 }: DrawdownTrackerProps) {
   const rules = getPhaseRules(challengeType, currentPhase);
   const equity = currentBalance + unrealizedPL;
@@ -76,10 +77,11 @@ export function DrawdownTracker({
   const dailyProgress = Math.min(100, Math.max(0, (dailyPercent / rules.dailyDrawdown) * 100));
   const maxBreached = maxPercent >= rules.maxDrawdown || (serverDrawdownViolated && serverViolationType === "max_drawdown");
   const dailyBreached = dailyPercent >= rules.dailyDrawdown || (serverDrawdownViolated && serverViolationType === "daily_drawdown");
+  const unclassifiedServerViolation = serverDrawdownViolated && !serverViolationType;
 
   return (
     <div className="space-y-3">
-      {(maxBreached || dailyBreached) && (
+      {(maxBreached || dailyBreached || unclassifiedServerViolation) && (
         <Card className="border-red-500/50 bg-red-500/10">
           <CardContent className="p-3">
             <div className="flex items-start gap-3">
@@ -88,6 +90,7 @@ export function DrawdownTracker({
                 <p className="font-semibold text-red-500">Challenge Rule Violation!</p>
                 {maxBreached && <p className="text-sm text-red-400">Max drawdown limit breached ({rules.maxDrawdown}%).</p>}
                 {dailyBreached && <p className="text-sm text-red-400">Daily drawdown limit breached ({rules.dailyDrawdown}%).</p>}
+                {unclassifiedServerViolation && <p className="text-sm text-red-400">The server reports a drawdown violation, but its type is unavailable.</p>}
                 <p className="mt-2 text-xs text-muted-foreground">Trading may be restricted.</p>
               </div>
             </div>
@@ -106,6 +109,11 @@ export function DrawdownTracker({
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 p-3">
+          {liveRiskDataAvailable === false && (
+            <p role="status" className="rounded-md border border-warning/40 bg-warning/10 p-2 text-xs text-warning">
+              Live prices are unavailable for one or more open positions. Drawdown estimates may be stale.
+            </p>
+          )}
           <MetricRow label="Daily Drawdown" icon={<TrendingDown className="h-4 w-4 text-muted-foreground" />} percent={dailyPercent} limit={rules.dailyDrawdown} progress={dailyProgress} level={dailyLevel} startLabel={`Start: ${formatMoney(dailyStartValue)}`} lossLabel={`Loss: ${formatMoney(dailyLoss)}`} />
           <MetricRow label="Max Drawdown" icon={<TrendingDown className="h-4 w-4 text-muted-foreground" />} percent={maxPercent} limit={rules.maxDrawdown} progress={maxProgress} level={maxLevel} startLabel={`HWM: ${formatMoney(highWaterMarkValue)}`} lossLabel={`Loss: ${formatMoney(maxLoss)}`} />
           <p className="border-t border-border pt-2 text-center text-[10px] text-muted-foreground">

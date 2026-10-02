@@ -37,7 +37,7 @@ import AuthCallback from "./pages/AuthCallback";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import VerifyEmail from "./pages/VerifyEmail";
-import PaymentMaintenance from "./pages/PaymentMaintenance";
+import PurchaseAccount from "./pages/PurchaseAccount";
 import { Navigate } from "react-router-dom";
 import { FaqSupportBot } from "./components/support/FaqSupportBot";
 
@@ -80,9 +80,8 @@ const App = () => (
             <Route path="/admin/payouts" element={<Admin section="payouts" />} />
             <Route path="/admin/payments" element={<Admin section="payments" />} />
             <Route path="/admin/coupons" element={<Admin section="coupons" />} />
-            <Route path="/purchase" element={<PaymentMaintenance />} />
+            <Route path="/purchase" element={<PurchaseAccount />} />
             <Route path="/trade/:accountId" element={<TradingPlatform />} />
-            <Route path="/payment-maintenance" element={<PaymentMaintenance />} />
             <Route path="/pricing" element={<Pricing />} />
             <Route path="/how-it-works" element={<HowItWorks />} />
             <Route path="/faq" element={<FAQ />} />

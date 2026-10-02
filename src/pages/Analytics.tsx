@@ -190,7 +190,7 @@ export default function Analytics() {
     return Array.from({ length: Math.ceil((leadingDays + daysInMonth) / 7) * 7 }, (_, index) => {
       const date = new Date(year, month - 1, index - leadingDays + 1);
       const key = date.toISOString().slice(0, 10);
-      return { key, value: byDay[key]?.value || 0, trades: byDay[key]?.trades || 0, tradeDetails: closedTrades.filter((trade) => new Date(trade.created_at).toISOString().slice(0, 10) === key), traded: Object.hasOwn(byDay, key), label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }), day: date.getDate(), inMonth: date.getMonth() === month - 1 };
+      return { key, value: byDay[key]?.value || 0, trades: byDay[key]?.trades || 0, tradeDetails: closedTrades.filter((trade) => new Date(trade.created_at).toISOString().slice(0, 10) === key), traded: Object.prototype.hasOwnProperty.call(byDay, key), label: date.toLocaleDateString("en-US", { month: "short", day: "numeric" }), day: date.getDate(), inMonth: date.getMonth() === month - 1 };
     });
   }, [calendarMonth, closedTrades]);
 

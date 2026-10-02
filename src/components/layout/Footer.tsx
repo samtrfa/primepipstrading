@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { TrendingUp } from "lucide-react";
+import { ArrowUpRight, TrendingUp } from "lucide-react";
 
 const footerLinks = {
   company: [
@@ -42,6 +42,21 @@ export function Footer() {
               Empowering traders worldwide with funded accounts up to $200,000. 
               Trade with our capital, keep up to 90% of your profits.
             </p>
+            <a
+              href="https://x.com/primepipsspace"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
+            >
+              <svg
+                aria-hidden="true"
+                viewBox="0 0 24 24"
+                className="h-4 w-4 fill-current"
+              >
+                <path d="M18.901 1.153h3.68l-8.04 9.19L24 22.846h-7.406l-5.8-7.584-6.635 7.584H.474l8.6-9.831L0 1.153h7.594l5.243 6.932zm-1.293 19.495h2.039L6.486 3.31H4.298z" />
+              </svg>
+              Follow us on X <ArrowUpRight aria-hidden="true" className="h-4 w-4" />
+            </a>
           </div>
 
           {/* Links */}

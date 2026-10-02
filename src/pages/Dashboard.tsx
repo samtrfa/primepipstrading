@@ -110,8 +110,11 @@ export default function Dashboard() {
           if (pendingPaymentsError) {
             console.error("Error fetching pending payment orders:", pendingPaymentsError);
           } else {
+            // Re-verify every Paystack order tied to a pending purchase so a successful
+            // payment can still activate the linked account even if the earlier attempt
+            // only updated the payment row and left the account in pending_payment.
             const paymentsToVerify = (pendingPayments ?? []).filter(
-              (payment) => payment.provider_reference && payment.status !== "success",
+              (payment) => payment.provider_reference,
             );
 
             if (paymentsToVerify.length > 0) {
@@ -148,7 +151,7 @@ export default function Dashboard() {
         }
 
         const stalePendingIds = accountsData
-          .filter((account) => shouldRemovePendingPurchase(
+          .filter((account) => account.payment_provider !== "paystack" && shouldRemovePendingPurchase(
             account.status,
             Date.now() - new Date(account.created_at).getTime(),
             PAYMENT_EXPIRY_MS,

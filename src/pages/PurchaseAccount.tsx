@@ -10,6 +10,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
 import { getChallengeDisplayRules } from "@/lib/challengeRules";
+import { getCountryName, getCurrencyForCountry } from "@/lib/countryCurrencies";
 import {
   Tooltip,
   TooltipContent,
@@ -100,6 +101,12 @@ export default function PurchaseAccount() {
     sizeParam ? parseInt(sizeParam) : 10000
   );
   const [showPayment, setShowPayment] = useState(false);
+  const [countryCode, setCountryCode] = useState("NG");
+  const [displayCurrency, setDisplayCurrency] = useState("NGN");
+  const [currencyRates, setCurrencyRates] = useState<Record<string, number> | null>(null);
+  const [currencyQuoteLoading, setCurrencyQuoteLoading] = useState(false);
+  const [currencyQuoteError, setCurrencyQuoteError] = useState<string | null>(null);
+  const [currencyQuoteRetry, setCurrencyQuoteRetry] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("paystack");
   const [userId, setUserId] = useState<string | null>(null);
@@ -121,10 +128,53 @@ export default function PurchaseAccount() {
       } else if (session.user.app_metadata?.role === "admin") {
         navigate("/admin", { replace: true });
       } else {
+        const savedCountry = typeof session.user.user_metadata?.country === "string"
+          ? session.user.user_metadata.country.toUpperCase()
+          : "NG";
+        setCountryCode(savedCountry);
+        setDisplayCurrency(getCurrencyForCountry(savedCountry));
         setUserId(session.user.id);
       }
     });
   }, [navigate]);
+
+  useEffect(() => {
+    if (!showPayment || currencyRates) return;
+
+    let cancelled = false;
+    setCurrencyQuoteLoading(true);
+    setCurrencyQuoteError(null);
+
+    fetch("https://open.er-api.com/v6/latest/USD")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Currency rates are unavailable");
+        const body = await response.json();
+        if (body?.result !== "success" || !body.rates?.NGN) {
+          throw new Error("Currency rates are unavailable");
+        }
+
+        const rates = Object.fromEntries(
+          Object.entries(body.rates).filter(
+            ([code, rate]) => /^[A-Z]{3}$/.test(code) && typeof rate === "number" && rate > 0,
+          ),
+        ) as Record<string, number>;
+        if (!rates[displayCurrency]) throw new Error("The country currency rate is unavailable");
+
+        if (!cancelled) {
+          setCurrencyRates(rates);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCurrencyQuoteError("We couldn't load a currency estimate. Please try again.");
+      })
+      .finally(() => {
+        if (!cancelled) setCurrencyQuoteLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showPayment, currencyRates, currencyQuoteRetry, displayCurrency]);
 
   const selectedTier = pricingTiers.find(t => t.size === selectedSize);
   const basePrice = selectedTier?.prices[selectedChallenge] || 0;
@@ -137,6 +187,16 @@ export default function PurchaseAccount() {
   const discountPercent = couponApplies ? activeCoupon.discountPercent : 0;
   const discountAmount = Math.round(basePrice * discountPercent) / 100;
   const price = Math.round((basePrice - discountAmount) * 100) / 100;
+  const paystackAmountNgn = currencyRates?.NGN ? Math.ceil(price * currencyRates.NGN) : null;
+  const homeCurrencyAmount = paystackAmountNgn !== null && currencyRates?.[displayCurrency]
+    ? (paystackAmountNgn / currencyRates.NGN) * currencyRates[displayCurrency]
+    : null;
+
+  const formatCurrency = (amount: number, currency: string) =>
+    new Intl.NumberFormat(navigator.language || "en-US", {
+      style: "currency",
+      currency,
+    }).format(amount);
 
   const applyCoupon = async () => {
     const code = couponInput.trim().toUpperCase();
@@ -206,16 +266,6 @@ export default function PurchaseAccount() {
   };
 
   const handlePaystackCheckout = async (paymentMethod: "bank_transfer" | "card" | "other" = "bank_transfer") => {
-    toast({
-      title: "Platform update in progress",
-      description: "Purchases are temporarily paused while we fix the payment system. Please check back shortly.",
-      variant: "default",
-    });
-    navigate("/payment-maintenance", { replace: true });
-    return;
-  };
-
-  const handlePaystackCheckoutLive = async (paymentMethod: "bank_transfer" | "card" | "other" = "bank_transfer") => {
     setIsProcessing(true);
 
     const { data, error } = await supabase.functions.invoke("korapay-checkout", {
@@ -535,8 +585,8 @@ export default function PurchaseAccount() {
                 <CardHeader className="text-center">
                   <CardTitle className="text-2xl">Complete Your Payment</CardTitle>
                   <CardDescription>
-                    {challengeTypes.find((c) => c.id === selectedChallenge)?.label} — $
-                    {selectedSize.toLocaleString()} account · ${price}
+                    {challengeTypes.find((c) => c.id === selectedChallenge)?.label} — ${
+                    selectedSize.toLocaleString()} account
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -586,13 +636,54 @@ export default function PurchaseAccount() {
                     <div className="space-y-6">
                       <div className="bg-secondary/50 rounded-lg p-6 space-y-5">
                         <div className="text-center">
-                          <div className="text-4xl font-bold text-primary mb-1">
-                            ${price}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
+                            <p className="text-sm text-muted-foreground">
+                              Estimated cost for {getCountryName(countryCode)}
+                            </p>
+                            {currencyQuoteLoading ? (
+                              <p className="mt-1 flex justify-center items-center gap-2 text-muted-foreground">
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                                Loading estimate…
+                              </p>
+                            ) : homeCurrencyAmount !== null ? (
+                              <p className="mt-1 text-4xl font-bold text-primary">
+                                {formatCurrency(homeCurrencyAmount, displayCurrency)}
+                              </p>
+                            ) : (
+                              <p className="mt-1 text-sm text-destructive">
+                                {currencyQuoteError ?? "Currency estimate unavailable."}
+                              </p>
+                            )}
+                          <div className="mt-1 text-sm text-muted-foreground">
                             Bank transfer is the default payment method
                           </div>
                         </div>
+
+                        {paystackAmountNgn !== null && (
+                          <p className="text-center text-sm text-muted-foreground">
+                            Paystack checkout amount: {formatCurrency(paystackAmountNgn, "NGN")}
+                          </p>
+                        )}
+
+                        <p className="text-center text-xs text-muted-foreground">
+                          Estimate uses current exchange rates. Your bank may apply a different rate or fees.
+                        </p>
+
+                        {currencyQuoteError && (
+                          <div className="text-center">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setCurrencyQuoteError(null);
+                                setCurrencyQuoteLoading(true);
+                                setCurrencyQuoteRetry((retry) => retry + 1);
+                              }}
+                            >
+                              Retry estimate
+                            </Button>
+                          </div>
+                        )}
 
                         <div className="text-sm text-muted-foreground space-y-2">
                           <p className="flex items-center gap-2">
@@ -611,7 +702,7 @@ export default function PurchaseAccount() {
                         size="lg"
                         className="w-full"
                         onClick={() => handlePaystackCheckout("bank_transfer")}
-                        disabled={isProcessing}
+                        disabled={isProcessing || currencyQuoteLoading || !currencyRates}
                       >
                         {isProcessing ? (
                           <>
@@ -628,7 +719,7 @@ export default function PurchaseAccount() {
                         size="lg"
                         className="w-full"
                         onClick={() => handlePaystackCheckout("card")}
-                        disabled={isProcessing}
+                        disabled={isProcessing || currencyQuoteLoading || !currencyRates}
                       >
                         Pay securely with Card
                       </Button>
@@ -638,7 +729,7 @@ export default function PurchaseAccount() {
                         size="lg"
                         className="w-full"
                         onClick={() => handlePaystackCheckout("other")}
-                        disabled={isProcessing}
+                        disabled={isProcessing || currencyQuoteLoading || !currencyRates}
                       >
                         Use Another Payment Method
                       </Button>
