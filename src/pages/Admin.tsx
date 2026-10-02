@@ -312,6 +312,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showAllPayments, setShowAllPayments] = useState(false);
   const [updatingAffiliate, setUpdatingAffiliate] = useState<string | null>(
     null,
   );
@@ -367,6 +368,12 @@ export default function Admin({ section }: { section?: AdminSection }) {
   const [manualAwardMethod, setManualAwardMethod] = useState("bank_transfer");
   const [manualAwardDestination, setManualAwardDestination] = useState("");
   const [awardingPayout, setAwardingPayout] = useState(false);
+
+  const reconciliationPayments = snapshot?.payments.filter((payment) =>
+    ["pending", "expired", "unmatched", "failed", "refunded"].includes(
+      payment.status,
+    ),
+  ) ?? [];
 
   const loadSnapshot = useCallback(async (background = false) => {
     if (!background) setLoading(true);
@@ -1137,7 +1144,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
       title={pageTitle}
       subtitle="Live platform oversight and trader activity"
     >
-      <div className="space-y-6">
+      <div className="w-full min-w-0 max-w-full space-y-6">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-0">
             <div className="mb-2 flex items-center gap-2 text-primary">
@@ -1905,15 +1912,36 @@ export default function Admin({ section }: { section?: AdminSection }) {
 
               {(!section || section === "payments") && (
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-xl">
-                      <CreditCard className="h-5 w-5 text-primary" />
-                      Payment reconciliation
-                    </CardTitle>
-                    <p className="text-sm text-muted-foreground">
-                      Review pending orders and provider callbacks that need
-                      investigation or did not match a checkout order.
-                    </p>
+                  <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="space-y-2">
+                      <CardTitle className="flex items-center gap-2 text-xl">
+                        <CreditCard className="h-5 w-5 text-primary" />
+                        Payment reconciliation
+                      </CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Review pending orders and provider callbacks that need
+                        investigation or did not match a checkout order.
+                      </p>
+                    </div>
+                    {reconciliationPayments.length > 10 && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 self-start"
+                        aria-expanded={showAllPayments}
+                        onClick={() => setShowAllPayments((expanded) => !expanded)}
+                      >
+                        {showAllPayments
+                          ? "Show 10"
+                          : `Show all (${reconciliationPayments.length})`}
+                        <ChevronDown
+                          className={cn(
+                            "ml-2 h-4 w-4 transition-transform",
+                            showAllPayments && "rotate-180",
+                          )}
+                        />
+                      </Button>
+                    )}
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="overflow-x-auto">
@@ -1929,13 +1957,10 @@ export default function Admin({ section }: { section?: AdminSection }) {
                           </tr>
                         </thead>
                         <tbody>
-                          {snapshot.payments
-                            .filter((payment) =>
-                              ["pending", "expired", "unmatched", "failed", "refunded"].includes(
-                                payment.status,
-                              ),
-                            )
-                            .map((payment) => (
+                          {(showAllPayments
+                            ? reconciliationPayments
+                            : reconciliationPayments.slice(0, 10)
+                          ).map((payment) => (
                               <tr
                                 key={payment.id}
                                 className="border-b border-border/60 last:border-0"
@@ -1976,11 +2001,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                         </tbody>
                       </table>
                     </div>
-                    {snapshot.payments.filter((payment) =>
-                      ["pending", "expired", "unmatched", "failed", "refunded"].includes(
-                        payment.status,
-                      ),
-                    ).length === 0 && (
+                    {reconciliationPayments.length === 0 && (
                       <p className="p-6 text-sm text-muted-foreground">
                         No pending or exceptional payments.
                       </p>
