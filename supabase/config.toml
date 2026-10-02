@@ -36,6 +36,9 @@ verify_jwt = false
 [functions.admin-payout]
 verify_jwt = false
 
+[functions.admin-kyc-review]
+verify_jwt = false
+
 [functions.admin-award-payout]
 verify_jwt = false
 

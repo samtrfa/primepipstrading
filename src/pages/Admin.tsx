@@ -838,10 +838,12 @@ export default function Admin({ section }: { section?: AdminSection }) {
       return;
     }
     setReviewingKyc(application.id);
-    const { data, error: reviewError } = await supabase.rpc("review_kyc", {
-      p_kyc_id: application.id,
-      p_status: status,
-      p_rejection_reason: reason || null,
+    const { data, error: reviewError } = await supabase.functions.invoke("admin-kyc-review", {
+      body: {
+        kycId: application.id,
+        status,
+        rejectionReason: reason || null,
+      },
     });
     if (reviewError) setError(reviewError.message);
     else
@@ -851,6 +853,9 @@ export default function Admin({ section }: { section?: AdminSection }) {
               ...current,
               kyc: current.kyc.map((item) =>
                 item.id === application.id ? data : item,
+              ),
+              kycDocuments: current.kycDocuments.filter(
+                (document) => document.kyc_id !== application.id,
               ),
             }
           : current,
