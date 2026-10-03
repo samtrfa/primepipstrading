@@ -18,6 +18,9 @@ verify_jwt = false
 [functions.korapay-webhook]
 verify_jwt = false
 
+[functions.reconcile-pending-paystack]
+verify_jwt = false
+
 [functions.admin-snapshot]
 verify_jwt = false
 

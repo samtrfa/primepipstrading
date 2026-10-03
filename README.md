@@ -233,7 +233,9 @@ are ready for production:
 
 1. Open **Supabase Dashboard → Project Settings → Edge Functions → Secrets**.
 2. Add `PAYSTACK_SECRET_KEY` with the appropriate Paystack test or live secret key.
-3. Deploy all three payment functions after adding or changing the secret.
+3. Set a separate, strong random `PAYSTACK_RECONCILIATION_CRON_SECRET` in Edge Function secrets and store the same value in Supabase Vault as `paystack_reconciliation_cron_secret`.
+4. Deploy all payment functions after adding or changing secrets.
+5. Apply the migrations so the scheduled verifier can run.
 
 The equivalent CLI commands are:
 
@@ -242,11 +244,17 @@ npx supabase secrets set PAYSTACK_SECRET_KEY='sk_test_your_key' --project-ref wn
 npx supabase functions deploy korapay-checkout --project-ref wnbynyymqhkestmkcenj
 npx supabase functions deploy korapay-webhook --project-ref wnbynyymqhkestmkcenj
 npx supabase functions deploy verify-paystack-payment --project-ref wnbynyymqhkestmkcenj
+npx supabase functions deploy reconcile-pending-paystack --project-ref wnbynyymqhkestmkcenj
 ```
 
 Set this URL as the Paystack webhook URL:
 
 `https://wnbynyymqhkestmkcenj.supabase.co/functions/v1/korapay-webhook`
+
+The scheduled verifier checks eligible pending Paystack orders every five
+minutes, starting five minutes after checkout, and polls each order at most
+once every fifteen minutes. It uses the cron-only secret rather than exposing
+the service-role key to the scheduler.
 
 ---
 

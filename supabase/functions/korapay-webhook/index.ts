@@ -47,7 +47,18 @@ Deno.serve(async (req) => {
 
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const eventStatus = event === "charge.success" ? "success" : event === "charge.failed" ? "failed" : event === "refund.processed" ? "refunded" : "pending";
+    const providerStatus = typeof payload?.data?.status === "string"
+      ? payload.data.status.toLowerCase()
+      : "";
+    const eventStatus = event === "refund.processed"
+      ? "refunded"
+      : event === "charge.success"
+        ? "success"
+        : event === "charge.failed"
+          ? "failed"
+          : ["success", "failed", "abandoned", "cancelled", "expired"].includes(providerStatus)
+            ? providerStatus
+            : "pending";
     const providerUserId = typeof payload?.data?.metadata?.user_id === "string" && /^[0-9a-f-]{36}$/i.test(payload.data.metadata.user_id)
       ? payload.data.metadata.user_id
       : null;
