@@ -81,6 +81,7 @@ type Account = {
   max_drawdown_percent: number | null;
   daily_drawdown_percent: number | null;
   drawdown_violated: boolean | null;
+  risk_monitoring_degraded: boolean;
   violation_type: string | null;
   phase_passed: boolean | null;
   archived_at: string | null;
@@ -1673,15 +1674,22 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                 </div>
                               </td>
                               <td className="px-4 py-3">
-                                <Badge
-                                  variant={
-                                    account.status === "failed"
-                                      ? "destructive"
-                                      : "outline"
-                                  }
-                                >
-                                  {account.status.replace("_", " ")}
-                                </Badge>
+                                <div className="flex flex-wrap gap-1">
+                                  <Badge
+                                    variant={
+                                      account.status === "failed"
+                                        ? "destructive"
+                                        : "outline"
+                                    }
+                                  >
+                                    {account.status.replace("_", " ")}
+                                  </Badge>
+                                  {account.risk_monitoring_degraded && (
+                                    <Badge variant="destructive" title="New trading is paused until risk quotes are available again">
+                                      Risk quotes unavailable
+                                    </Badge>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-4 py-3">
                                 {money(account.current_balance ?? 0)}

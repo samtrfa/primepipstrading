@@ -288,6 +288,7 @@ export type Database = {
           payment_reference: string | null
           payment_tx_hash: string | null
           phase_passed: boolean | null
+          risk_monitoring_degraded: boolean
           price: number
           profit_loss: number | null
           status: Database["public"]["Enums"]["account_status"]
@@ -322,6 +323,7 @@ export type Database = {
           payment_reference?: string | null
           payment_tx_hash?: string | null
           phase_passed?: boolean | null
+          risk_monitoring_degraded?: boolean
           price: number
           profit_loss?: number | null
           status?: Database["public"]["Enums"]["account_status"]
@@ -356,6 +358,7 @@ export type Database = {
           payment_reference?: string | null
           payment_tx_hash?: string | null
           phase_passed?: boolean | null
+          risk_monitoring_degraded?: boolean
           price?: number
           profit_loss?: number | null
           status?: Database["public"]["Enums"]["account_status"]

@@ -1,5 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getTradingQuotes } from "../_shared/trading-prices.ts";
+import { getPositionExitAction, getTradingQuotes, isTradingQuoteFresh } from "../_shared/trading-prices.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -148,6 +148,14 @@ Deno.serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceRoleKey);
     const positions = await getOpenPositions(admin);
     const openPositions = positions.filter((position) => position.assets?.symbol);
+    const incompleteAccounts = new Map<string, Set<string>>();
+    for (const position of positions) {
+      if (position.assets?.symbol) continue;
+      const missingSymbols = incompleteAccounts.get(position.account_id) ?? new Set<string>();
+      missingSymbols.add("<unknown asset>");
+      incompleteAccounts.set(position.account_id, missingSymbols);
+      console.error("Skipping open position without an asset symbol", { positionId: position.id });
+    }
     const [{ data: accounts, error: accountsError }, closedPositions, phaseAdvances] = await Promise.all([
       admin
       .from("accounts")
@@ -183,12 +191,13 @@ Deno.serve(async (req) => {
     const sltpTriggers: Array<{ position: ServerPosition; exitPrice: number; action: "sl_hit" | "tp_hit" }> = [];
     const livePLByAccount = new Map<string, number>();
     const livePrices = new Map<string, number>();
-    const incompleteAccounts = new Set<string>();
 
     for (const position of openPositions) {
       const quote = quotes[position.assets.symbol];
-      if (!quote) {
-        incompleteAccounts.add(position.account_id);
+      if (!quote || !isTradingQuoteFresh(quote)) {
+        const missingSymbols = incompleteAccounts.get(position.account_id) ?? new Set<string>();
+        missingSymbols.add(position.assets.symbol);
+        incompleteAccounts.set(position.account_id, missingSymbols);
         console.error("Skipping SL/TP and risk evaluation without a fresh quote", {
           positionId: position.id,
           symbol: position.assets.symbol,
@@ -201,15 +210,13 @@ Deno.serve(async (req) => {
       const contractSize = getContractSize(position.assets.symbol);
       const floatingPL = (position.position_type === "buy" ? marketPrice - position.entry_price : position.entry_price - marketPrice) * contractSize * position.lot_size;
       livePLByAccount.set(position.account_id, (livePLByAccount.get(position.account_id) ?? 0) + floatingPL);
-      const stopTriggered = position.stop_loss !== null && (
-        position.position_type === "buy" ? marketPrice <= position.stop_loss : marketPrice >= position.stop_loss
+      const action = getPositionExitAction(
+        position.position_type,
+        marketPrice,
+        position.stop_loss,
+        position.take_profit,
       );
-      const targetTriggered = position.take_profit !== null && (
-        position.position_type === "buy" ? marketPrice >= position.take_profit : marketPrice <= position.take_profit
-      );
-
-      if (!stopTriggered && !targetTriggered) continue;
-      const action = stopTriggered ? "sl_hit" : "tp_hit";
+      if (!action) continue;
       sltpTriggers.push({ position, exitPrice: marketPrice, action });
     }
 
@@ -218,7 +225,18 @@ Deno.serve(async (req) => {
       if (incompleteAccounts.has(account.id)) {
         console.error("Skipping account risk evaluation because one or more position quotes are unavailable", {
           accountId: account.id,
+          symbols: [...incompleteAccounts.get(account.id)!],
         });
+        const { error: pauseError } = await admin
+          .from("accounts")
+          .update({ risk_monitoring_degraded: true })
+          .eq("id", account.id);
+        if (pauseError) {
+          console.error("Failed to pause trading while risk monitoring is degraded", {
+            accountId: account.id,
+            message: pauseError.message,
+          });
+        }
         continue;
       }
 
@@ -266,6 +284,7 @@ Deno.serve(async (req) => {
         daily_start_date: today,
         max_drawdown_percent: maxDrawdown,
         daily_drawdown_percent: dailyDrawdown,
+        risk_monitoring_degraded: false,
         consistency_score: consistencyScore,
         best_trading_day_profit: bestTradingDay,
         closed_profit_total: totalProfit,
@@ -295,7 +314,17 @@ Deno.serve(async (req) => {
       results.push({ positionId: position.id, action, closed: true });
     }
 
-    return json({ checked: openPositions.length, closed: results.length, drawdownAccounts: drawdownAccounts.length, results });
+    const degradedAccounts = [...incompleteAccounts].map(([accountId, missingSymbols]) => ({
+      accountId,
+      unavailableSymbols: [...missingSymbols],
+    }));
+    return json({
+      checked: openPositions.length,
+      closed: results.length,
+      drawdownAccounts: drawdownAccounts.length,
+      degradedAccounts,
+      results,
+    });
   } catch (error) {
     console.error("server-sltp error:", error);
     return json({ error: error instanceof Error ? error.message : "Unexpected error" }, 500);

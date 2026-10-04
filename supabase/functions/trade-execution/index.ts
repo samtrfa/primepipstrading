@@ -1,44 +1,14 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getTradingQuotes } from "../_shared/trading-prices.ts";
+import { getPositionExitAction, getTradingQuotes, isTradingQuoteFresh } from "../_shared/trading-prices.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const spreadPercent = 0.0005;
-const forexSymbols = new Set([
-  "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD",
-  "EURJPY", "GBPJPY", "XAUUSD", "XAGUSD", "USOIL", "US30", "US100", "US500",
-]);
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: { "Content-Type": "application/json" },
 });
-
-const getQuote = async (symbol: string) => {
-  if (forexSymbols.has(symbol)) {
-    const response = await fetch(`${supabaseUrl}/functions/v1/forex-prices`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${serviceRoleKey}`,
-      },
-      body: JSON.stringify({ symbols: [symbol] }),
-    });
-    if (!response.ok) return null;
-    const data = await response.json() as { prices?: Record<string, { bid: number; ask: number }> };
-    const quote = data.prices?.[symbol];
-    return quote && Number.isFinite(quote.bid) && Number.isFinite(quote.ask) ? quote : null;
-  }
-
-  const response = await fetch(`https://www.bitstamp.net/api/v2/ticker/${symbol.toLowerCase()}/`);
-  if (!response.ok) return null;
-  const data = await response.json();
-  const last = Number(data.last);
-  if (!Number.isFinite(last) || last <= 0) return null;
-  const halfSpread = last * (spreadPercent / 2);
-  return { bid: last - halfSpread, ask: last + halfSpread };
-};
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return json({ error: "POST required" }, 405);
@@ -57,7 +27,7 @@ Deno.serve(async (req) => {
     const isAdmin = userData.user.app_metadata?.role === "admin";
 
     const body = await req.json() as {
-      action?: "place" | "close";
+      action?: "place" | "close" | "check-sltp";
       accountId?: string;
       positionId?: string;
       assetId?: string;
@@ -80,7 +50,7 @@ Deno.serve(async (req) => {
 
       const { data: account } = await admin
         .from("accounts")
-        .select("id, user_id")
+        .select("id, user_id, risk_monitoring_degraded")
         .eq("id", body.accountId)
         .maybeSingle();
       const { data: asset } = await admin
@@ -91,9 +61,18 @@ Deno.serve(async (req) => {
       if (!account || account.user_id !== userData.user.id || !asset?.is_active) {
         return json({ error: "Account or asset is not available" }, 403);
       }
+      if (account.risk_monitoring_degraded) {
+        return json({
+          error: "Risk monitoring is temporarily unavailable; new trades are paused",
+        }, 423);
+      }
 
-      const quote = await getQuote(asset.symbol);
-      if (!quote) return json({ error: "Market price unavailable" }, 503);
+      const quote = (await getTradingQuotes(
+        supabaseUrl,
+        serviceRoleKey,
+        [asset.symbol],
+      ))[asset.symbol];
+      if (!quote || !isTradingQuoteFresh(quote)) return json({ error: "Market price unavailable" }, 503);
       const entryPrice = body.positionType === "buy" ? quote.ask : quote.bid;
       const { data, error } = await admin.rpc("place_trade", {
         p_account_id: body.accountId,
@@ -107,6 +86,108 @@ Deno.serve(async (req) => {
       });
       if (error) return json({ error: error.message }, 400);
       return json({ position: data, entryPrice });
+    }
+
+    if (body.action === "check-sltp") {
+      if (!body.accountId) return json({ error: "Invalid account" }, 400);
+      const { data: account } = await admin
+        .from("accounts")
+        .select("id, user_id")
+        .eq("id", body.accountId)
+        .maybeSingle();
+      if (!account || (!isAdmin && account.user_id !== userData.user.id)) {
+        return json({ error: "Account is not available" }, 403);
+      }
+
+      const { data: positions, error: positionsError } = await admin
+        .from("positions")
+        .select("id, account_id, position_type, stop_loss, take_profit, assets(symbol)")
+        .eq("account_id", account.id)
+        .eq("status", "open");
+      if (positionsError) throw positionsError;
+
+      const openPositions = (positions ?? []).filter((position) => position.assets?.symbol);
+      const symbols = [...new Set(openPositions.map((position) => position.assets!.symbol))];
+      const quotes = await getTradingQuotes(supabaseUrl, serviceRoleKey, symbols);
+      const results: Array<{
+        positionId: string;
+        symbol: string;
+        action: "sl_hit" | "tp_hit";
+        exitPrice: number;
+        profitLoss: number;
+      }> = [];
+      const unavailableSymbols = new Set<string>(
+        (positions ?? [])
+          .filter((position) => !position.assets?.symbol)
+          .map(() => "<unknown asset>"),
+      );
+      const closeFailures: Array<{ positionId: string; symbol: string; message: string }> = [];
+      let riskPauseError: string | null = null;
+
+      for (const position of openPositions) {
+        const symbol = position.assets!.symbol;
+        const quote = quotes[symbol];
+        if (!quote || !isTradingQuoteFresh(quote)) {
+          unavailableSymbols.add(symbol);
+          continue;
+        }
+
+        const exitPrice = position.position_type === "buy" ? quote.bid : quote.ask;
+        const action = getPositionExitAction(
+          position.position_type,
+          exitPrice,
+          position.stop_loss,
+          position.take_profit,
+        );
+        if (!action) continue;
+        const { data, error } = await admin.rpc("close_trade", {
+          p_account_id: account.id,
+          p_position_id: position.id,
+          p_exit_price: exitPrice,
+          p_action: action,
+          p_request_id: crypto.randomUUID(),
+        });
+        if (error) {
+          console.error("user SL/TP close failed", {
+            positionId: position.id,
+            action,
+            message: error.message,
+          });
+          closeFailures.push({ positionId: position.id, symbol, message: error.message });
+          continue;
+        }
+        results.push({
+          positionId: position.id,
+          symbol,
+          action,
+          exitPrice,
+          profitLoss: Number(data?.position?.profit_loss ?? 0),
+        });
+      }
+
+      if (unavailableSymbols.size > 0) {
+        const { error: pauseError } = await admin
+          .from("accounts")
+          .update({ risk_monitoring_degraded: true })
+          .eq("id", account.id);
+        if (pauseError) {
+          riskPauseError = pauseError.message;
+          console.error("Failed to pause trading while risk quotes are unavailable", {
+            accountId: account.id,
+            message: pauseError.message,
+          });
+        }
+      }
+
+      return json({
+        checked: openPositions.length,
+        closed: results.length,
+        results,
+        unavailableSymbols: [...unavailableSymbols],
+        closeFailures,
+        riskPauseError,
+        riskPaused: unavailableSymbols.size > 0 && !riskPauseError,
+      });
     }
 
     if (body.action === "close") {
@@ -132,25 +213,37 @@ Deno.serve(async (req) => {
         serviceRoleKey,
         [position.assets.symbol],
       ))[position.assets.symbol];
-      if (!quote) return json({ error: "Market price unavailable" }, 503);
+      if (!quote || !isTradingQuoteFresh(quote)) {
+        const { error: pauseError } = await admin
+          .from("accounts")
+          .update({ risk_monitoring_degraded: true })
+          .eq("id", account.id);
+        if (pauseError) {
+          console.error("Failed to pause trading after close quote became unavailable", {
+            accountId: account.id,
+            positionId: position.id,
+            message: pauseError.message,
+          });
+        }
+        return json({
+          error: "Market price unavailable",
+          riskPauseError: pauseError?.message,
+        }, 503);
+      }
       const exitPrice = position.position_type === "buy" ? quote.bid : quote.ask;
       const requestedAction = body.triggerAction ?? "close";
       let action = requestedAction;
       if (requestedAction === "sl_hit" || requestedAction === "tp_hit") {
-        const stopTriggered = position.stop_loss !== null && (
-          position.position_type === "buy"
-            ? exitPrice <= position.stop_loss
-            : exitPrice >= position.stop_loss
+        const actualAction = getPositionExitAction(
+          position.position_type,
+          exitPrice,
+          position.stop_loss,
+          position.take_profit,
         );
-        const targetTriggered = position.take_profit !== null && (
-          position.position_type === "buy"
-            ? exitPrice >= position.take_profit
-            : exitPrice <= position.take_profit
-        );
-        if (!stopTriggered && !targetTriggered) {
+        if (!actualAction) {
           return json({ error: "SL/TP trigger is no longer valid at the current market price" }, 409);
         }
-        action = stopTriggered ? "sl_hit" : "tp_hit";
+        action = actualAction;
       }
 
       const { data, error } = await admin.rpc("close_trade", {

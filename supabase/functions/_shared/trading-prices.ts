@@ -1,20 +1,19 @@
+import { getPositionExitAction, isTradingQuoteFresh } from "./trading-risk-policy.js";
+
+export { getPositionExitAction, isTradingQuoteFresh };
+
 export interface TradingQuote {
   bid: number;
   ask: number;
-  timestamp: number;
+  observedAt: number;
 }
 
 const MAX_QUOTE_AGE_MS = 5000;
-const SPREAD_PERCENT = 0.0005;
+
 const FOREX_SYMBOLS = new Set([
   "EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD",
   "EURJPY", "GBPJPY", "XAUUSD", "XAGUSD", "USOIL", "US30", "US100", "US500",
 ]);
-
-const isFreshTimestamp = (timestamp: number, now: number) =>
-  Number.isFinite(timestamp) &&
-  timestamp <= now &&
-  now - timestamp <= MAX_QUOTE_AGE_MS;
 
 const fetchWithTimeout = (input: string | URL, init?: RequestInit) =>
   fetch(input, { ...init, signal: AbortSignal.timeout(MAX_QUOTE_AGE_MS) });
@@ -22,24 +21,25 @@ const fetchWithTimeout = (input: string | URL, init?: RequestInit) =>
 const fetchCryptoQuote = async (symbol: string): Promise<TradingQuote | null> => {
   try {
     const response = await fetchWithTimeout(
-      `https://www.bitstamp.net/api/v2/ticker/${symbol.toLowerCase()}/`,
+      `https://www.bitstamp.net/api/v2/order_book/${symbol.toLowerCase()}/`,
     );
     if (!response.ok) {
       console.error("Bitstamp quote request failed", { symbol, status: response.status });
       return null;
     }
 
-    const data = await response.json() as { last?: string | number; timestamp?: string | number };
-    const last = Number(data.last);
-    const timestamp = Number(data.timestamp) * 1000;
-    const now = Date.now();
-    if (!Number.isFinite(last) || last <= 0 || !isFreshTimestamp(timestamp, now)) {
-      console.error("Bitstamp returned an invalid or stale quote", { symbol, timestamp });
+    const data = await response.json() as {
+      bids?: Array<[string, string]>;
+      asks?: Array<[string, string]>;
+    };
+    const bid = Number(data.bids?.[0]?.[0]);
+    const ask = Number(data.asks?.[0]?.[0]);
+    if (!Number.isFinite(bid) || !Number.isFinite(ask) || bid <= 0 || ask < bid) {
+      console.error("Bitstamp returned an invalid order book", { symbol });
       return null;
     }
 
-    const halfSpread = last * (SPREAD_PERCENT / 2);
-    return { bid: last - halfSpread, ask: last + halfSpread, timestamp };
+    return { bid, ask, observedAt: Date.now() };
   } catch (error) {
     console.error("Bitstamp quote request failed", {
       symbol,
@@ -72,16 +72,9 @@ const fetchForexQuotes = async (
 
     const data = await response.json() as {
       prices?: Record<string, { bid: number; ask: number }>;
-      timestamp?: number;
     };
-    const timestamp = Number(data.timestamp);
-    const now = Date.now();
-    if (!isFreshTimestamp(timestamp, now)) {
-      console.error("Forex provider returned a stale quote batch", { timestamp, symbols });
-      return {};
-    }
-
     const quotes: Record<string, TradingQuote> = {};
+    const observedAt = Date.now();
     for (const symbol of symbols) {
       const quote = data.prices?.[symbol];
       if (
@@ -91,7 +84,7 @@ const fetchForexQuotes = async (
         quote.bid > 0 &&
         quote.ask >= quote.bid
       ) {
-        quotes[symbol] = { ...quote, timestamp };
+        quotes[symbol] = { ...quote, observedAt };
       } else {
         console.error("Forex provider returned no valid quote", { symbol });
       }

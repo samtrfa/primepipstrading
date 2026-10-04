@@ -61,6 +61,7 @@ interface Account {
   max_drawdown_percent: number | null;
   daily_drawdown_percent: number | null;
   drawdown_violated: boolean | null;
+  risk_monitoring_degraded: boolean;
   violation_type: string | null;
   phase_passed: boolean | null;
 }
@@ -128,7 +129,8 @@ export default function TradingPlatform() {
   const [applyPositionToAsset, setApplyPositionToAsset] = useState(false);
   const [view, setView] = useState<"trade" | "chart">("trade");
   const drawdownCloseTriggeredRef = useRef(false);
-  const sltpClosingRef = useRef(new Set<string>());
+  const sltpCheckInFlightRef = useRef(false);
+  const sltpCheckErrorRef = useRef<string | null>(null);
 
   // Get symbols for live prices synced with TradingView
   const symbols = assets.map((a) => a.symbol);
@@ -300,6 +302,7 @@ export default function TradingPlatform() {
 
   const isBlocked =
     !!account && (account.status === "failed" || account.drawdown_violated === true);
+  const isRiskMonitoringPaused = account?.risk_monitoring_degraded === true;
   // ---- Margin (account balance is the total available margin) ----
   const usedMargin = positions
     .filter((p) => p.status === "open")
@@ -326,6 +329,14 @@ export default function TradingPlatform() {
       toast({
         title: "Trading disabled",
         description: "This account has failed a challenge rule and is blocked from trading.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (isRiskMonitoringPaused) {
+      toast({
+        title: "Trading temporarily paused",
+        description: "A live quote is unavailable for an open position. New trades will resume when risk monitoring is restored.",
         variant: "destructive",
       });
       return;
@@ -637,40 +648,108 @@ export default function TradingPlatform() {
     : 0;
   const openPositions = positions.filter((p) => p.status === "open");
   const closedPositions = positions.filter((p) => p.status === "closed");
+  const sltpAccountId = account?.id;
   const fundedClosedPositions = closedPositions.filter(
     (position) => !fundedStartAt || (position.closed_at && position.closed_at > fundedStartAt)
   );
 
   useEffect(() => {
-    if (openPositions.length === 0) return;
+    if (!sltpAccountId || openPositions.length === 0) return;
+    let cancelled = false;
 
-    for (const position of openPositions) {
-      if (sltpClosingRef.current.has(position.id) || !position.assets) continue;
+    const checkStopsAndTargets = async () => {
+      if (sltpCheckInFlightRef.current || cancelled) return;
+      sltpCheckInFlightRef.current = true;
+      let response;
+      try {
+        response = await supabase.functions.invoke("trade-execution", {
+          body: { action: "check-sltp", accountId: sltpAccountId },
+        });
+      } catch (requestError) {
+        const message = requestError instanceof Error ? requestError.message : String(requestError);
+        if (!cancelled && sltpCheckErrorRef.current !== message) {
+          console.error("Automatic SL/TP check failed", { accountId: sltpAccountId, message });
+          toast({
+            title: "SL/TP monitoring delayed",
+            description: message,
+            variant: "destructive",
+          });
+          sltpCheckErrorRef.current = message;
+        }
+        return;
+      } finally {
+        sltpCheckInFlightRef.current = false;
+      }
+      const { data, error } = response;
+      if (cancelled) return;
 
-      const quote = prices[position.assets.symbol];
-      if (!quote || Date.now() - quote.timestamp > MAX_QUOTE_AGE_MS) continue;
+      if (error || !data) {
+        const message = error?.message || "SL/TP check did not return a result";
+        if (sltpCheckErrorRef.current !== message) {
+          console.error("Automatic SL/TP check failed", { accountId: sltpAccountId, message });
+          toast({
+            title: "SL/TP monitoring delayed",
+            description: message,
+            variant: "destructive",
+          });
+          sltpCheckErrorRef.current = message;
+        }
+        return;
+      }
 
-      const marketPrice = position.position_type === "buy" ? quote.bid : quote.ask;
-      const stopTriggered = position.stop_loss !== null && (
-        position.position_type === "buy"
-          ? marketPrice <= position.stop_loss
-          : marketPrice >= position.stop_loss
-      );
-      const targetTriggered = position.take_profit !== null && (
-        position.position_type === "buy"
-          ? marketPrice >= position.take_profit
-          : marketPrice <= position.take_profit
-      );
+      if (Array.isArray(data.results) && data.results.length > 0) {
+        await refreshServerState();
+        for (const result of data.results as Array<{
+          symbol: string;
+          action: "sl_hit" | "tp_hit";
+          profitLoss: number;
+        }>) {
+          toast({
+            title: result.action === "sl_hit" ? "Stop Loss Hit" : "Take Profit Hit",
+            description: `${result.symbol} P/L: ${result.profitLoss >= 0 ? "+" : ""}$${result.profitLoss.toFixed(2)}`,
+            variant: result.profitLoss >= 0 ? "default" : "destructive",
+          });
+        }
+      }
+      const unavailableSymbols = Array.isArray(data.unavailableSymbols) ? data.unavailableSymbols as string[] : [];
+      const closeFailures = Array.isArray(data.closeFailures)
+        ? data.closeFailures as Array<{ symbol: string; message: string }>
+        : [];
+      const monitoringIssues = [
+        ...(unavailableSymbols.length > 0
+          ? [`Fresh SL/TP quotes unavailable for: ${unavailableSymbols.join(", ")}`]
+          : []),
+        ...closeFailures.map((failure) => `${failure.symbol}: ${failure.message}`),
+        ...(typeof data.riskPauseError === "string" ? [`Could not pause new trading: ${data.riskPauseError}`] : []),
+      ];
+      if (data.riskPaused && !isRiskMonitoringPaused) await refreshServerState();
+      if (monitoringIssues.length > 0) {
+        const message = monitoringIssues.join("; ");
+        if (sltpCheckErrorRef.current !== message) {
+          console.error("Automatic SL/TP monitoring is degraded", {
+            accountId: sltpAccountId,
+            unavailableSymbols,
+            closeFailures,
+          });
+          toast({
+            title: "SL/TP monitoring delayed",
+            description: message,
+            variant: "destructive",
+          });
+          sltpCheckErrorRef.current = message;
+        }
+      } else {
+        sltpCheckErrorRef.current = null;
+      }
+    };
 
-      if (!stopTriggered && !targetTriggered) continue;
-
-      const triggerAction = stopTriggered ? "sl_hit" : "tp_hit";
-      sltpClosingRef.current.add(position.id);
-      void handleClosePosition(position, triggerAction).finally(() => {
-        sltpClosingRef.current.delete(position.id);
-      });
-    }
-  }, [handleClosePosition, openPositions, prices]);
+    void checkStopsAndTargets();
+    const interval = window.setInterval(() => void checkStopsAndTargets(), 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [isRiskMonitoringPaused, sltpAccountId, openPositions.length, refreshServerState, toast]);
 
   useEffect(() => {
     if (!account || openPositions.length === 0 || isBlocked || drawdownCloseTriggeredRef.current) return;
@@ -823,6 +902,19 @@ export default function TradingPlatform() {
             </CardContent>
           </Card>
         )}
+        {isRiskMonitoringPaused && (
+          <Card className="border-yellow-500/50 bg-yellow-500/10">
+            <CardContent className="p-3 flex items-start gap-3">
+              <ShieldAlert className="w-5 h-5 text-yellow-600 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <p className="font-semibold text-yellow-600">New Trading Temporarily Paused</p>
+                <p className="text-sm text-yellow-700">
+                  A live quote for an open position is unavailable, so account risk cannot be verified. New positions are paused; existing positions can still be closed or have their SL/TP adjusted.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Asset bar */}
         <Card className="p-2 sm:p-3">
@@ -899,6 +991,11 @@ export default function TradingPlatform() {
                   <div className="p-2 rounded bg-red-500/10 border border-red-500/30 text-red-500 text-xs text-center flex items-center justify-center gap-1">
                     <Lock className="w-3 h-3" />
                     Trading disabled — account failed
+                  </div>
+                )}
+                {isRiskMonitoringPaused && (
+                  <div className="p-2 rounded bg-yellow-500/10 border border-yellow-500/30 text-yellow-600 text-xs text-center">
+                    New trading paused — risk quotes are temporarily unavailable
                   </div>
                 )}
                 {selectedAsset && prices[selectedAsset.symbol]?.isMarketOpen === false && (
@@ -1005,7 +1102,7 @@ export default function TradingPlatform() {
                     variant="destructive"
                     className="w-full h-10"
                     onClick={() => handlePlaceOrder("sell")}
-                    disabled={!selectedAsset || isPlacingOrder || isBlocked || insufficientMargin || selectedAsset && prices[selectedAsset.symbol]?.isMarketOpen === false}
+                    disabled={!selectedAsset || isPlacingOrder || isBlocked || isRiskMonitoringPaused || insufficientMargin || selectedAsset && prices[selectedAsset.symbol]?.isMarketOpen === false}
                   >
                     <TrendingDown className="w-4 h-4 mr-1" />
                     SELL
@@ -1013,7 +1110,7 @@ export default function TradingPlatform() {
                   <Button
                     className="w-full h-10 bg-green-600 hover:bg-green-700"
                     onClick={() => handlePlaceOrder("buy")}
-                    disabled={!selectedAsset || isPlacingOrder || isBlocked || insufficientMargin || selectedAsset && prices[selectedAsset.symbol]?.isMarketOpen === false}
+                    disabled={!selectedAsset || isPlacingOrder || isBlocked || isRiskMonitoringPaused || insufficientMargin || selectedAsset && prices[selectedAsset.symbol]?.isMarketOpen === false}
                   >
                     <TrendingUp className="w-4 h-4 mr-1" />
                     BUY
