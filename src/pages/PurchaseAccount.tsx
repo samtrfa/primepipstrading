@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { TrendingUp, Check, Zap, Target, Clock, Rocket, ArrowLeft, HelpCircle, Landmark, Loader2, Tag, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
 import { supabase } from "@/integrations/supabase/client";
 import { FunctionsHttpError } from "@supabase/supabase-js";
 import { cn } from "@/lib/utils";
@@ -115,6 +116,7 @@ export default function PurchaseAccount() {
   } | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
+  const isHeaderVisible = useHideOnScroll();
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -132,6 +134,12 @@ export default function PurchaseAccount() {
       }
     });
   }, [navigate]);
+
+  useEffect(() => {
+    if (showPayment) {
+      window.scrollTo(0, 0);
+    }
+  }, [showPayment]);
 
   useEffect(() => {
     if (!showPayment || currencyRates) return;
@@ -301,8 +309,11 @@ export default function PurchaseAccount() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card/80 backdrop-blur-xl sticky top-0 z-50">
-          <div className="container mx-auto px-4 py-4">
+      <header className={cn(
+        "border-b border-border bg-card/80 backdrop-blur-xl sticky top-0 z-50 transition-transform duration-300 ease-in-out",
+        isHeaderVisible ? "translate-y-0" : "-translate-y-full",
+      )}>
+          <div className="container mx-auto px-4 py-3 sm:py-4">
             <div className="flex items-center justify-between">
               <Link to="/" className="flex items-center gap-2">
                 <div className="relative w-10 h-10 flex items-center justify-center">
@@ -313,19 +324,25 @@ export default function PurchaseAccount() {
                   Prime<span className="text-primary">Pips</span>
                 </span>
               </Link>
-              <Button variant="ghost" onClick={() => window.location.assign("/dashboard")}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="shrink-0"
+                aria-label="Back to Dashboard"
+                onClick={() => window.location.assign("/dashboard")}
+              >
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Dashboard
+                <span>Back to Dashboard</span>
               </Button>
             </div>
           </div>
         </header>
 
-        <main className="container mx-auto px-4 py-12">
+        <main className="container mx-auto px-4 py-8 sm:py-12">
           {!showPayment ? (
             <>
               <div className="text-center mb-12">
-                <h1 className="text-4xl font-serif font-bold text-foreground mb-4">
+                <h1 className="text-3xl sm:text-4xl font-serif font-bold text-foreground mb-4">
                   Choose Your <span className="text-primary">Challenge</span>
                 </h1>
                 <p className="text-muted-foreground max-w-2xl mx-auto">
@@ -393,7 +410,7 @@ export default function PurchaseAccount() {
                 Select Account Size
               </h2>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-12">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-12">
                 {pricingTiers.map((tier) => (
                   <Card
                     key={tier.size}
@@ -406,9 +423,9 @@ export default function PurchaseAccount() {
                     )}
                     onClick={() => setSelectedSize(tier.size)}
                   >
-                    <CardContent className="p-6 text-center">
-                      <div className="text-3xl font-bold text-foreground mb-2">{tier.label}</div>
-                      <div className="text-2xl font-semibold text-primary">
+                    <CardContent className="p-4 sm:p-6 text-center">
+                      <div className="text-2xl sm:text-3xl font-bold text-foreground mb-2">{tier.label}</div>
+                      <div className="text-xl sm:text-2xl font-semibold text-primary">
                         ${tier.prices[selectedChallenge]}
                       </div>
                       <div className="text-sm text-muted-foreground mt-1">
@@ -424,21 +441,21 @@ export default function PurchaseAccount() {
                   <CardTitle className="text-2xl">Order Summary</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="flex justify-between items-center py-2 border-b border-border">
+                  <div className="flex justify-between items-start gap-3 py-2 border-b border-border sm:items-center">
                     <span className="text-muted-foreground">Challenge Type</span>
-                    <span className="font-medium text-foreground">
+                    <span className="text-right font-medium text-foreground">
                       {challengeTypes.find(c => c.id === selectedChallenge)?.label}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-2 border-b border-border">
+                  <div className="flex justify-between items-start gap-3 py-2 border-b border-border sm:items-center">
                     <span className="text-muted-foreground">Account Size</span>
-                    <span className="font-medium text-foreground">
+                    <span className="text-right font-medium text-foreground">
                       ${selectedSize.toLocaleString()}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center py-2 border-b border-border">
+                  <div className="flex justify-between items-start gap-3 py-2 border-b border-border sm:items-center">
                     <span className="text-muted-foreground">Profit Split</span>
-                    <span className="font-medium text-foreground">Up to 90%</span>
+                    <span className="text-right font-medium text-foreground">Up to 90%</span>
                   </div>
 
                   {/* Coupon code */}
@@ -481,20 +498,20 @@ export default function PurchaseAccount() {
 
                   {discountPercent > 0 && (
                     <>
-                      <div className="flex justify-between items-center py-2 border-b border-border">
+                      <div className="flex justify-between items-start gap-3 py-2 border-b border-border sm:items-center">
                         <span className="text-muted-foreground">Subtotal</span>
-                        <span className="font-medium text-foreground line-through">${basePrice}</span>
+                        <span className="text-right font-medium text-foreground line-through">${basePrice}</span>
                       </div>
-                      <div className="flex justify-between items-center py-2 border-b border-border">
+                      <div className="flex justify-between items-start gap-3 py-2 border-b border-border sm:items-center">
                         <span className="text-muted-foreground">
                           Discount ({discountPercent}%)
                         </span>
-                        <span className="font-medium text-primary">-${discountAmount}</span>
+                        <span className="text-right font-medium text-primary">-${discountAmount}</span>
                       </div>
                     </>
                   )}
 
-                  <div className="flex justify-between items-center py-4">
+                  <div className="flex justify-between items-center gap-3 py-4">
                     <span className="text-lg font-semibold text-foreground">Total</span>
                     <span className="text-3xl font-bold text-primary">${price}</span>
                   </div>
@@ -546,7 +563,7 @@ export default function PurchaseAccount() {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="space-y-6">
-                    <div className="bg-secondary/50 rounded-lg p-6 space-y-5">
+                    <div className="bg-secondary/50 rounded-lg p-4 sm:p-6 space-y-5">
                         <div className="text-center">
                             <p className="text-sm text-muted-foreground">
                               Estimated cost for {getCountryName(countryCode)}
@@ -557,7 +574,7 @@ export default function PurchaseAccount() {
                                 Loading estimate…
                               </p>
                             ) : homeCurrencyAmount !== null ? (
-                              <p className="mt-1 text-4xl font-bold text-primary">
+                              <p className="mt-1 break-words text-3xl sm:text-4xl font-bold text-primary">
                                 {formatCurrency(homeCurrencyAmount, displayCurrency)}
                               </p>
                             ) : (
@@ -569,12 +586,6 @@ export default function PurchaseAccount() {
                             Bank transfer is the default payment method
                           </div>
                         </div>
-
-                        {paystackAmountNgn !== null && (
-                          <p className="text-center text-sm text-muted-foreground">
-                            Paystack checkout amount: {formatCurrency(paystackAmountNgn, "NGN")}
-                          </p>
-                        )}
 
                         <p className="text-center text-xs text-muted-foreground">
                           Estimate uses current exchange rates. Your bank may apply a different rate or fees.

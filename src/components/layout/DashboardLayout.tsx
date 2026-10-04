@@ -22,6 +22,7 @@ import {
 import { cn } from "@/lib/utils";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
 import NotificationsCenter from "@/components/layout/NotificationsCenter";
 
 type SidebarLink = { href: string; icon: typeof Activity; label: string; nested?: boolean };
@@ -64,6 +65,7 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
+  const isHeaderVisible = useHideOnScroll();
 
   const handleNavigation = (href: string) => {
     setSidebarOpen(false);
@@ -212,7 +214,10 @@ export default function DashboardLayout({ children, title, subtitle }: Dashboard
       {/* Main Content */}
       <div className="flex min-w-0 flex-1 flex-col">
         {/* Top Bar */}
-        <header className="sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 lg:px-8 py-4">
+        <header className={cn(
+          "sticky top-0 z-30 bg-card/80 backdrop-blur-xl border-b border-border px-4 lg:px-8 py-4 transition-transform duration-300 ease-in-out",
+          isHeaderVisible ? "translate-y-0" : "-translate-y-full",
+        )}>
           <div className="flex min-w-0 items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-4">
               <button

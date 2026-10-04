@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
+import { FunctionsHttpError } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { calculatePositionPL, formatPips, getRequiredMargin } from "@/lib/tradingCalculations";
@@ -105,6 +107,7 @@ interface Position {
 }
 
 export default function TradingPlatform() {
+  const isHeaderVisible = useHideOnScroll();
   const { accountId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -430,21 +433,9 @@ export default function TradingPlatform() {
 
   const handleClosePosition = useCallback(async (
     position: Position,
-    triggeredPrice?: number,
     triggerAction: "close" | "sl_hit" | "tp_hit" = "close"
   ) => {
     if (!account || !position.assets) return;
-
-    const currentPrice = prices[position.assets.symbol];
-    if (!currentPrice) return;
-    if (Date.now() - currentPrice.timestamp > MAX_QUOTE_AGE_MS) {
-      toast({ title: "Market data is stale", description: "Wait for a fresh quote before closing.", variant: "destructive" });
-      return;
-    }
-
-    const exitPrice = triggeredPrice ?? (
-      position.position_type === "buy" ? currentPrice.bid : currentPrice.ask
-    );
 
     const { data: closeData, error: closeError } = await supabase.functions.invoke("trade-execution", {
       body: {
@@ -457,40 +448,80 @@ export default function TradingPlatform() {
     });
 
     if (closeError || !closeData) {
+      let message = closeError?.message || "The position could not be closed.";
+      if (closeError instanceof FunctionsHttpError) {
+        const responseText = await closeError.context.text();
+        try {
+          const responseBody = JSON.parse(responseText) as { error?: string };
+          message = responseBody.error || message;
+        } catch {
+          message = responseText || message;
+        }
+      }
       console.error("close_trade failed", {
-        message: closeError?.message,
-        details: closeError?.details,
-        hint: closeError?.hint,
+        message,
         positionId: position.id,
         accountId: account.id,
-        exitPrice,
       });
-      toast({ title: "Failed to close position", description: closeError?.message, variant: "destructive" });
+      await refreshServerState();
+      toast({ title: "Failed to close position", description: message, variant: "destructive" });
       return;
     }
-    const closeResult = closeData as unknown as { position: Position & { profit_loss: number }; account: Account };
+    const closeResult = closeData as unknown as {
+      position: Position & { profit_loss: number };
+      account: Account;
+      action?: "close" | "sl_hit" | "tp_hit";
+    };
     const profitLoss = Number(closeResult.position.profit_loss);
     const updatedAccount = closeResult.account;
+    const actualAction = closeResult.action ?? triggerAction;
 
     await refreshServerState();
 
     if (updatedAccount.status !== "failed") {
       toast({
-        title: triggerAction === "sl_hit" ? "Stop Loss Hit" : triggerAction === "tp_hit" ? "Take Profit Hit" : "Position Closed",
+        title: actualAction === "sl_hit" ? "Stop Loss Hit" : actualAction === "tp_hit" ? "Take Profit Hit" : "Position Closed",
         description: `${position.assets.symbol} P/L: ${profitLoss >= 0 ? "+" : ""}$${profitLoss.toFixed(2)}`,
         variant: profitLoss >= 0 ? "default" : "destructive",
       });
     }
 
-  }, [account, prices, toast, refreshServerState]);
+  }, [account, toast, refreshServerState]);
 
   const handleModifyPosition = async (position: Position) => {
     if (isBlocked) return;
 
     const stopLoss = positionDraft.stopLoss.trim() ? Number(positionDraft.stopLoss) : null;
     const takeProfit = positionDraft.takeProfit.trim() ? Number(positionDraft.takeProfit) : null;
-    if ((stopLoss !== null && !Number.isFinite(stopLoss)) || (takeProfit !== null && !Number.isFinite(takeProfit))) {
-      toast({ title: "Invalid stop loss or take profit", variant: "destructive" });
+    if (
+      (stopLoss !== null && (!Number.isFinite(stopLoss) || stopLoss <= 0)) ||
+      (takeProfit !== null && (!Number.isFinite(takeProfit) || takeProfit <= 0))
+    ) {
+      toast({ title: "Invalid stop loss or take profit", description: "SL and TP prices must be positive finite numbers.", variant: "destructive" });
+      return;
+    }
+
+    const targets = applyPositionToAsset
+      ? positions.filter((candidate) => candidate.status === "open" && candidate.asset_id === position.asset_id)
+      : [position];
+    const invalidPosition = targets.find((target) =>
+      (stopLoss !== null && (
+        target.position_type === "buy" ? stopLoss >= target.entry_price : stopLoss <= target.entry_price
+      )) ||
+      (takeProfit !== null && (
+        target.position_type === "buy" ? takeProfit <= target.entry_price : takeProfit >= target.entry_price
+      ))
+    );
+    if (invalidPosition) {
+      toast({
+        title: "Invalid stop loss or take profit",
+        description: applyPositionToAsset
+          ? "The selected levels are not valid for every open position on this asset."
+          : position.position_type === "buy"
+            ? "For a buy, stop loss must be below entry and take profit above entry."
+            : "For a sell, stop loss must be above entry and take profit below entry.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -635,7 +666,7 @@ export default function TradingPlatform() {
 
       const triggerAction = stopTriggered ? "sl_hit" : "tp_hit";
       sltpClosingRef.current.add(position.id);
-      void handleClosePosition(position, marketPrice, triggerAction).finally(() => {
+      void handleClosePosition(position, triggerAction).finally(() => {
         sltpClosingRef.current.delete(position.id);
       });
     }
@@ -703,7 +734,10 @@ export default function TradingPlatform() {
   return (
     <div className="min-h-screen bg-background flex flex-col overflow-x-hidden">
       {/* Header */}
-      <header className="border-b border-border bg-card/80 backdrop-blur-xl sticky top-0 z-50 shrink-0">
+      <header className={cn(
+        "border-b border-border bg-card/80 backdrop-blur-xl sticky top-0 z-50 shrink-0 transition-transform duration-300 ease-in-out",
+        isHeaderVisible ? "translate-y-0" : "-translate-y-full",
+      )}>
         <div className="px-2 sm:px-4 py-2 sm:py-3">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2 sm:gap-4">

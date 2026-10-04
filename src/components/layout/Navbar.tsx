@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Menu, X, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useHideOnScroll } from "@/hooks/use-hide-on-scroll";
 
 const navLinks = [
   { href: "/", label: "Home" },
@@ -14,9 +15,13 @@ const navLinks = [
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const isVisible = useHideOnScroll();
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border">
+    <nav className={cn(
+      "fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border transition-transform duration-300 ease-in-out",
+      isVisible ? "translate-y-0" : "-translate-y-full",
+    )}>
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-20">
           {/* Logo */}

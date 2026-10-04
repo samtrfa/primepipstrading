@@ -1,8 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getTradingQuotes } from "../_shared/trading-prices.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const spreadPercent = 0.0005;
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -178,26 +178,25 @@ Deno.serve(async (req) => {
       profitByAccountAndDay.set(position.account_id, dailyProfit);
     }
     const symbols = [...new Set(openPositions.map((position) => position.assets.symbol))];
-    const cryptoSymbols = symbols.filter((symbol) => !["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD", "USDCHF", "NZDUSD", "EURJPY", "GBPJPY", "XAUUSD", "XAGUSD", "USOIL", "US30", "US100", "US500"].includes(symbol));
-    const forexSymbols = symbols.filter((symbol) => !cryptoSymbols.includes(symbol));
-    const [lastPrices, forexPrices] = await Promise.all([
-      getCryptoPrices(cryptoSymbols),
-      getForexPrices(forexSymbols),
-    ]);
+    const quotes = await getTradingQuotes(supabaseUrl, serviceRoleKey, symbols);
     const results: Array<{ positionId: string; action: "sl_hit" | "tp_hit"; closed: boolean }> = [];
     const sltpTriggers: Array<{ position: ServerPosition; exitPrice: number; action: "sl_hit" | "tp_hit" }> = [];
     const livePLByAccount = new Map<string, number>();
     const livePrices = new Map<string, number>();
+    const incompleteAccounts = new Set<string>();
 
     for (const position of openPositions) {
-      const forexPrice = forexPrices[position.assets.symbol];
-      const lastPrice = lastPrices[position.assets.symbol];
-      if (!lastPrice && !forexPrice) continue;
+      const quote = quotes[position.assets.symbol];
+      if (!quote) {
+        incompleteAccounts.add(position.account_id);
+        console.error("Skipping SL/TP and risk evaluation without a fresh quote", {
+          positionId: position.id,
+          symbol: position.assets.symbol,
+        });
+        continue;
+      }
 
-      const halfSpread = lastPrice ? lastPrice * (spreadPercent / 2) : 0;
-      const bid = forexPrice?.bid ?? lastPrice! - halfSpread;
-      const ask = forexPrice?.ask ?? lastPrice! + halfSpread;
-      const marketPrice = position.position_type === "buy" ? bid : ask;
+      const marketPrice = position.position_type === "buy" ? quote.bid : quote.ask;
       livePrices.set(position.id, marketPrice);
       const contractSize = getContractSize(position.assets.symbol);
       const floatingPL = (position.position_type === "buy" ? marketPrice - position.entry_price : position.entry_price - marketPrice) * contractSize * position.lot_size;
@@ -216,6 +215,13 @@ Deno.serve(async (req) => {
 
     const drawdownAccounts: string[] = [];
     for (const account of accountMap.values()) {
+      if (incompleteAccounts.has(account.id)) {
+        console.error("Skipping account risk evaluation because one or more position quotes are unavailable", {
+          accountId: account.id,
+        });
+        continue;
+      }
+
       const livePL = livePLByAccount.get(account.id) ?? 0;
       const balance = account.current_balance ?? account.account_size;
       const equity = balance + livePL;

@@ -956,6 +956,19 @@ export default function Admin({ section }: { section?: AdminSection }) {
             requestId: crypto.randomUUID(),
           },
         });
+        if (closeError instanceof FunctionsHttpError) {
+          const responseText = await closeError.context.text();
+          try {
+            const responseBody = JSON.parse(responseText) as { error?: string };
+            return {
+              error: `${asset?.symbol || position.id}: ${responseBody.error || closeError.message}`,
+            };
+          } catch {
+            return {
+              error: `${asset?.symbol || position.id}: ${responseText || closeError.message}`,
+            };
+          }
+        }
         return closeError
           ? { error: `${asset?.symbol || position.id}: ${closeError.message}` }
           : { error: null };

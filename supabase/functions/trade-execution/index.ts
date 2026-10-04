@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getTradingQuotes } from "../_shared/trading-prices.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -118,7 +119,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
       const { data: position } = await admin
         .from("positions")
-        .select("id, account_id, position_type, assets(symbol)")
+        .select("id, account_id, position_type, stop_loss, take_profit, assets(symbol)")
         .eq("id", body.positionId)
         .eq("account_id", body.accountId)
         .maybeSingle();
@@ -126,18 +127,41 @@ Deno.serve(async (req) => {
         return json({ error: "Position is not available" }, 403);
       }
 
-      const quote = await getQuote(position.assets.symbol);
+      const quote = (await getTradingQuotes(
+        supabaseUrl,
+        serviceRoleKey,
+        [position.assets.symbol],
+      ))[position.assets.symbol];
       if (!quote) return json({ error: "Market price unavailable" }, 503);
       const exitPrice = position.position_type === "buy" ? quote.bid : quote.ask;
+      const requestedAction = body.triggerAction ?? "close";
+      let action = requestedAction;
+      if (requestedAction === "sl_hit" || requestedAction === "tp_hit") {
+        const stopTriggered = position.stop_loss !== null && (
+          position.position_type === "buy"
+            ? exitPrice <= position.stop_loss
+            : exitPrice >= position.stop_loss
+        );
+        const targetTriggered = position.take_profit !== null && (
+          position.position_type === "buy"
+            ? exitPrice >= position.take_profit
+            : exitPrice <= position.take_profit
+        );
+        if (!stopTriggered && !targetTriggered) {
+          return json({ error: "SL/TP trigger is no longer valid at the current market price" }, 409);
+        }
+        action = stopTriggered ? "sl_hit" : "tp_hit";
+      }
+
       const { data, error } = await admin.rpc("close_trade", {
         p_account_id: body.accountId,
         p_position_id: body.positionId,
         p_exit_price: exitPrice,
-        p_action: body.triggerAction ?? "close",
+        p_action: action,
         p_request_id: requestId,
       });
       if (error) return json({ error: error.message }, 400);
-      return json({ ...data, exitPrice });
+      return json({ ...data, exitPrice, action });
     }
 
     return json({ error: "Unsupported action" }, 400);
