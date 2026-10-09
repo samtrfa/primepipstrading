@@ -78,7 +78,7 @@ export function isInstantAccount(challengeType: string): boolean {
 }
 
 export function hasConsistencyRule(challengeType: string): boolean {
-  return challengeType === "one_step" || challengeType === "instant";
+  return ["three_step", "two_step", "one_step", "instant"].includes(challengeType);
 }
 
 export function getChallengeDisplayRules(challengeType: string): ChallengeDisplayRules {

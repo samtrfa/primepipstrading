@@ -52,17 +52,14 @@ const statusConfig: Record<string, { label: string; className: string; icon: typ
 };
 
 const MIN_PAYOUT_PROFIT = 100;
-const MIN_COMMISSION_PAYOUT = 50;
 
 export default function PayoutsPage() {
   const navigate = useNavigate();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalProfit, setTotalProfit] = useState(0);
-  const [commissionAvailable, setCommissionAvailable] = useState(0);
   const [requests, setRequests] = useState<PayoutRequest[]>([]);
   const [requestOpen, setRequestOpen] = useState(false);
-  const [payoutSource, setPayoutSource] = useState("trading_profit");
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState("bank_transfer");
@@ -96,7 +93,20 @@ export default function PayoutsPage() {
       if (error) {
         console.error("Error fetching accounts:", error);
       } else if (data) {
-        setAccounts(data);
+        const accountsWithConsistency = await Promise.all(data.map(async (account) => {
+          const { data: consistencyScore, error: consistencyError } = await supabase.rpc("account_consistency_score", {
+            p_account_id: account.id,
+          });
+          if (consistencyError) {
+            console.error(`Error fetching consistency score for account ${account.id}:`, consistencyError);
+            return { ...account, consistency_score: null };
+          }
+          return { ...account, consistency_score: consistencyScore };
+        }));
+        if (accountsWithConsistency.some((account) => account.consistency_score === null)) {
+          toast({ title: "Unable to verify payout eligibility", description: "Some consistency scores could not be loaded. Refresh the page before requesting a payout.", variant: "destructive" });
+        }
+        setAccounts(accountsWithConsistency);
         // Calculate total profit from all funded accounts
         const total = data.reduce((sum, a) => sum + (a.funded_profit_loss || 0), 0);
         setTotalProfit(total);
@@ -111,16 +121,6 @@ export default function PayoutsPage() {
         console.error("Error fetching payout requests:", payoutError);
       } else {
         setRequests(payoutData || []);
-      }
-
-      const { data: balanceData, error: balanceError } = await supabase
-        .from("affiliate_balances")
-        .select("available")
-        .maybeSingle();
-      if (balanceError) {
-        console.error("Error fetching affiliate balance:", balanceError);
-      } else {
-        setCommissionAvailable(Number(balanceData?.available || 0));
       }
 
       const { data: paymentMethodData, error: paymentMethodError } = await supabase
@@ -139,12 +139,12 @@ export default function PayoutsPage() {
     };
 
     checkAuthAndFetchData();
-  }, [navigate]);
+  }, [navigate, toast]);
 
   const selectedAccount = accounts.find((account) => account.id === selectedAccountId);
-  const eligibleTradingAccounts = accounts.filter((account) => (account.funded_profit_loss || 0) >= MIN_PAYOUT_PROFIT && (account.consistency_score ?? 0) < 30);
+  const eligibleTradingAccounts = accounts.filter((account) => (account.funded_profit_loss || 0) >= MIN_PAYOUT_PROFIT && account.consistency_score !== null && account.consistency_score < 30);
   const availableTradingProfit = eligibleTradingAccounts.reduce((sum, account) => sum + Math.max(0, account.funded_profit_loss || 0), 0);
-  const availableForWithdrawal = availableTradingProfit + commissionAvailable;
+  const availableForWithdrawal = availableTradingProfit;
   const requestAmount = Number(amount);
 
   const openRequestDialog = () => {
@@ -152,7 +152,6 @@ export default function PayoutsPage() {
     const accountProfit = Math.max(0, firstEligibleAccount?.funded_profit_loss || 0);
     setSelectedAccountId(firstEligibleAccount?.id || "");
     setAmount(accountProfit >= MIN_PAYOUT_PROFIT ? String(Math.floor(accountProfit)) : "");
-    setPayoutSource("trading_profit");
     setDestination("");
     setSelectedPaymentMethodId(paymentMethods[0]?.id || "");
     setRequestOpen(true);
@@ -197,22 +196,20 @@ export default function PayoutsPage() {
   };
 
   const submitRequest = async () => {
-    const isCommissionPayout = payoutSource === "referral_commission";
     const payoutDestination = method === "crypto"
       ? paymentMethods.find((paymentMethod) => paymentMethod.id === selectedPaymentMethodId)?.wallet_address || ""
       : destination.trim();
-    const sourceBalance = isCommissionPayout ? commissionAvailable : Math.max(0, selectedAccount?.funded_profit_loss || 0);
-    if (!isCommissionPayout && (selectedAccount?.consistency_score ?? 0) >= 30) {
-      toast({ title: "Consistency rule not met", description: "Keep trading until your best trading day is below 30% of total funded-stage profit.", variant: "destructive" });
+    const sourceBalance = Math.max(0, selectedAccount?.funded_profit_loss || 0);
+    if (!selectedAccount || selectedAccount.consistency_score === null || selectedAccount.consistency_score >= 30) {
+      toast({ title: "Consistency rule not met", description: "Your best trading day must be below 30% of total funded-stage profit. Refresh if your score is unavailable.", variant: "destructive" });
       return;
     }
-    if (!isCommissionPayout && kycStatus !== "approved") {
+    if (kycStatus !== "approved") {
       toast({ title: "KYC approval required", description: "Complete identity verification before requesting a funded-account payout.", variant: "destructive" });
       return;
     }
-    const minimumAmount = isCommissionPayout ? MIN_COMMISSION_PAYOUT : MIN_PAYOUT_PROFIT;
-    if ((!isCommissionPayout && !selectedAccount) || requestAmount < minimumAmount || requestAmount > sourceBalance || !payoutDestination || (isCommissionPayout && method !== "crypto")) {
-      toast({ title: "Check your request", description: isCommissionPayout ? `Enter at least $${MIN_COMMISSION_PAYOUT} within your available commission balance and select a crypto wallet.` : `Choose a funded account with at least $${MIN_PAYOUT_PROFIT} in profit, enter an amount within its available profit, and provide payout details.`, variant: "destructive" });
+    if (requestAmount < MIN_PAYOUT_PROFIT || requestAmount > sourceBalance || !payoutDestination) {
+      toast({ title: "Check your request", description: `Choose a funded account with at least $${MIN_PAYOUT_PROFIT} in profit, enter an amount within its available profit, and provide payout details.`, variant: "destructive" });
       return;
     }
 
@@ -224,13 +221,11 @@ export default function PayoutsPage() {
       return;
     }
 
-    const result = isCommissionPayout
-      ? await supabase.rpc("create_commission_payout", { payout_amount: requestAmount, payout_destination: payoutDestination })
-      : await supabase
-        .from("payout_requests")
-        .insert({ user_id: user.id, account_id: selectedAccount.id, amount: requestAmount, method, destination: payoutDestination, source: "trading_profit" })
-        .select("id, account_id, amount, method, destination, source, status, rejection_reason, created_at")
-        .single();
+    const result = await supabase
+      .from("payout_requests")
+      .insert({ user_id: user.id, account_id: selectedAccount.id, amount: requestAmount, method, destination: payoutDestination, source: "trading_profit" })
+      .select("id, account_id, amount, method, destination, source, status, rejection_reason, created_at")
+      .single();
     const { data, error } = result;
 
     setSubmitting(false);
@@ -238,9 +233,7 @@ export default function PayoutsPage() {
       toast({ title: "Payout request failed", description: error.message, variant: "destructive" });
       return;
     }
-
     setRequests((current) => [data as PayoutRequest, ...current]);
-    if (isCommissionPayout) setCommissionAvailable((current) => current - requestAmount);
     setRequestOpen(false);
     toast({ title: "Payout request submitted", description: "Your request is now pending review." });
   };
@@ -287,7 +280,7 @@ export default function PayoutsPage() {
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">Available for Withdrawal</p>
                   <p className="text-3xl font-bold text-primary">${availableForWithdrawal.toLocaleString()}</p>
-                  <p className="text-xs text-muted-foreground mt-1">Profit available from funded accounts</p>
+                  <p className="text-xs text-muted-foreground mt-1">Eligible funded-account profit</p>
                 </div>
                 <Calendar className="w-10 h-10 text-primary opacity-50" />
               </div>
@@ -300,23 +293,23 @@ export default function PayoutsPage() {
           <CardHeader className="pb-3">
             <CardTitle className="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between">
               <span>Request a Payout</span>
-              <Button variant="gold" size="sm" onClick={openRequestDialog} disabled={availableForWithdrawal < MIN_COMMISSION_PAYOUT}>
+              <Button variant="gold" size="sm" onClick={openRequestDialog} disabled={loading || eligibleTradingAccounts.length === 0 || kycStatus !== "approved"}>
                 <ArrowDownRight className="w-4 h-4 mr-2" />
                 Request payout
               </Button>
             </CardTitle>
           </CardHeader>
           <CardContent className="text-sm text-muted-foreground">
-            Request a withdrawal from funded-account profit or accumulated referral commissions. Requests are reviewed within 2-5 business days.
+            Request a withdrawal from funded-account trading profit. Referral commission withdrawals are managed on the Affiliate page. Requests are reviewed within 2-5 business days.
             {accounts.length > 0 && kycStatus !== "approved" && <p className="mt-2 text-warning">Funded-account payouts require approved identity verification. <button type="button" className="font-medium text-primary underline" onClick={() => navigate("/dashboard/kyc")}>{kycStatus === "rejected" ? "Resubmit KYC" : "Complete KYC"}</button></p>}
-            {availableForWithdrawal < MIN_COMMISSION_PAYOUT && <p className="mt-2 text-warning">You need at least ${MIN_COMMISSION_PAYOUT} in available commission or profit from a funded account.</p>}
+            {accounts.length > 0 && eligibleTradingAccounts.length === 0 && <p className="mt-2 text-warning">To request a payout, a funded account must have at least ${MIN_PAYOUT_PROFIT} in profit and a consistency score below 30% (your best trading day must be less than 30% of total funded-stage profit).</p>}
           </CardContent>
         </Card>
 
         <Card variant="elevated">
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><Wallet className="h-5 w-5 text-primary" />Payout details</CardTitle>
-            <p className="text-sm text-muted-foreground">Add the crypto wallet where your trading earnings and accumulated commissions should be sent before requesting a payout.</p>
+            <p className="text-sm text-muted-foreground">Add the bank or crypto details where your funded-account trading profit should be sent before requesting a payout.</p>
           </CardHeader>
           <CardContent className="space-y-5">
             <form onSubmit={addWallet} className="grid gap-4 sm:grid-cols-[1fr_1fr_1.5fr_auto] sm:items-end">
@@ -360,6 +353,9 @@ export default function PayoutsPage() {
                       </p>
                       <p className="text-sm text-muted-foreground">
                         Balance: ${(account.current_balance || account.account_size).toLocaleString()}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Consistency score: {account.consistency_score === null ? "Unable to verify" : `${account.consistency_score.toFixed(2)}%`} · Must be below 30%
                       </p>
                     </div>
                     <div className="text-right">
@@ -411,9 +407,8 @@ export default function PayoutsPage() {
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li>• Payouts are processed within 2-5 business days</li>
               <li>• Minimum trading-profit payout: $100</li>
-              <li>• Minimum commission payout: $50</li>
               <li>• No fees on withdrawals</li>
-              <li>• Only available when your account is in "Funded" status</li>
+              <li>• Funded-account payouts require at least $100 in funded-stage profit, approved KYC, and a consistency score below 30%</li>
             </ul>
           </CardContent>
         </Card>
@@ -422,33 +417,24 @@ export default function PayoutsPage() {
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Request a payout</DialogTitle>
-            <DialogDescription>Choose an earnings source and tell us where to send your payout.</DialogDescription>
+            <DialogDescription>Select a funded account and tell us where to send your trading-profit payout.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="payout-source">Earnings source</Label>
-              <Select value={payoutSource} onValueChange={(value) => { setPayoutSource(value); if (value === "referral_commission") setMethod("crypto"); }}>
-                <SelectTrigger id="payout-source"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="trading_profit">Trading profit (${availableTradingProfit.toLocaleString()})</SelectItem>
-                  <SelectItem value="referral_commission">Referral commission (${commissionAvailable.toLocaleString()})</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {payoutSource === "trading_profit" && <div className="space-y-2">
               <Label htmlFor="payout-account">Funded account</Label>
               <Select value={selectedAccountId} onValueChange={setSelectedAccountId}>
                 <SelectTrigger id="payout-account"><SelectValue placeholder="Select an account" /></SelectTrigger>
                 <SelectContent>{eligibleTradingAccounts.map((account) => <SelectItem key={account.id} value={account.id}>${account.account_size.toLocaleString()} · ${(Math.max(0, account.funded_profit_loss || 0)).toLocaleString()} funded profit available</SelectItem>)}</SelectContent>
               </Select>
-            </div>}
+              {eligibleTradingAccounts.length === 0 && <p className="text-xs text-warning">No funded account currently meets the profit and consistency requirements for a payout.</p>}
+            </div>
             <div className="space-y-2">
               <Label htmlFor="payout-amount">Amount (USD)</Label>
-              <Input id="payout-amount" type="number" min={payoutSource === "referral_commission" ? MIN_COMMISSION_PAYOUT : MIN_PAYOUT_PROFIT} max={payoutSource === "referral_commission" ? commissionAvailable : Math.max(0, selectedAccount?.funded_profit_loss || 0)} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={String(payoutSource === "referral_commission" ? MIN_COMMISSION_PAYOUT : MIN_PAYOUT_PROFIT)} />
+              <Input id="payout-amount" type="number" min={MIN_PAYOUT_PROFIT} max={Math.max(0, selectedAccount?.funded_profit_loss || 0)} step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder={String(MIN_PAYOUT_PROFIT)} />
             </div>
             <div className="space-y-2">
               <Label htmlFor="payout-method">Payout method</Label>
-              <Select value={method} onValueChange={setMethod} disabled={payoutSource === "referral_commission"}>
+              <Select value={method} onValueChange={setMethod}>
                 <SelectTrigger id="payout-method"><SelectValue /></SelectTrigger>
                 <SelectContent><SelectItem value="bank_transfer">Bank transfer</SelectItem><SelectItem value="crypto">Cryptocurrency</SelectItem></SelectContent>
               </Select>

@@ -4,7 +4,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Trophy, Target, CheckCircle2, Star, ArrowRight, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getPhases } from "@/lib/challengeRules";
+import { FUNDED_CONSISTENCY_PERCENT, getPhases } from "@/lib/challengeRules";
 
 interface ProfitTargetTrackerProps {
   accountSize: number;
@@ -13,6 +13,7 @@ interface ProfitTargetTrackerProps {
   challengeType: string;
   currentPhase: number | null;
   phasePassed?: boolean;
+  consistencyScore?: number;
   onProceedToNextPhase?: () => void;
   isProceeding?: boolean;
 }
@@ -24,6 +25,7 @@ export function ProfitTargetTracker({
   challengeType,
   currentPhase,
   phasePassed = false,
+  consistencyScore = 0,
   onProceedToNextPhase,
   isProceeding = false,
 }: ProfitTargetTrackerProps) {
@@ -69,6 +71,8 @@ export function ProfitTargetTracker({
   // Calculate progress towards target
   const progressPercent = targetPercent > 0 ? Math.min((profitPercent / targetPercent) * 100, 100) : 0;
   const isTargetMet = profitPercent >= targetPercent;
+  const consistencyMet = consistencyScore < FUNDED_CONSISTENCY_PERCENT;
+  const showPhasePassed = phasePassed && consistencyMet;
   
   // Determine status
   const getStatus = () => {
@@ -98,7 +102,7 @@ export function ProfitTargetTracker({
   };
 
   return (
-    <Card className={cn(isTargetMet && "border-green-500/50 bg-green-500/5")}>
+    <Card className={cn(isTargetMet && consistencyMet && "border-green-500/50 bg-green-500/5")}>
       <CardHeader className="py-2 px-3 border-b">
         <CardTitle className="text-sm flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -115,7 +119,7 @@ export function ProfitTargetTracker({
       </CardHeader>
       <CardContent className="p-3 space-y-3">
         {/* Phase Passed Banner with Proceed Button */}
-        {phasePassed && (
+        {showPhasePassed && (
           <div className="p-3 rounded bg-green-500/10 border border-green-500/30 space-y-3">
             <div className="flex items-center gap-2">
               <Trophy className="w-5 h-5 text-green-500" />
@@ -153,12 +157,23 @@ export function ProfitTargetTracker({
         )}
 
         {/* Target Completion Banner (when target met but not yet marked as passed) */}
-        {isTargetMet && !phasePassed && (
-          <div className="flex items-center gap-2 p-2 rounded bg-green-500/10 border border-green-500/30">
-            <Trophy className="w-5 h-5 text-green-500" />
+        {isTargetMet && !showPhasePassed && (
+          <div className={cn(
+            "flex items-center gap-2 p-2 rounded border",
+            consistencyMet ? "bg-green-500/10 border-green-500/30" : "bg-amber-500/10 border-amber-500/30"
+          )}>
+            {consistencyMet
+              ? <Trophy className="w-5 h-5 text-green-500" />
+              : <Target className="w-5 h-5 text-amber-500" />}
             <div>
-              <p className="text-sm font-semibold text-green-500">Target Achieved!</p>
-              <p className="text-xs text-muted-foreground">Close all positions to complete this phase</p>
+              <p className={cn("text-sm font-semibold", consistencyMet ? "text-green-500" : "text-amber-500")}>
+                Profit target met
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {!consistencyMet
+                  ? `Your consistency score is ${consistencyScore.toFixed(1)}%. It must be below ${FUNDED_CONSISTENCY_PERCENT}% to pass this phase.`
+                  : "Close all positions to complete this phase"}
+              </p>
             </div>
           </div>
         )}

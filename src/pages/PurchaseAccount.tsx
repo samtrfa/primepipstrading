@@ -29,7 +29,7 @@ const ruleExplanations: Record<string, string> = {
   dailyDrawdown: "Maximum loss allowed in a single trading day. If your daily losses exceed this percentage, you breach the account.",
   maxDrawdown: "Maximum total loss allowed from your highest account balance. Trailing means it follows your highest balance reached.",
   profitTarget: "The profit percentage you need to achieve to pass the evaluation phase or qualify for payouts.",
-  consistencyRule: "Funded accounts require the best trading day to stay within 30% of total profit.",
+  consistencyRule: "The best trading day must stay below 30% of total profit to pass each challenge phase and remain eligible for funded payouts.",
   minTradingDays: "Minimum number of days you must actively trade before completing a phase.",
   weekendTrading: "Whether you can hold trades over the weekend or must close positions before market close on Friday.",
   maxTradingDays: "Maximum time allowed to complete the challenge. Unlimited means no time pressure.",

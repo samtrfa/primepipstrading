@@ -1173,6 +1173,7 @@ export default function TradingPlatform() {
                   challengeType={account.challenge_type}
                   currentPhase={account.current_phase}
                   phasePassed={!isBlocked && (account.phase_passed || false) && (!hasConsistencyRule(account.challenge_type) || (account.consistency_score ?? 0) < 30)}
+                  consistencyScore={account.consistency_score ?? 0}
                   onProceedToNextPhase={handleProceedToNextPhase}
                   isProceeding={isProceeding}
                 />

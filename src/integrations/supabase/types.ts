@@ -876,6 +876,12 @@ export type Database = {
         }
         Returns: Json
       }
+      account_consistency_score: {
+        Args: {
+          p_account_id: string
+        }
+        Returns: number
+      }
       create_commission_payout: {
         Args: {
           payout_amount: number
