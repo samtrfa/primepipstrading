@@ -256,11 +256,11 @@ Deno.serve(async (req) => {
           : body.profitLoss,
       };
       const account = await supabaseRest<Array<Record<string, unknown>>>("accounts", "PATCH", serviceRoleKey, updatePayload,
-        `id=eq.${encodeURIComponent(body.accountId)}&select=id,user_id,account_size,challenge_type,status,current_balance,profit_loss,current_phase,updated_at,created_at`);
+        `id=eq.${encodeURIComponent(body.accountId)}&select=id,user_id,account_size,challenge_type,status,current_balance,profit_loss,current_phase,archived_at,archive_expires_at,updated_at,created_at`);
       const updated = Array.isArray(account) && account[0]
         ? account[0]
         : (await supabaseRest<Array<Record<string, unknown>>>("accounts", "GET", serviceRoleKey, undefined,
-          `id=eq.${encodeURIComponent(body.accountId)}&select=id,user_id,account_size,challenge_type,status,current_balance,profit_loss,current_phase,updated_at,created_at`))?.[0];
+          `id=eq.${encodeURIComponent(body.accountId)}&select=id,user_id,account_size,challenge_type,status,current_balance,profit_loss,current_phase,archived_at,archive_expires_at,updated_at,created_at`))?.[0];
       if (!updated) return json({ error: "Could not update account" }, 500);
       return json({ account: updated });
     }

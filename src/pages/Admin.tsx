@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Activity,
@@ -35,6 +35,7 @@ import { useTradingViewPrices } from "@/hooks/useTradingViewPrices";
 import { calculatePositionPL } from "@/lib/tradingCalculations";
 import { countAffiliateCodeUses } from "@/lib/affiliateCodeUsage";
 import { formatCouponUsage } from "@/lib/purchasedAccountDisplay.js";
+import { getAccountVisitChanges } from "@/lib/accountVisitChanges.js";
 import { getPhaseRules } from "@/lib/challengeRules";
 import { cn } from "@/lib/utils";
 import {
@@ -311,6 +312,12 @@ const isPurchasedAccount = (account: Account) =>
 export default function Admin({ section }: { section?: AdminSection }) {
   const navigate = useNavigate();
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [accountVisitChanges, setAccountVisitChanges] = useState<{
+    added: number;
+    removed: number;
+  } | null>(null);
+  const [accountVisitTrackingError, setAccountVisitTrackingError] = useState("");
+  const accountVisitInitialized = useRef(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showAllPayments, setShowAllPayments] = useState(false);
@@ -329,6 +336,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [savingAccount, setSavingAccount] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState<string | null>(null);
+  const [deletingAllArchived, setDeletingAllArchived] = useState(false);
   const [resettingAccount, setResettingAccount] = useState<string | null>(null);
   const [deletingUser, setDeletingUser] = useState(false);
   const [deleteUserId, setDeleteUserId] = useState("");
@@ -402,6 +410,48 @@ export default function Admin({ section }: { section?: AdminSection }) {
       setError("The admin snapshot could not be loaded.");
     } else {
       const snapshotData = normalizeSnapshot(data as Partial<Snapshot>);
+      if (!section && !accountVisitInitialized.current) {
+        accountVisitInitialized.current = true;
+        const activeAccountIds = snapshotData.accounts
+          .filter((account) => ["active", "funded"].includes(account.status))
+          .map((account) => account.id);
+        const storageKey = `primepipstrading:admin-active-accounts:${session.user.id}`;
+        let previousAccountIds: string[] | null = null;
+
+        try {
+          const storedIds = localStorage.getItem(storageKey);
+          if (storedIds !== null) {
+            const parsedIds: unknown = JSON.parse(storedIds);
+            if (
+              Array.isArray(parsedIds) &&
+              parsedIds.every((id) => typeof id === "string")
+            ) {
+              previousAccountIds = parsedIds;
+            } else {
+              setAccountVisitTrackingError(
+                "Saved account history was invalid; tracking restarted.",
+              );
+            }
+          }
+        } catch {
+          setAccountVisitTrackingError(
+            "Saved account history could not be read; tracking restarted.",
+          );
+        }
+
+        if (previousAccountIds !== null) {
+          setAccountVisitChanges(
+            getAccountVisitChanges(previousAccountIds, activeAccountIds),
+          );
+        }
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(activeAccountIds));
+        } catch {
+          setAccountVisitTrackingError(
+            "Account changes could not be saved for your next visit.",
+          );
+        }
+      }
       setSnapshot({
         ...snapshotData,
         coupons: couponError ? snapshotData.coupons : (couponData as Coupon[]),
@@ -409,7 +459,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
       if (couponError) setError("Purchase coupons could not be loaded.");
     }
     setLoading(false);
-  }, [navigate]);
+  }, [navigate, section]);
 
   useEffect(() => {
     void loadSnapshot();
@@ -683,6 +733,47 @@ export default function Admin({ section }: { section?: AdminSection }) {
       if (editingAccount?.id === account.id) setEditingAccount(null);
     }
     setDeletingAccount(null);
+  };
+
+  const deleteAllArchivedAccounts = async () => {
+    const archivedCount = archivedAccounts.length;
+    if (!archivedCount) return;
+    if (!window.confirm(`Permanently delete all ${archivedCount} archived accounts? This cannot be undone.`)) return;
+
+    setDeletingAllArchived(true);
+    setError("");
+    const deletedAccountIds = new Set<string>();
+    const failures: string[] = [];
+    for (const account of archivedAccounts) {
+      const { data, error: deleteError } = await supabase.functions.invoke(
+        "admin-account",
+        {
+          body: {
+            action: "delete-archived",
+            accountId: account.id,
+            userId: account.user_id,
+          },
+        },
+      );
+      if (deleteError || !data?.deleted) {
+        failures.push(
+          `${account.id.slice(0, 8)}: ${data?.error || deleteError?.message || "Delete failed"}`,
+        );
+      } else {
+        deletedAccountIds.add(account.id);
+      }
+    }
+    setSnapshot((current) => current ? {
+      ...current,
+      accounts: current.accounts.filter((account) => !deletedAccountIds.has(account.id)),
+    } : current);
+    if (editingAccount && deletedAccountIds.has(editingAccount.id)) setEditingAccount(null);
+    if (failures.length) {
+      setError(
+        `${deletedAccountIds.size} archived account${deletedAccountIds.size === 1 ? "" : "s"} deleted; ${failures.length} could not be deleted: ${failures.join("; ")}`,
+      );
+    }
+    setDeletingAllArchived(false);
   };
 
   const deleteTrader = async () => {
@@ -1135,7 +1226,11 @@ export default function Admin({ section }: { section?: AdminSection }) {
     {
       label: "Active accounts",
       value: activeAccounts.length,
-      detail: `${purchasedAccounts.length} purchased accounts`,
+      detail: accountVisitTrackingError
+        ? `${purchasedAccounts.length} purchased accounts · ${accountVisitTrackingError}`
+        : accountVisitChanges
+          ? `${purchasedAccounts.length} purchased accounts · ${accountVisitChanges.added} added · ${accountVisitChanges.removed} removed since last visit`
+          : `${purchasedAccounts.length} purchased accounts · tracking starts from this visit`,
       icon: WalletCards,
     },
     {
@@ -1251,8 +1346,8 @@ export default function Admin({ section }: { section?: AdminSection }) {
                         </Badge>
                       </CardTitle>
                       <p className="text-sm text-muted-foreground">
-                        Reset a failed account for the trader to start over, or
-                        remove it from their account list.
+                        Failed accounts are archived automatically. Restore an
+                        archived account before resetting it for the trader.
                       </p>
                     </CardHeader>
                     <CardContent className="space-y-3">
@@ -1300,21 +1395,6 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                   </>
                                 )}
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() => void deleteAccount(account)}
-                                disabled={isBusy}
-                              >
-                                {deletingAccount === account.id ? (
-                                  "Deleting..."
-                                ) : (
-                                  <>
-                                    <Trash2 className="mr-2 h-3.5 w-3.5" />
-                                    Archive account
-                                  </>
-                                )}
-                              </Button>
                             </div>
                           </div>
                         );
@@ -1334,10 +1414,21 @@ export default function Admin({ section }: { section?: AdminSection }) {
                       <Badge variant="outline">{archivedAccounts.length}</Badge>
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
-                      Archived accounts are hidden from traders and permanently removed after 30 days.
+                      Failed accounts are archived automatically and permanently deleted 3 days after failure. Other archived accounts are permanently deleted after 30 days.
                     </p>
                   </CardHeader>
                   <CardContent className="space-y-3">
+                    <div className="flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => void deleteAllArchivedAccounts()}
+                        disabled={deletingAllArchived || deletingAccount !== null}
+                      >
+                        <Trash2 className="mr-2 h-3.5 w-3.5" />
+                        {deletingAllArchived ? "Deleting..." : "Delete all"}
+                      </Button>
+                    </div>
                     {archivedAccounts.map((account) => {
                       const user = userMap.get(account.user_id);
                       return (
@@ -1353,11 +1444,21 @@ export default function Admin({ section }: { section?: AdminSection }) {
                             </p>
                           </div>
                           <div className="flex flex-wrap gap-2">
-                            <Button size="sm" variant="outline" onClick={() => void restoreAccount(account)} disabled={deletingAccount === account.id}>
+                            {account.status === "failed" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void resetAccount(account)}
+                                disabled={deletingAllArchived || deletingAccount === account.id || resettingAccount === account.id}
+                              >
+                                {resettingAccount === account.id ? "Resetting..." : "Reset account"}
+                              </Button>
+                            )}
+                            <Button size="sm" variant="outline" onClick={() => void restoreAccount(account)} disabled={deletingAllArchived || deletingAccount === account.id}>
                               <RefreshCw className="mr-2 h-3.5 w-3.5" />
                               {deletingAccount === account.id ? "Restoring..." : "Restore account"}
                             </Button>
-                            <Button size="sm" variant="destructive" onClick={() => void deleteArchivedAccount(account)} disabled={deletingAccount === account.id}>
+                            <Button size="sm" variant="destructive" onClick={() => void deleteArchivedAccount(account)} disabled={deletingAllArchived || deletingAccount === account.id}>
                               <Trash2 className="mr-2 h-3.5 w-3.5" />
                               {deletingAccount === account.id ? "Deleting..." : "Delete permanently"}
                             </Button>
