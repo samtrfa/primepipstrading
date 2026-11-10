@@ -33,6 +33,8 @@ interface Account {
   profit_loss: number | null;
   current_phase: number | null;
   drawdown_violated: boolean | null;
+  archived_at: string | null;
+  archive_expires_at: string | null;
   created_at: string;
 }
 
@@ -85,14 +87,16 @@ export default function Dashboard() {
       const { data, error } = await supabase
         .from("accounts")
         .select("*")
-        .is("archived_at", null)
         .order("created_at", { ascending: false });
 
       if (error) {
         console.error("Error fetching accounts:", error);
       } else {
         let accountsData = (data || []).filter(
-          (account) => account.status !== "failed" || account.drawdown_violated === true,
+          (account) =>
+            account.status !== "failed" ||
+            account.drawdown_violated === true ||
+            Boolean(account.archived_at),
         );
 
         const pendingAccountIds = accountsData
@@ -132,14 +136,16 @@ export default function Dashboard() {
               const { data: refreshedAccounts, error: refreshedAccountsError } = await supabase
                 .from("accounts")
                 .select("*")
-                .is("archived_at", null)
                 .order("created_at", { ascending: false });
 
               if (refreshedAccountsError) {
                 console.error("Error refreshing accounts after payment verification:", refreshedAccountsError);
               } else {
                 accountsData = (refreshedAccounts || []).filter(
-                  (account) => account.status !== "failed" || account.drawdown_violated === true,
+                  (account) =>
+                    account.status !== "failed" ||
+                    account.drawdown_violated === true ||
+                    Boolean(account.archived_at),
                 );
               }
             }
@@ -396,6 +402,12 @@ export default function Dashboard() {
                         {account.profit_loss !== null && (
                           <span className="ml-2">
                             • Final Balance: ${(account.current_balance || account.account_size).toLocaleString()}
+                          </span>
+                        )}
+                        {account.archived_at && account.archive_expires_at && (
+                          <span className="block mt-1">
+                            Archived after failure. This account will be permanently deleted on{" "}
+                            {new Date(account.archive_expires_at).toLocaleString()}.
                           </span>
                         )}
                       </div>

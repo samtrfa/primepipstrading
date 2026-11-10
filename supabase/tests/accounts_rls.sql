@@ -1,12 +1,13 @@
 BEGIN;
 
-SELECT plan(8);
+SELECT plan(9);
 
 CREATE TEMP TABLE account_rls_test_ids (
   owner_id UUID NOT NULL,
   other_user_id UUID NOT NULL,
   account_id UUID NOT NULL,
-  archived_account_id UUID NOT NULL
+  archived_account_id UUID NOT NULL,
+  failed_account_id UUID NOT NULL
 );
 
 INSERT INTO account_rls_test_ids
@@ -14,7 +15,8 @@ VALUES (
   '00000000-0000-0000-0000-000000000001',
   '00000000-0000-0000-0000-000000000002',
   '00000000-0000-0000-0000-000000000003',
-  '00000000-0000-0000-0000-000000000004'
+  '00000000-0000-0000-0000-000000000004',
+  '00000000-0000-0000-0000-000000000005'
 );
 
 INSERT INTO public.accounts (
@@ -24,6 +26,9 @@ SELECT account_id, owner_id, 'two_step', 10000, 99.00, 'active', 10000
 FROM account_rls_test_ids
 UNION ALL
 SELECT archived_account_id, owner_id, 'two_step', 10000, 99.00, 'active', 10000
+FROM account_rls_test_ids
+UNION ALL
+SELECT failed_account_id, owner_id, 'two_step', 10000, 99.00, 'failed', 0
 FROM account_rls_test_ids;
 
 UPDATE public.accounts
@@ -73,8 +78,8 @@ SELECT set_config(
 
 SELECT is(
   (SELECT count(*)::integer FROM public.accounts),
-  1,
-  'a user can read their own active account'
+  2,
+  'a user can read their own active and failed accounts'
 );
 
 SELECT is(
@@ -82,7 +87,15 @@ SELECT is(
    FROM public.accounts
    WHERE id = (SELECT archived_account_id FROM account_rls_test_ids)),
   0,
-  'archived accounts remain hidden from their owner'
+  'archived active accounts remain hidden from their owner'
+);
+
+SELECT is(
+  (SELECT count(*)::integer
+   FROM public.accounts
+   WHERE id = (SELECT failed_account_id FROM account_rls_test_ids)),
+  1,
+  'a user can read their archived failed account before it expires'
 );
 
 SELECT throws_ok(
