@@ -35,6 +35,7 @@ interface Account {
   drawdown_violated: boolean | null;
   archived_at: string | null;
   archive_expires_at: string | null;
+  bonus_of_account_id: string | null;
   created_at: string;
 }
 
@@ -197,6 +198,7 @@ export default function Dashboard() {
   }, [navigate, searchParams]);
 
   const activeAccounts = accounts.filter(a => a.status === "active" || a.status === "funded");
+  const accountsById = new Map(accounts.map((account) => [account.id, account]));
   const pendingAccounts = accounts.filter(a => a.status === "pending_payment");
   const failedAccounts = accounts.filter(a => a.status === "failed");
 
@@ -252,6 +254,9 @@ export default function Dashboard() {
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-5">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 mb-2">
+                        {account.bonus_of_account_id && (
+                          <Badge className="bg-primary/20 text-primary">BOGO bonus</Badge>
+                        )}
                         <Badge className="bg-primary/20 text-primary">
                           {account.status === "funded" || isInstantAccount(account.challenge_type)
                             ? "Funded"
@@ -264,6 +269,12 @@ export default function Dashboard() {
                       <h2 className="text-2xl sm:text-3xl font-bold text-foreground break-words">
                         ${account.account_size.toLocaleString()} {challengeLabels[account.challenge_type]}
                       </h2>
+                      {account.bonus_of_account_id && (
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Granted with your ${accountsById.get(account.bonus_of_account_id)?.account_size.toLocaleString() ?? ""}{" "}
+                          {challengeLabels[accountsById.get(account.bonus_of_account_id)?.challenge_type ?? ""] ?? "purchased account"}
+                        </p>
+                      )}
                     </div>
                     <div className="flex min-w-0 w-full flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center md:w-auto md:justify-end">
                       <div className="sm:text-right">

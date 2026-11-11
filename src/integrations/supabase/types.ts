@@ -265,6 +265,9 @@ export type Database = {
           account_size: number
           challenge_type: Database["public"]["Enums"]["challenge_type"]
           best_trading_day_profit: number | null
+          bogo_bonus_account_size: number | null
+          bogo_bonus_challenge_type: Database["public"]["Enums"]["challenge_type"] | null
+          bonus_of_account_id: string | null
           closed_profit_total: number | null
           consistency_score: number | null
           coupon_code: string | null
@@ -278,6 +281,8 @@ export type Database = {
           daily_start_date: string | null
           discount_percent: number
           drawdown_violated: boolean | null
+          archived_at: string | null
+          archive_expires_at: string | null
           high_water_mark: number | null
           id: string
           max_drawdown_percent: number | null
@@ -300,6 +305,9 @@ export type Database = {
           account_size: number
           challenge_type: Database["public"]["Enums"]["challenge_type"]
           best_trading_day_profit?: number | null
+          bogo_bonus_account_size?: number | null
+          bogo_bonus_challenge_type?: Database["public"]["Enums"]["challenge_type"] | null
+          bonus_of_account_id?: string | null
           closed_profit_total?: number | null
           consistency_score?: number | null
           coupon_code?: string | null
@@ -313,6 +321,8 @@ export type Database = {
           daily_start_date?: string | null
           discount_percent?: number
           drawdown_violated?: boolean | null
+          archived_at?: string | null
+          archive_expires_at?: string | null
           high_water_mark?: number | null
           id?: string
           max_drawdown_percent?: number | null
@@ -335,6 +345,9 @@ export type Database = {
           account_size?: number
           challenge_type?: Database["public"]["Enums"]["challenge_type"]
           best_trading_day_profit?: number | null
+          bogo_bonus_account_size?: number | null
+          bogo_bonus_challenge_type?: Database["public"]["Enums"]["challenge_type"] | null
+          bonus_of_account_id?: string | null
           closed_profit_total?: number | null
           consistency_score?: number | null
           coupon_code?: string | null
@@ -348,6 +361,8 @@ export type Database = {
           daily_start_date?: string | null
           discount_percent?: number
           drawdown_violated?: boolean | null
+          archived_at?: string | null
+          archive_expires_at?: string | null
           high_water_mark?: number | null
           id?: string
           max_drawdown_percent?: number | null
@@ -458,12 +473,17 @@ export type Database = {
             | Database["public"]["Enums"]["challenge_type"][]
             | null
           code: string
+          coupon_type: "discount" | "bogo"
           created_at: string
           discount_percent: number
           expires_at: string | null
           id: string
           is_active: boolean
           max_uses: number | null
+          pay_percent: number | null
+          bonus_account_size: number | null
+          bonus_challenge_type: Database["public"]["Enums"]["challenge_type"] | null
+          bonus_size_mode: "same_as_primary" | "fixed" | null
           times_used: number
           updated_at: string
         }
@@ -472,12 +492,17 @@ export type Database = {
             | Database["public"]["Enums"]["challenge_type"][]
             | null
           code: string
+          coupon_type?: "discount" | "bogo"
           created_at?: string
           discount_percent: number
           expires_at?: string | null
           id?: string
           is_active?: boolean
           max_uses?: number | null
+          pay_percent?: number | null
+          bonus_account_size?: number | null
+          bonus_challenge_type?: Database["public"]["Enums"]["challenge_type"] | null
+          bonus_size_mode?: "same_as_primary" | "fixed" | null
           times_used?: number
           updated_at?: string
         }
@@ -486,12 +511,17 @@ export type Database = {
             | Database["public"]["Enums"]["challenge_type"][]
             | null
           code?: string
+          coupon_type?: "discount" | "bogo"
           created_at?: string
           discount_percent?: number
           expires_at?: string | null
           id?: string
           is_active?: boolean
           max_uses?: number | null
+          pay_percent?: number | null
+          bonus_account_size?: number | null
+          bonus_challenge_type?: Database["public"]["Enums"]["challenge_type"] | null
+          bonus_size_mode?: "same_as_primary" | "fixed" | null
           times_used?: number
           updated_at?: string
         }

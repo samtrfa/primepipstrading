@@ -88,6 +88,9 @@ type Account = {
   archived_at: string | null;
   archive_expires_at: string | null;
   coupon_code: string | null;
+  bogo_bonus_account_size: number | null;
+  bogo_bonus_challenge_type: GrantChallenge | null;
+  bonus_of_account_id: string | null;
   price: number | null;
   payment_currency: string | null;
   payment_amount_local: number | null;
@@ -261,6 +264,11 @@ type Coupon = {
   code: string;
   discount_percent: number;
   challenge_types: GrantChallenge[] | null;
+  coupon_type: "discount" | "bogo";
+  pay_percent: number | null;
+  bonus_challenge_type: GrantChallenge | null;
+  bonus_size_mode: "same_as_primary" | "fixed" | null;
+  bonus_account_size: number | null;
   is_active: boolean;
   expires_at: string | null;
   max_uses: number | null;
@@ -354,8 +362,13 @@ export default function Admin({ section }: { section?: AdminSection }) {
   const [bulkClosing, setBulkClosing] = useState(false);
   const [editingCoupon, setEditingCoupon] = useState<Coupon | null>(null);
   const [couponCode, setCouponCode] = useState("");
+  const [couponType, setCouponType] = useState<"discount" | "bogo">("discount");
   const [couponDiscount, setCouponDiscount] = useState("10");
   const [couponTypes, setCouponTypes] = useState<GrantChallenge[]>([]);
+  const [couponPayPercent, setCouponPayPercent] = useState("75");
+  const [couponBonusChallenge, setCouponBonusChallenge] = useState<GrantChallenge>("instant");
+  const [couponBonusSizeMode, setCouponBonusSizeMode] = useState<"same_as_primary" | "fixed">("same_as_primary");
+  const [couponBonusSize, setCouponBonusSize] = useState("5000");
   const [couponExpires, setCouponExpires] = useState("");
   const [couponMaxUses, setCouponMaxUses] = useState("");
   const [couponActive, setCouponActive] = useState(true);
@@ -863,8 +876,13 @@ export default function Admin({ section }: { section?: AdminSection }) {
   const resetCouponForm = () => {
     setEditingCoupon(null);
     setCouponCode("");
+    setCouponType("discount");
     setCouponDiscount("10");
     setCouponTypes([]);
+    setCouponPayPercent("75");
+    setCouponBonusChallenge("instant");
+    setCouponBonusSizeMode("same_as_primary");
+    setCouponBonusSize("5000");
     setCouponExpires("");
     setCouponMaxUses("");
     setCouponActive(true);
@@ -873,14 +891,23 @@ export default function Admin({ section }: { section?: AdminSection }) {
   const startEditingCoupon = (coupon: Coupon) => {
     setEditingCoupon(coupon);
     setCouponCode(coupon.code);
+    setCouponType(coupon.coupon_type ?? "discount");
     setCouponDiscount(String(coupon.discount_percent));
     setCouponTypes(coupon.challenge_types ?? []);
+    setCouponPayPercent(String(coupon.pay_percent ?? 75));
+    setCouponBonusChallenge(coupon.bonus_challenge_type ?? "instant");
+    setCouponBonusSizeMode(coupon.bonus_size_mode ?? "same_as_primary");
+    setCouponBonusSize(String(coupon.bonus_account_size ?? 5000));
     setCouponExpires(coupon.expires_at ? coupon.expires_at.slice(0, 10) : "");
     setCouponMaxUses(coupon.max_uses === null ? "" : String(coupon.max_uses));
     setCouponActive(coupon.is_active);
   };
 
   const saveCoupon = async () => {
+    if (couponType === "bogo" && couponTypes.length !== 1) {
+      setError("Select exactly one purchased account type for a BOGO coupon.");
+      return;
+    }
     setSavingCoupon(true);
     setError("");
     const { data, error: saveError } = await supabase.functions.invoke("admin-coupon", {
@@ -888,8 +915,13 @@ export default function Admin({ section }: { section?: AdminSection }) {
         action: editingCoupon ? "update" : "create",
         id: editingCoupon?.id,
         code: couponCode,
+        couponType,
         discountPercent: Number(couponDiscount),
+        payPercent: Number(couponPayPercent),
         challengeTypes: couponTypes.length ? couponTypes : null,
+        bonusChallengeType: couponBonusChallenge,
+        bonusSizeMode: couponBonusSizeMode,
+        bonusAccountSize: couponBonusSize,
         expiresAt: couponExpires ? `${couponExpires}T23:59:59.000Z` : null,
         maxUses: couponMaxUses,
         isActive: couponActive,
@@ -1827,7 +1859,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                       Purchased accounts
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
-                      Every paid account with full purchase metadata, including whether a coupon was used and which code was applied.
+                      Purchased and granted accounts with their purchase metadata and any BOGO parent/bonus relationship.
                     </p>
                   </CardHeader>
                   <CardContent className="p-0">
@@ -1853,10 +1885,14 @@ export default function Admin({ section }: { section?: AdminSection }) {
                             .map((account) => {
                               const user = userMap.get(account.user_id);
                               const payment = paymentByAccount.get(account.id);
-                              const purchaseAmount = Number(account.payment_amount_local ?? account.price ?? payment?.amount ?? 0);
+                              const isBonusAccount = Boolean(account.bonus_of_account_id);
+                              const purchaseAmount = isBonusAccount
+                                ? 0
+                                : Number(account.payment_amount_local ?? account.price ?? payment?.amount ?? 0);
                               const purchaseCurrency = (account.payment_currency || payment?.currency || "USD").toUpperCase();
-                              const paymentStatus =
-                                payment?.status === "success"
+                              const paymentStatus = isBonusAccount
+                                ? "granted"
+                                : payment?.status === "success"
                                   ? "paid"
                                   : payment?.status === "failed"
                                     ? "failed"
@@ -1869,8 +1905,10 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                           : account.status === "active" || account.status === "funded" || account.status === "passed"
                                             ? "paid"
                                             : "—";
-                              const paymentReference = account.payment_reference || payment?.provider_reference || "No payment reference";
-                              const isPaidPurchase = account.status === "active" || account.status === "funded" || account.status === "passed" || payment?.status === "success";
+                              const paymentReference = isBonusAccount
+                                ? `Bonus of ${account.bonus_of_account_id?.slice(0, 8)}`
+                                : account.payment_reference || payment?.provider_reference || "No payment reference";
+                              const isPaidPurchase = !isBonusAccount && (account.status === "active" || account.status === "funded" || account.status === "passed" || payment?.status === "success");
                               const phaseRules = getPhaseRules(account.challenge_type, account.current_phase);
                               const failedDrawdownReason =
                                 account.status === "failed"
@@ -1893,6 +1931,13 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                   <td className="px-4 py-3">
                                     <div>${account.account_size.toLocaleString()} · {account.challenge_type.replace("_", " ")}</div>
                                     <div className="font-mono text-[10px] text-muted-foreground">{account.id.slice(0, 8)}</div>
+                                    {isBonusAccount ? (
+                                      <div className="text-[10px] font-medium text-primary">BOGO bonus · parent {account.bonus_of_account_id?.slice(0, 8)}</div>
+                                    ) : account.bogo_bonus_challenge_type && account.bogo_bonus_account_size ? (
+                                      <div className="text-[10px] font-medium text-primary">
+                                        BOGO includes ${account.bogo_bonus_account_size.toLocaleString()} {account.bogo_bonus_challenge_type.replace("_", " ")}
+                                      </div>
+                                    ) : null}
                                   </td>
                                   <td className="px-4 py-3">
                                     <Badge variant={account.status === "failed" ? "destructive" : "outline"}>
@@ -1901,10 +1946,10 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                   </td>
                                   <td className="px-4 py-3">
                                     <div className="font-medium">{displayCurrency === "$" ? money(purchaseAmount) : `${displayCurrency}${purchaseAmount.toLocaleString()}`}</div>
-                                    <div className="text-[10px] text-muted-foreground">Paid in {purchaseCurrency}</div>
+                                    <div className="text-[10px] text-muted-foreground">{isBonusAccount ? "Bonus account · no charge" : `Paid in ${purchaseCurrency}`}</div>
                                   </td>
                                   <td className="px-4 py-3 text-xs text-muted-foreground">
-                                    <div className="font-medium text-foreground">{(account.payment_provider || payment?.provider || "No payment").toUpperCase()}</div>
+                                    <div className="font-medium text-foreground">{isBonusAccount ? "BOGO BONUS" : (account.payment_provider || payment?.provider || "No payment").toUpperCase()}</div>
                                     <div className="mt-1">Status: {paymentStatus}</div>
                                     <div>Ref: {paymentReference}</div>
                                     {paymentFailureReason && <div className="mt-1 text-destructive">Failure: {paymentFailureReason}</div>}
@@ -1919,7 +1964,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                                   </td>
                                   <td className="px-4 py-3 text-xs text-muted-foreground">{date(account.created_at)}</td>
                                   <td className="px-4 py-3">
-                                    <span className="text-xs font-medium text-foreground">{formatCouponUsage(account.coupon_code)}</span>
+                                    <span className="text-xs font-medium text-foreground">{isBonusAccount ? "BOGO bonus grant" : formatCouponUsage(account.coupon_code)}</span>
                                   </td>
                                   <td className="px-4 py-3 text-right">
                                     <Button size="sm" variant="destructive" onClick={() => void deleteAccount(account)} disabled={deletingAccount === account.id}>
@@ -1947,7 +1992,7 @@ export default function Admin({ section }: { section?: AdminSection }) {
                       {editingCoupon ? "Edit purchase coupon" : "Add purchase coupon"}
                     </CardTitle>
                     <p className="text-sm text-muted-foreground">
-                      Leave account types unchecked to make the coupon valid for every purchase.
+                      Standard coupons apply a discount. BOGO coupons discount one eligible purchase and grant a linked bonus account after successful payment.
                     </p>
                   </CardHeader>
                   <CardContent className="space-y-4">
@@ -1957,9 +2002,27 @@ export default function Admin({ section }: { section?: AdminSection }) {
                         <Input id="coupon-code" value={couponCode} onChange={(event) => setCouponCode(event.target.value.toUpperCase())} placeholder="WELCOME25" maxLength={32} />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="coupon-discount">Discount percent</Label>
-                        <Input id="coupon-discount" type="number" min="1" max="100" value={couponDiscount} onChange={(event) => setCouponDiscount(event.target.value)} />
+                        <Label>Coupon type</Label>
+                        <Select value={couponType} onValueChange={(value: "discount" | "bogo") => setCouponType(value)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="discount">Standard discount</SelectItem>
+                            <SelectItem value="bogo">Buy one, get one</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </div>
+                      {couponType === "bogo" ? (
+                        <div className="space-y-2">
+                          <Label htmlFor="coupon-pay-percent">Customer pays (%)</Label>
+                          <Input id="coupon-pay-percent" type="number" min="1" max="100" step="0.01" value={couponPayPercent} onChange={(event) => setCouponPayPercent(event.target.value)} />
+                          <p className="text-xs text-muted-foreground">For BOGO75, enter 75: the customer pays 75% of the primary account price.</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <Label htmlFor="coupon-discount">Discount percent</Label>
+                          <Input id="coupon-discount" type="number" min="1" max="100" value={couponDiscount} onChange={(event) => setCouponDiscount(event.target.value)} />
+                        </div>
+                      )}
                       <div className="space-y-2">
                         <Label htmlFor="coupon-expires">Expires on</Label>
                         <Input id="coupon-expires" type="date" value={couponExpires} onChange={(event) => setCouponExpires(event.target.value)} />
@@ -1969,22 +2032,76 @@ export default function Admin({ section }: { section?: AdminSection }) {
                         <Input id="coupon-max-uses" type="number" min="1" value={couponMaxUses} onChange={(event) => setCouponMaxUses(event.target.value)} placeholder="Unlimited" />
                       </div>
                     </div>
-                    <div className="space-y-3">
-                      <Label>Account types</Label>
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                        {([
-                          ["three_step", "3-Step Challenge"],
-                          ["two_step", "2-Step Challenge"],
-                          ["one_step", "1-Step Challenge"],
-                          ["instant", "Instant Funding"],
-                        ] as const).map(([value, label]) => (
-                          <label key={value} className="flex items-center gap-2 text-sm">
-                            <Checkbox checked={couponTypes.includes(value)} onCheckedChange={(checked) => setCouponTypes((current) => checked ? [...current, value] : current.filter((item) => item !== value))} />
-                            {label}
-                          </label>
-                        ))}
+                    {couponType === "bogo" ? (
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <div className="space-y-2">
+                          <Label>Purchased account type</Label>
+                          <Select
+                            value={couponTypes[0] ?? "none"}
+                            onValueChange={(value) => setCouponTypes(value === "none" ? [] : [value as GrantChallenge])}
+                          >
+                            <SelectTrigger><SelectValue placeholder="Select account type" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">Select account type</SelectItem>
+                              <SelectItem value="three_step">3-Step Challenge</SelectItem>
+                              <SelectItem value="two_step">2-Step Challenge</SelectItem>
+                              <SelectItem value="one_step">1-Step Challenge</SelectItem>
+                              <SelectItem value="instant">Instant Funding</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Bonus account type</Label>
+                          <Select value={couponBonusChallenge} onValueChange={(value: GrantChallenge) => setCouponBonusChallenge(value)}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="three_step">3-Step Challenge</SelectItem>
+                              <SelectItem value="two_step">2-Step Challenge</SelectItem>
+                              <SelectItem value="one_step">1-Step Challenge</SelectItem>
+                              <SelectItem value="instant">Instant Funding</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Bonus account size</Label>
+                          <Select value={couponBonusSizeMode} onValueChange={(value: "same_as_primary" | "fixed") => setCouponBonusSizeMode(value)}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="same_as_primary">Same as purchased account</SelectItem>
+                              <SelectItem value="fixed">Fixed account size</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          {couponBonusSizeMode === "fixed" && (
+                            <Select value={couponBonusSize} onValueChange={setCouponBonusSize}>
+                              <SelectTrigger><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {["5000", "10000", "25000", "50000", "100000", "200000"].map((size) => (
+                                  <SelectItem key={size} value={size}>${Number(size).toLocaleString()}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="space-y-3">
+                        <Label>Eligible account types</Label>
+                        <p className="text-xs text-muted-foreground">Leave all unchecked to allow every account type.</p>
+                        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                          {([
+                            ["three_step", "3-Step Challenge"],
+                            ["two_step", "2-Step Challenge"],
+                            ["one_step", "1-Step Challenge"],
+                            ["instant", "Instant Funding"],
+                          ] as const).map(([value, label]) => (
+                            <label key={value} className="flex items-center gap-2 text-sm">
+                              <Checkbox checked={couponTypes.includes(value)} onCheckedChange={(checked) => setCouponTypes((current) => checked ? [...current, value] : current.filter((item) => item !== value))} />
+                              {label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <label className="flex items-center gap-2 text-sm">
                         <Checkbox checked={couponActive} onCheckedChange={(checked) => setCouponActive(checked === true)} />
@@ -2009,15 +2126,25 @@ export default function Admin({ section }: { section?: AdminSection }) {
                   </CardHeader>
                   <CardContent className="p-0">
                     <div className="overflow-x-auto">
-                      <table className="min-w-[40rem] w-full text-left text-sm">
+                      <table className="min-w-[48rem] w-full text-left text-sm">
                         <thead className="border-y border-border bg-secondary/40 text-xs uppercase text-muted-foreground">
-                          <tr><th className="px-6 py-3">Code</th><th className="px-4 py-3">Discount</th><th className="px-4 py-3">Account types</th><th className="px-4 py-3">Usage</th><th className="px-4 py-3">Status</th><th className="px-6 py-3">Actions</th></tr>
+                          <tr><th className="px-6 py-3">Code</th><th className="px-4 py-3">Offer</th><th className="px-4 py-3">Account types</th><th className="px-4 py-3">Usage</th><th className="px-4 py-3">Status</th><th className="px-6 py-3">Actions</th></tr>
                         </thead>
                         <tbody>
                           {snapshot.coupons.map((coupon) => (
                             <tr key={coupon.id} className="border-b border-border/60 last:border-0">
                               <td className="px-6 py-4 font-mono font-semibold">{coupon.code}</td>
-                              <td className="px-4 py-4">{Number(coupon.discount_percent)}%</td>
+                              <td className="px-4 py-4 text-xs">
+                                {coupon.coupon_type === "bogo" ? (
+                                  <>
+                                    <div className="font-medium">BOGO · pay {coupon.pay_percent}%</div>
+                                    <div className="text-muted-foreground">
+                                      Get {coupon.bonus_size_mode === "same_as_primary" ? "same-size" : `$${Number(coupon.bonus_account_size).toLocaleString()}`}{" "}
+                                      {coupon.bonus_challenge_type?.replace("_", " ")} free
+                                    </div>
+                                  </>
+                                ) : `${Number(coupon.discount_percent)}% off`}
+                              </td>
                               <td className="px-4 py-4 text-xs">{coupon.challenge_types?.length ? coupon.challenge_types.map((type) => type.replace("_", " ")).join(", ") : "All account types"}</td>
                               <td className="px-4 py-4 text-xs">{coupon.times_used}{coupon.max_uses === null ? "" : ` / ${coupon.max_uses}`}</td>
                               <td className="px-4 py-4"><Badge variant={coupon.is_active ? "default" : "outline"}>{coupon.is_active ? "Active" : "Inactive"}</Badge></td>

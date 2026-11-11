@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const [{ data: usersData, error: usersError }, accounts, positions, referrals, applications, affiliateCodes, affiliateBalances, history, kyc, kycDocuments, payments, payouts, coupons] = await Promise.all([
       admin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
-      admin.from("accounts").select("id, user_id, account_size, challenge_type, status, current_balance, profit_loss, current_phase, high_water_mark, daily_start_balance, daily_start_date, max_drawdown_percent, daily_drawdown_percent, consistency_score, best_trading_day_profit, closed_profit_total, drawdown_violated, risk_monitoring_degraded, violation_type, phase_passed, archived_at, archive_expires_at, updated_at, created_at, coupon_code, price, payment_currency, payment_amount_local, payment_provider, payment_reference"),
+      admin.from("accounts").select("id, user_id, account_size, challenge_type, status, current_balance, profit_loss, current_phase, high_water_mark, daily_start_balance, daily_start_date, max_drawdown_percent, daily_drawdown_percent, consistency_score, best_trading_day_profit, closed_profit_total, drawdown_violated, risk_monitoring_degraded, violation_type, phase_passed, archived_at, archive_expires_at, updated_at, created_at, coupon_code, price, payment_currency, payment_amount_local, payment_provider, payment_reference, bogo_bonus_challenge_type, bogo_bonus_account_size, bonus_of_account_id"),
       admin.from("positions").select("id, account_id, asset_id, position_type, lot_size, profit_loss, status, opened_at, closed_at, entry_price, exit_price, stop_loss, take_profit, assets(symbol, pip_value, asset_type, quote_currency, lot_size)"),
       admin.from("referrals").select("referrer_id, referred_user_id, status, commission_earned, referred_at, account_purchased"),
       admin.from("affiliate_applications").select("id, user_id, desired_code, phone, country, website, instagram, tiktok, youtube, x_handle, audience_size, promotion_channels, affiliate_experience, promotion_plan, status, rejection_reason, created_at, updated_at").order("created_at", { ascending: false }),
@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
       admin.from("kyc_documents").select("id, kyc_id, document_kind, document_type, storage_path, submitted_at").order("submitted_at", { ascending: false }),
       admin.from("payment_orders").select("id, user_id, account_id, provider, provider_reference, amount, currency, status, checkout_at, verified_at, webhook_at, failure_reason, refund_amount, refunded_at").order("checkout_at", { ascending: false }).limit(200),
       admin.from("payout_requests").select("id, user_id, account_id, amount, method, destination, source, status, rejection_reason, created_at, updated_at, reviewed_by, reviewed_at").order("created_at", { ascending: false }).limit(200),
-      admin.from("coupons").select("id, code, discount_percent, challenge_types, is_active, expires_at, max_uses, times_used, created_at, updated_at").order("created_at", { ascending: false }),
+      admin.from("coupons").select("id, code, discount_percent, challenge_types, coupon_type, pay_percent, bonus_challenge_type, bonus_size_mode, bonus_account_size, is_active, expires_at, max_uses, times_used, created_at, updated_at").order("created_at", { ascending: false }),
     ]);
 
     if (usersError) {

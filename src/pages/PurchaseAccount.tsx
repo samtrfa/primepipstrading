@@ -112,6 +112,11 @@ export default function PurchaseAccount() {
     code: string;
     discountPercent: number;
     challengeTypes: ChallengeType[] | null;
+    couponType: "discount" | "bogo";
+    payPercent: number | null;
+    bonusChallengeType: ChallengeType | null;
+    bonusSizeMode: "same_as_primary" | "fixed" | null;
+    bonusAccountSize: number | null;
   } | null>(null);
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -202,7 +207,7 @@ export default function PurchaseAccount() {
     const [{ data: couponData, error }, { data: affiliateData }] = await Promise.all([
       supabase
         .from("coupons")
-        .select("code, discount_percent, challenge_types, expires_at, max_uses, times_used")
+        .select("code, discount_percent, challenge_types, coupon_type, pay_percent, bonus_challenge_type, bonus_size_mode, bonus_account_size, expires_at, max_uses, times_used")
         .eq("code", code)
         .eq("is_active", true)
         .maybeSingle(),
@@ -213,7 +218,18 @@ export default function PurchaseAccount() {
         .eq("is_active", true)
         .maybeSingle(),
     ]);
-    const data = couponData || (affiliateData ? { ...affiliateData, challenge_types: null, expires_at: null, max_uses: null, times_used: 0 } : null);
+    const data = couponData || (affiliateData ? {
+      ...affiliateData,
+      coupon_type: "discount",
+      pay_percent: null,
+      bonus_challenge_type: null,
+      bonus_size_mode: null,
+      bonus_account_size: null,
+      challenge_types: null,
+      expires_at: null,
+      max_uses: null,
+      times_used: 0,
+    } : null);
 
     setCouponLoading(false);
 
@@ -234,10 +250,20 @@ export default function PurchaseAccount() {
     }
 
     const challengeTypes = (data.challenge_types as ChallengeType[] | null) ?? null;
+    const couponType = data.coupon_type === "bogo" ? "bogo" : "discount";
+    const payPercent = couponType === "bogo" ? Number(data.pay_percent) : null;
+    const appliedDiscountPercent = couponType === "bogo"
+      ? 100 - (payPercent ?? 100)
+      : Number(data.discount_percent);
     setAppliedCoupon({
       code: data.code,
-      discountPercent: Number(data.discount_percent),
+      discountPercent: appliedDiscountPercent,
       challengeTypes,
+      couponType,
+      payPercent,
+      bonusChallengeType: data.bonus_challenge_type as ChallengeType | null,
+      bonusSizeMode: data.bonus_size_mode as "same_as_primary" | "fixed" | null,
+      bonusAccountSize: data.bonus_account_size === null ? null : Number(data.bonus_account_size),
     });
 
     if (challengeTypes && !challengeTypes.includes(selectedChallenge)) {
@@ -249,7 +275,9 @@ export default function PurchaseAccount() {
     } else {
       toast({
         title: "Coupon applied",
-        description: `${data.code} — ${Number(data.discount_percent)}% off.`,
+        description: couponType === "bogo"
+          ? `${data.code} — pay ${payPercent}% and get a free bonus account.`
+          : `${data.code} — ${appliedDiscountPercent}% off.`,
       });
     }
   };
@@ -449,9 +477,22 @@ export default function PurchaseAccount() {
                     </span>
                     {couponApplies ? (
                       <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/50 bg-primary/10 px-3 py-2">
-                        <span className="text-sm font-semibold text-foreground">
-                          {activeCoupon!.code} · {discountPercent}% off
-                        </span>
+                        <div className="text-sm font-semibold text-foreground">
+                          <div>
+                            {activeCoupon!.code}
+                            {activeCoupon!.couponType === "bogo"
+                              ? ` · Pay ${activeCoupon!.payPercent}%`
+                              : ` · ${discountPercent}% off`}
+                          </div>
+                          {activeCoupon!.couponType === "bogo" && activeCoupon!.bonusChallengeType && (
+                            <div className="mt-1 text-xs font-normal text-muted-foreground">
+                              Get a free ${(activeCoupon!.bonusSizeMode === "same_as_primary"
+                                ? selectedSize
+                                : activeCoupon!.bonusAccountSize ?? selectedSize).toLocaleString()}{" "}
+                              {challengeLabel(activeCoupon!.bonusChallengeType)} account
+                            </div>
+                          )}
+                        </div>
                         <Button variant="ghost" size="sm" onClick={removeCoupon}>
                           <X className="w-4 h-4" />
                         </Button>
@@ -487,7 +528,9 @@ export default function PurchaseAccount() {
                       </div>
                       <div className="flex justify-between items-center py-2 border-b border-border">
                         <span className="text-muted-foreground">
-                          Discount ({discountPercent}%)
+                          {activeCoupon?.couponType === "bogo"
+                            ? `BOGO price adjustment (pay ${activeCoupon.payPercent}%)`
+                            : `Discount (${discountPercent}%)`}
                         </span>
                         <span className="font-medium text-primary">-${discountAmount}</span>
                       </div>
@@ -542,6 +585,15 @@ export default function PurchaseAccount() {
                   <CardDescription>
                     {challengeTypes.find((c) => c.id === selectedChallenge)?.label} — ${
                     selectedSize.toLocaleString()} account
+                    {couponApplies && activeCoupon?.couponType === "bogo" && activeCoupon.bonusChallengeType && (
+                      <span className="mt-1 block">
+                        BOGO: pay {activeCoupon.payPercent}% and receive a free $
+                        {(activeCoupon.bonusSizeMode === "same_as_primary"
+                          ? selectedSize
+                          : activeCoupon.bonusAccountSize ?? selectedSize).toLocaleString()}{" "}
+                        {challengeLabel(activeCoupon.bonusChallengeType)} account.
+                      </span>
+                    )}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">

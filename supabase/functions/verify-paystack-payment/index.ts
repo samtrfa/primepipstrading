@@ -65,12 +65,21 @@ Deno.serve(async (req) => {
     );
     const paystackBody = await paystackResponse.json().catch(() => null);
     const transaction = paystackBody?.data;
-    if (!paystackResponse.ok || !transaction) {
+    if (
+      !paystackResponse.ok ||
+      paystackBody?.status !== true ||
+      !transaction ||
+      transaction.reference !== reference ||
+      typeof transaction.status !== "string" ||
+      !Number.isFinite(Number(transaction.amount)) ||
+      Number(transaction.amount) < 0 ||
+      typeof transaction.currency !== "string"
+    ) {
       console.error("Paystack verification failed:", paystackBody);
       return json({ error: "Payment verification is temporarily unavailable" }, 502);
     }
 
-    const paidAmount = Number(transaction?.amount ?? 0) / 100;
+    const paidAmount = Number(transaction.amount) / 100;
     const providerUserId = typeof transaction?.metadata?.user_id === "string" && /^[0-9a-f-]{36}$/i.test(transaction.metadata.user_id) ? transaction.metadata.user_id : null;
 
     const { data: result, error: reconcileError } = await admin.rpc("reconcile_paystack_payment", {

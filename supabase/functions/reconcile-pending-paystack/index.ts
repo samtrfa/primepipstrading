@@ -57,7 +57,16 @@ Deno.serve(async (req) => {
       );
       const body = await response.json().catch(() => null);
       const transaction = body?.data;
-      if (!response.ok || !transaction || typeof transaction.status !== "string") {
+      if (
+        !response.ok ||
+        body?.status !== true ||
+        !transaction ||
+        transaction.reference !== payment.provider_reference ||
+        typeof transaction.status !== "string" ||
+        !Number.isFinite(Number(transaction.amount)) ||
+        Number(transaction.amount) < 0 ||
+        typeof transaction.currency !== "string"
+      ) {
         console.error("Paystack verification failed for pending payment:", payment.provider_reference, body);
         results.errors.push(payment.provider_reference);
         continue;
@@ -80,8 +89,8 @@ Deno.serve(async (req) => {
         {
           p_reference: payment.provider_reference,
           p_status: reconciliationStatus,
-          p_amount: Number(transaction.amount ?? 0) / 100,
-          p_currency: transaction.currency || null,
+          p_amount: Number(transaction.amount) / 100,
+          p_currency: transaction.currency,
           p_provider_user_id: providerUserId,
           p_metadata: {
             status: providerStatus,
