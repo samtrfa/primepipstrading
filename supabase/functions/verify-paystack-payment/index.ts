@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
     const admin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data: payment, error: accountError } = await admin
       .from("payment_orders")
-      .select("id, user_id, account_id, provider_reference, amount, currency, status")
+      .select("id, user_id, account_id, provider_reference, amount, currency, status, pixel_fired")
       .eq("provider", "paystack")
       .eq("provider_reference", reference)
       .maybeSingle();
@@ -96,6 +96,37 @@ Deno.serve(async (req) => {
       p_source: "verification",
     });
     if (reconcileError) throw reconcileError;
+    if (result?.status === "success") {
+      const { data: claimedPayment, error: claimError } = await admin
+        .from("payment_orders")
+        .update({ pixel_fired: true })
+        .eq("id", payment.id)
+        .eq("pixel_fired", false)
+        .select("id, amount, currency")
+        .maybeSingle();
+
+      if (claimError) {
+        console.error("Failed to claim Meta Purchase event:", claimError.message);
+        throw claimError;
+      }
+
+      if (claimedPayment) {
+        const purchaseValue = Number(claimedPayment.amount);
+        if (Number.isFinite(purchaseValue) && purchaseValue >= 0) {
+          return json({
+            verified: true,
+            provider_status: transaction.status,
+            ...result,
+            purchase: {
+              value: purchaseValue,
+              currency: "NGN",
+              orderId: claimedPayment.id,
+            },
+          });
+        }
+      }
+    }
+
     return json({ verified: result?.status === "success", provider_status: transaction.status, ...result });
   } catch (error) {
     console.error("verify-paystack-payment error:", error);

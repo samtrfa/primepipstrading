@@ -24,6 +24,7 @@ export type Database = {
           amount: number
           currency: string
           status: string
+          pixel_fired: boolean
           checkout_at: string
           verified_at: string | null
           webhook_at: string | null
@@ -44,6 +45,7 @@ export type Database = {
           amount: number
           currency: string
           status?: string
+          pixel_fired?: boolean
           checkout_at?: string
           verified_at?: string | null
           webhook_at?: string | null
@@ -64,6 +66,7 @@ export type Database = {
           amount?: number
           currency?: string
           status?: string
+          pixel_fired?: boolean
           checkout_at?: string
           verified_at?: string | null
           webhook_at?: string | null

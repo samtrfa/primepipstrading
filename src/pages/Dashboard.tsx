@@ -73,13 +73,27 @@ export default function Dashboard() {
 
       const paymentReference = searchParams.get("reference") || searchParams.get("trxref");
       if (paymentReference) {
-        const { error: verificationError } = await supabase.functions.invoke(
+        const { data: verificationData, error: verificationError } = await supabase.functions.invoke(
           "verify-paystack-payment",
           { body: { reference: paymentReference } },
         );
 
         if (verificationError) {
           console.error("Error verifying Paystack payment:", verificationError);
+        }
+        const purchase = verificationData?.purchase;
+        if (
+          verificationData?.verified === true &&
+          purchase &&
+          typeof purchase.value === "number" &&
+          Number.isFinite(purchase.value) &&
+          typeof purchase.orderId === "string"
+        ) {
+          const valueJson = JSON.stringify(purchase.value);
+          const orderIdJson = JSON.stringify(purchase.orderId);
+          const purchaseScript = document.createElement("script");
+          purchaseScript.text = `fbq('track', 'Purchase', {value: ${valueJson}, currency: 'NGN'}, {eventID: ${orderIdJson}});`;
+          document.head.appendChild(purchaseScript);
         }
 
         navigate("/dashboard", { replace: true });

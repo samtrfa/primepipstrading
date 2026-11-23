@@ -57,6 +57,13 @@ const pricingTiers: PricingTier[] = [
 const challengeLabel = (type: ChallengeType) =>
   challengeTypes.find((c) => c.id === type)?.label ?? type.replace(/_/g, "-");
 
+const trackMetaEvent = (eventName: "ViewContent" | "InitiateCheckout", content?: Record<string, unknown>) => {
+  const fbq = (window as typeof window & { fbq?: (...args: unknown[]) => void }).fbq;
+  if (typeof fbq === "function") {
+    fbq("track", eventName, content ?? {});
+  }
+};
+
 function RuleItem({ label, value, ruleKey }: { label: string; value: string; ruleKey: string }) {
   const explanation =
     ruleKey === "consistencyRule" && value === "None"
@@ -197,6 +204,16 @@ export default function PurchaseAccount() {
       style: "currency",
       currency,
     }).format(amount);
+
+  useEffect(() => {
+    trackMetaEvent("ViewContent", {
+      content_name: challengeLabel(selectedChallenge),
+      content_category: "trading challenge",
+      value: Number.isFinite(price) ? price : 0,
+      currency: "USD",
+      content_ids: [String(selectedSize)],
+    });
+  }, [selectedChallenge, selectedSize, price]);
 
   const applyCoupon = async () => {
     const code = couponInput.trim().toUpperCase();
@@ -561,7 +578,15 @@ export default function PurchaseAccount() {
                     variant="gold"
                     size="lg"
                     className="w-full mt-6"
-                    onClick={() => setShowPayment(true)}
+                    onClick={() => {
+                      trackMetaEvent("InitiateCheckout", {
+                        content_name: challengeLabel(selectedChallenge),
+                        value: Number.isFinite(price) ? price : 0,
+                        currency: "USD",
+                        content_ids: [String(selectedSize)],
+                      });
+                      setShowPayment(true);
+                    }}
                   >
                     Proceed to Payment
                   </Button>
@@ -665,7 +690,15 @@ export default function PurchaseAccount() {
                         variant="gold"
                         size="lg"
                         className="w-full"
-                        onClick={() => handlePaystackCheckout("bank_transfer")}
+                        onClick={() => {
+                          trackMetaEvent("InitiateCheckout", {
+                            content_name: challengeLabel(selectedChallenge),
+                            value: Number.isFinite(price) ? price : 0,
+                            currency: "USD",
+                            content_ids: [String(selectedSize)],
+                          });
+                          handlePaystackCheckout("bank_transfer");
+                        }}
                         disabled={isProcessing || currencyQuoteLoading || !currencyRates}
                       >
                         {isProcessing ? (
@@ -682,7 +715,15 @@ export default function PurchaseAccount() {
                         variant="outline"
                         size="lg"
                         className="w-full"
-                        onClick={() => handlePaystackCheckout("card")}
+                        onClick={() => {
+                          trackMetaEvent("InitiateCheckout", {
+                            content_name: challengeLabel(selectedChallenge),
+                            value: Number.isFinite(price) ? price : 0,
+                            currency: "USD",
+                            content_ids: [String(selectedSize)],
+                          });
+                          handlePaystackCheckout("card");
+                        }}
                         disabled={isProcessing || currencyQuoteLoading || !currencyRates}
                       >
                         Pay securely with Card
@@ -692,7 +733,15 @@ export default function PurchaseAccount() {
                         variant="outline"
                         size="lg"
                         className="w-full"
-                        onClick={() => handlePaystackCheckout("other")}
+                        onClick={() => {
+                          trackMetaEvent("InitiateCheckout", {
+                            content_name: challengeLabel(selectedChallenge),
+                            value: Number.isFinite(price) ? price : 0,
+                            currency: "USD",
+                            content_ids: [String(selectedSize)],
+                          });
+                          handlePaystackCheckout("other");
+                        }}
                         disabled={isProcessing || currencyQuoteLoading || !currencyRates}
                       >
                         Use Another Payment Method
